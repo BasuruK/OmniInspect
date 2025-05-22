@@ -1,0 +1,17 @@
+{
+    "cSpell.words": [
+        "Balasuriya",
+        "Basuru",
+        "CFLAGS",
+        "ifsapp",
+        "IFSPDB",
+        "lodpi",
+        "odpi",
+        "stdlib"
+    ],
+    "go.toolsEnvVars": {
+        "CGO_ENABLED": "1",
+        "CGO_CFLAGS": "-I${SRCDIR}/../lib/odpi/odpi/include",
+        "CGO_LDFLAGS": "-L${SRCDIR}/../lib/odpi/lib -lodpi"
+    }
+}

@@ -20,3 +20,9 @@ lib:
 lib/odpi.dll: $(ODPI_OBJ) | lib
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 	cp lib/odpi.dll ../../../odpi.dll
+
+clean:
+	rm -rf build
+	rm -rf lib
+	rm -rf src
+	rm -f ../../../odpi.dll

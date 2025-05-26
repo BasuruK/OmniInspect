@@ -1,0 +1,11 @@
+{
+    "DatabaseSettings": {
+        "Database": "DLK1PDE484",
+        "Host": "IFSPDB",
+        "Username": "ifsapp",
+        "Password": "ifsapp"
+    },
+    "ClientSettings": {
+        "EnableUtf8": false
+    }
+}

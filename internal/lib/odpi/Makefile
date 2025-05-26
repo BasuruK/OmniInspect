@@ -23,6 +23,4 @@ lib/odpi.dll: $(ODPI_OBJ) | lib
 
 clean:
 	rm -rf build
-	rm -rf lib
 	rm -rf src
-	rm -f ../../../odpi.dll

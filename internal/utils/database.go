@@ -5,7 +5,7 @@ package utils
 #cgo LDFLAGS: -L${SRCDIR}/../lib/odpi/lib -lodpi
 
 #include "dpi.h"
-#include "dpi_helpers.h"
+#include "dpi_go_helpers.h"
 #include <stdio.h>
 #include <stdlib.h>
 

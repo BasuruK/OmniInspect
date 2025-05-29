@@ -2,6 +2,7 @@
     "DatabaseSettings": {
         "Database": "DLK1PDE484",
         "Host": "IFSPDB",
+        "Port": 1521,
         "Username": "ifsapp",
         "Password": "ifsapp"
     },

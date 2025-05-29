@@ -22,7 +22,7 @@ type Database struct {
 
 func NewDBConnection() *Database {
 	// Load the configurations
-	dbConfigs := utils.LoadConfigurations().DatabaseSettings
+	dbConfigs := LoadConfigurations().DatabaseSettings
 
 	// Set connection parameters
 	username := dbConfigs.Username

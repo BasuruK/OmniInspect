@@ -41,12 +41,10 @@ func (a *App) GetName() string {
 func (a *App) StartServer() {
 	// Start the server
 	fmt.Println("Server started")
-	config := utils.NewConfigFile() // Load the configuration file
-	fmt.Println(config.DatabaseSettings)
 
 	// Connect to the database
 	dbConn := utils.NewDBConnection()
-	fmt.Println(dbConn.TestString)
+	fmt.Println(dbConn)
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)

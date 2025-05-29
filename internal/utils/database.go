@@ -18,14 +18,16 @@ import (
 
 type Database struct {
 	Connection *C.dpiConn
-	TestString string
 }
 
 func NewDBConnection() *Database {
+	// Load the configurations
+	dbConfigs := utils.LoadConfigurations().DatabaseSettings
+
 	// Set connection parameters
-	username := "ifsapp"
-	password := "ifsapp"
-	connectionString := "DLK1PDE484:1521/IFSPDB"
+	username := dbConfigs.Username
+	password := dbConfigs.Password
+	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Database, dbConfigs.Port, dbConfigs.Host)
 
 	// Set Context for the connection
 	context := SetContext()
@@ -74,8 +76,7 @@ func NewDBConnection() *Database {
 	}
 
 	db := &Database{
-		Connection: conn,
-		TestString: "TestString:Hello"}
+		Connection: conn}
 
 	defer C.dpiConn_release(conn)       // Release the connection when done
 	defer C.dpiContext_destroy(context) // Release the context when done

@@ -9,6 +9,7 @@ type Configurations struct {
 	DatabaseSettings struct {
 		Database string
 		Host     string
+		Port     int
 		Username string
 		Password string
 	}
@@ -34,6 +35,7 @@ func NewConfigFile() *Configurations {
 func (c *Configurations) GetDatabaseSettingsStruct() struct {
 	Database string
 	Host     string
+	Port     int
 	Username string
 	Password string
 } {

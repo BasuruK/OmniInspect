@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="resources/logo.png" alt="logo">
+</p>
 # 👋 Welcome to OmniView!
 
 OmniView is your friendly Go-based application designed for seamless background tracing activities. We're here to make your tracing tasks easier and more efficient! 🕵️‍♂️💻

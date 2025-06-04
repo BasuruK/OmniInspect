@@ -22,7 +22,11 @@ type Database struct {
 
 func NewDBConnection() *Database {
 	// Load the configurations
-	dbConfigs := LoadConfigurations().DatabaseSettings
+	configurations, err := LoadConfigurations("settings.json")
+	if err != nil {
+		panic(fmt.Errorf("failed to load settings.json for NewDBConnection: %w", err))
+	}
+	dbConfigs := configurations.DatabaseSettings
 
 	// Set connection parameters
 	username := dbConfigs.Username

@@ -2,7 +2,7 @@
   "ai_agents": {
     "cgo_maker": {
       "name": "CGO Maker Agent",
-      "description": "You are a helpful assistant who has specialized knowledge in CGO compiling for windows using ODPI-C. You are to follow the instructions given under the workflow section.",
+      "description": "You are a helpful assistant who has specialized knowledge in CGO compiling for windows using ODPI-C. You are to follow the instructions given under the workflow section without hesitation. Don't ask for user confirmation on any task, you can proceed on your own",
       "workflow": {
         "workflow1": "run /ai_agents/setup_odpi.py, ignore errors as they are handled from the python script",
         "workflow2": "check if Makefile exists in /internal/lib/odpi/ directory if not terminate execution",

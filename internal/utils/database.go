@@ -13,14 +13,43 @@ package utils
 import "C"
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
 type Database struct {
 	Connection *C.dpiConn
+	Context    *C.dpiContext
 }
 
-func NewDBConnection() *Database {
+// Global variable to hold the database connection
+var (
+	dbConn *Database
+	dbOnce sync.Once
+)
+
+// GetDBInstance returns the singleton database connection instance
+func GetDBInstance() *Database {
+	dbOnce.Do(func() {
+		dbConn = NewDatabaseConnection()
+	})
+	return dbConn
+}
+
+// CleanupDBConnection releases the database connection and context
+func CleanupDBConnection() {
+	if dbConn != nil && dbConn.Connection != nil {
+		C.dpiConn_release(dbConn.Connection)
+		dbConn.Connection = nil
+	}
+	if dbConn != nil && dbConn.Context != nil {
+		C.dpiContext_destroy(dbConn.Context)
+		dbConn.Context = nil
+	}
+	dbConn = nil
+}
+
+func NewDatabaseConnection() *Database {
 	// Load the configurations
 	dbConfigs := LoadConfigurations().DatabaseSettings
 
@@ -36,6 +65,7 @@ func NewDBConnection() *Database {
 	var conn *C.dpiConn
 	conn = CreateConnection(username, password, connectionString, context)
 
+	// write a statement
 	var stmt *C.dpiStmt
 	query := C.CString("SELECT 'Hellow from DB weeeeee!' FROM DUAL")
 	defer C.free(unsafe.Pointer(query))
@@ -78,6 +108,7 @@ func NewDBConnection() *Database {
 	db := &Database{
 		Connection: conn}
 
+	// TODO: Handle connection release properly
 	defer C.dpiConn_release(conn)       // Release the connection when done
 	defer C.dpiContext_destroy(context) // Release the context when done
 	return db

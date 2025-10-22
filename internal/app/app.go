@@ -43,7 +43,7 @@ func (a *App) StartServer() {
 	fmt.Println("Server started")
 
 	// Connect to the database
-	dbConn := utils.NewDBConnection()
+	dbConn := utils.NewDatabaseConnection()
 	fmt.Println(dbConn)
 
 	fmt.Println("Press Enter to Continue...")

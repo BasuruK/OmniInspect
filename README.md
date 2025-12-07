@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/logo.png" alt="logo">
+  <img src="resources/omniview.png" alt="logo">
 </p>
 # 👋 Welcome to OmniView!
 

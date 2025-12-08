@@ -67,12 +67,11 @@ endif
 clean:
 ifeq ($(DETECTED_OS),Windows)
 	@if exist build (rmdir /s /q build)
-	@if exist lib (rmdir /s /q lib)
-    @if exist src (rmdir /s /q src\*.c)
+	@if exist src (del /f /q src\*.c)
+	@if exist src (del /f /q src\*.h)
 else
 	rm -rf build
-	rm -rf lib
-    rm -rf src/*.c
+	rm -f src/*.c
 endif
 
 # Phony targets

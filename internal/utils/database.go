@@ -80,6 +80,7 @@ func NewDatabaseConnection() *Database {
 	// Prepare the statement
 	if C.dpiConn_prepareStmt(conn, 0, query, C.uint32_t(len(C.GoString(query))), nil, 0, &stmt) != C.DPI_SUCCESS {
 		fmt.Println("Failed to prepare statement")
+		return nil
 	}
 
 	//defer C.dpiStmt_release(stmt) // Release the statement when done
@@ -137,6 +138,10 @@ func CreateConnection(username string, password string, connectionString string,
 	c_username := C.CString(username)
 	c_password := C.CString(password)
 	c_connectionString := C.CString(connectionString)
+
+	defer C.free(unsafe.Pointer(c_username))
+	defer C.free(unsafe.Pointer(c_password))
+	defer C.free(unsafe.Pointer(c_connectionString))
 
 	if C.dpiConn_create(context,
 		c_username,

@@ -24,7 +24,7 @@ ifeq ($(DETECTED_OS),Windows)
     COPY_TARGET = ../../../odpi.dll
     MKDIR = if not exist $(subst /,\,$1) mkdir $(subst /,\,$1)
     RM = rmdir /s /q
-else
+else ifeq ($(DETECTED_OS),MacOS)
     # MacOS settings
     INSTANT_CLIENT_DIR = /opt/oracle/instantclient_23_7/sdk/lib
     LDFLAGS = -dynamiclib -arch arm64
@@ -36,8 +36,7 @@ else
     RM = rm -rf
 endif
 
-all: $(TARGET)
-	$(MAKE) clean
+all: clean $(TARGET)
 
 build/%.o: src/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@

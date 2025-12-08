@@ -25,15 +25,17 @@ type Database struct {
 // Global variable to hold the database connection
 var (
 	dbConn  *Database
-	dbOnce  sync.Once
 	dbMutex sync.Mutex
 )
 
 // GetDBInstance returns the singleton database connection instance
 func GetDBInstance() *Database {
-	dbOnce.Do(func() {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	if dbConn == nil {
 		dbConn = NewDatabaseConnection()
-	})
+	}
 	return dbConn
 }
 
@@ -53,7 +55,6 @@ func CleanupDBConnection() {
 	}
 
 	dbConn = nil
-	dbOnce = sync.Once{} // Reset the once for future use
 }
 
 func NewDatabaseConnection() *Database {

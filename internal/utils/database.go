@@ -24,8 +24,9 @@ type Database struct {
 
 // Global variable to hold the database connection
 var (
-	dbConn *Database
-	dbOnce sync.Once
+	dbConn  *Database
+	dbOnce  sync.Once
+	dbMutex sync.Mutex
 )
 
 // GetDBInstance returns the singleton database connection instance
@@ -38,6 +39,10 @@ func GetDBInstance() *Database {
 
 // CleanupDBConnection releases the database connection and context
 func CleanupDBConnection() {
+
+	dbMutex.Lock()
+	defer dbMutex.Unlock() // Ensure thread-safe cleanup
+
 	if dbConn != nil && dbConn.Connection != nil {
 		C.dpiConn_release(dbConn.Connection)
 		dbConn.Connection = nil
@@ -46,7 +51,9 @@ func CleanupDBConnection() {
 		C.dpiContext_destroy(dbConn.Context)
 		dbConn.Context = nil
 	}
+
 	dbConn = nil
+	dbOnce = sync.Once{} // Reset the once for future use
 }
 
 func NewDatabaseConnection() *Database {
@@ -106,11 +113,10 @@ func NewDatabaseConnection() *Database {
 	}
 
 	db := &Database{
-		Connection: conn}
+		Connection: conn,
+		Context:    context,
+	}
 
-	// TODO: Handle connection release properly
-	defer C.dpiConn_release(conn)       // Release the connection when done
-	defer C.dpiContext_destroy(context) // Release the context when done
 	return db
 }
 

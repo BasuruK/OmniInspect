@@ -68,7 +68,7 @@ clean:
 ifeq ($(DETECTED_OS),Windows)
 	@if exist build (rmdir /s /q build)
 	@if exist lib (rmdir /s /q lib)
-    @if exists src (rmdir /s /q src\*.c)
+    @if exist src (rmdir /s /q src\*.c)
 else
 	rm -rf build
 	rm -rf lib

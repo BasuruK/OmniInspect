@@ -4,6 +4,8 @@ import shutil
 import zipfile
 import urllib.request
 import platform
+import subprocess
+import argparse
 
 ODPI_VERSION = "5.6.4"
 ODPI_DIR = f"odpi-{ODPI_VERSION}"
@@ -150,8 +152,65 @@ def cleanup():
     else:
         log("ℹ️ No items needed cleanup")
 
+def run_make():
+    """Navigates to internal/lib/odpi and runs make, then make clean."""
+    odpi_build_dir = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi")
+    
+    if not os.path.exists(odpi_build_dir):
+        log(f"❌ Build directory does not exist: {odpi_build_dir}")
+        return False
+    
+    log("")
+    log("=" * 60)
+    log("Building ODPI-C library...")
+    log("=" * 60)
+    
+    try:
+        # Run make
+        log(f"Running 'make' in {odpi_build_dir}...")
+        result = subprocess.run(
+            ["make"],
+            cwd=odpi_build_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        log("       ✅ Build completed successfully")
+        if result.stdout:
+            log(f"\nBuild output:\n{result.stdout}")
+        
+        # Run make clean
+        log("\nRunning 'make clean'...")
+        result = subprocess.run(
+            ["make", "clean"],
+            cwd=odpi_build_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        log("       ✅ Cleanup completed successfully")
+        if result.stdout:
+            log(f"\nCleanup output:\n{result.stdout}")
+        
+        return True
+    except subprocess.CalledProcessError as e:
+        log(f"❌ Make command failed with exit code {e.returncode}")
+        if e.stdout:
+            log(f"stdout: {e.stdout}")
+        if e.stderr:
+            log(f"stderr: {e.stderr}")
+        return False
+    except FileNotFoundError:
+        log("❌ 'make' command not found. Please ensure make is installed and in your PATH.")
+        return False
+
 def main():
     """Main function to orchestrate the ODPI-C setup process."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="ODPI-C Setup Script")
+    parser.add_argument("--make", action="store_true", help="Run make and make clean after setup")
+    args = parser.parse_args()
+    
     log("=" * 60)
     log("ODPI-C Setup Script")
     log("=" * 60)
@@ -170,20 +229,38 @@ def main():
     log("✅ ODPI-C setup completed successfully! 🎉")
     log("=" * 60)
     
-    if IS_APPLE_SILICON:
-        log("\n📝 Next steps for Apple Silicon:")
-        log("   1. Install Oracle Instant Client ARM64:")
-        log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
-        log("   2. Extract to: /opt/oracle/instantclient_23_7")
-        log("   3. Build ODPI-C:")
-        log("      cd internal/lib/odpi && make")
-    elif IS_WINDOWS:
-        log("\n📝 Next steps for Windows:")
-        log("   1. Install Oracle Instant Client:")
-        log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
-        log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")
-        log("   3. Build ODPI-C:")
-        log("      cd internal\\lib\\odpi && make")
+    # Run make if --make flag is provided
+    if args.make:
+        if run_make():
+            log("")
+            log("=" * 60)
+            log("✅ Build and cleanup completed successfully! 🎉")
+            log("=" * 60)
+        else:
+            log("")
+            log("=" * 60)
+            log("⚠️ Setup completed but build failed")
+            log("=" * 60)
+            sys.exit(1)
+    else:
+        if IS_APPLE_SILICON:
+            log("\n📝 Next steps for Apple Silicon:")
+            log("   1. Install Oracle Instant Client ARM64:")
+            log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
+            log("   2. Extract to: /opt/oracle/instantclient_23_7")
+            log("   3. Build ODPI-C:")
+            log("      cd internal/lib/odpi && make")
+            log("\n   Or run this script with --make flag to build automatically:")
+            log("      python ai_agents/setup_odpi.py --make")
+        elif IS_WINDOWS:
+            log("\n📝 Next steps for Windows:")
+            log("   1. Install Oracle Instant Client:")
+            log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
+            log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")
+            log("   3. Build ODPI-C:")
+            log("      cd internal\\lib\\odpi && make")
+            log("\n   Or run this script with --make flag to build automatically:")
+            log("      python ai_agents\\setup_odpi.py --make")
 
 if __name__ == "__main__":
     main()

@@ -36,7 +36,7 @@ else ifeq ($(DETECTED_OS),MacOS)
     RM = rm -rf
 endif
 
-all: clean $(TARGET)
+all: $(TARGET)
 
 build/%.o: src/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -71,6 +71,7 @@ ifeq ($(DETECTED_OS),Windows)
 else
 	rm -rf build
 	rm -f src/*.c
+    rm -f src/*.h
 endif
 
 # Phony targets

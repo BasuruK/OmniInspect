@@ -13,14 +13,51 @@ package utils
 import "C"
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
 type Database struct {
 	Connection *C.dpiConn
+	Context    *C.dpiContext
 }
 
-func NewDBConnection() *Database {
+// Global variable to hold the database connection
+var (
+	dbConn  *Database
+	dbMutex sync.Mutex
+)
+
+// GetDBInstance returns the singleton database connection instance
+func GetDBInstance() *Database {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+
+	if dbConn == nil {
+		dbConn = NewDatabaseConnection()
+	}
+	return dbConn
+}
+
+// CleanupDBConnection releases the database connection and context
+func CleanupDBConnection() {
+
+	dbMutex.Lock()
+	defer dbMutex.Unlock() // Ensure thread-safe cleanup
+
+	if dbConn != nil && dbConn.Connection != nil {
+		C.dpiConn_release(dbConn.Connection)
+		dbConn.Connection = nil
+	}
+	if dbConn != nil && dbConn.Context != nil {
+		C.dpiContext_destroy(dbConn.Context)
+		dbConn.Context = nil
+	}
+
+	dbConn = nil
+}
+
+func NewDatabaseConnection() *Database {
 	// Load the configurations
 	dbConfigs := LoadConfigurations().DatabaseSettings
 
@@ -36,6 +73,7 @@ func NewDBConnection() *Database {
 	var conn *C.dpiConn
 	conn = CreateConnection(username, password, connectionString, context)
 
+	// write a statement
 	var stmt *C.dpiStmt
 	query := C.CString("SELECT 'Hellow from DB weeeeee!' FROM DUAL")
 	defer C.free(unsafe.Pointer(query))
@@ -43,6 +81,7 @@ func NewDBConnection() *Database {
 	// Prepare the statement
 	if C.dpiConn_prepareStmt(conn, 0, query, C.uint32_t(len(C.GoString(query))), nil, 0, &stmt) != C.DPI_SUCCESS {
 		fmt.Println("Failed to prepare statement")
+		return nil
 	}
 
 	//defer C.dpiStmt_release(stmt) // Release the statement when done
@@ -76,10 +115,10 @@ func NewDBConnection() *Database {
 	}
 
 	db := &Database{
-		Connection: conn}
+		Connection: conn,
+		Context:    context,
+	}
 
-	defer C.dpiConn_release(conn)       // Release the connection when done
-	defer C.dpiContext_destroy(context) // Release the context when done
 	return db
 }
 
@@ -100,6 +139,10 @@ func CreateConnection(username string, password string, connectionString string,
 	c_username := C.CString(username)
 	c_password := C.CString(password)
 	c_connectionString := C.CString(connectionString)
+
+	defer C.free(unsafe.Pointer(c_username))
+	defer C.free(unsafe.Pointer(c_password))
+	defer C.free(unsafe.Pointer(c_connectionString))
 
 	if C.dpiConn_create(context,
 		c_username,

@@ -1,22 +1,49 @@
-import os, shutil, zipfile, urllib.request
+import os
+import sys
+import shutil
+import zipfile
+import urllib.request
+import platform
 
-ODPI_VERSION = "5.5.1"
+ODPI_VERSION = "5.6.4"
 ODPI_DIR = f"odpi-{ODPI_VERSION}"
 ODPI_ZIP = "odpi.zip"
 ODPI_URL = f"https://github.com/oracle/odpi/archive/refs/tags/v{ODPI_VERSION}.zip"
 
-PWD = os.getcwd()
-ODPI_PATH = os.path.join(PWD, ODPI_DIR)
-ODPI_ZIP_PATH = os.path.join(PWD, ODPI_ZIP)
+# Get the script's directory (ai_agents folder)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Go up one level to project root
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+ODPI_PATH = os.path.join(PROJECT_ROOT, ODPI_DIR)
+ODPI_ZIP_PATH = os.path.join(PROJECT_ROOT, ODPI_ZIP)
 INCLUDE_SRC = os.path.join(ODPI_PATH, "include")
 SRC_SRC = os.path.join(ODPI_PATH, "src")
-DEST_INCLUDE = os.path.join(PWD, "internal", "lib", "odpi", "include")
-DEST_SRC = os.path.join(PWD, "internal", "lib", "odpi", "src")
+DEST_INCLUDE = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi", "include")
+DEST_SRC = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi", "src")
+
+# Detect platform
+SYSTEM = platform.system()
+MACHINE = platform.machine()
+IS_WINDOWS = SYSTEM == "Windows"
+IS_MACOS = SYSTEM == "Darwin"
+IS_APPLE_SILICON = IS_MACOS and MACHINE == "arm64"
 
 
 def log(msg):
     """Logs a message to the console."""
     print(msg)
+
+def detect_platform():
+    """Detects and displays platform information."""
+    log("Platform Information:")
+    log(f"      OS: {SYSTEM}")
+    log(f"      Architecture: {MACHINE}")
+    if IS_APPLE_SILICON:
+        log(f"      ✅ Detected Apple Silicon (M1/M2/M3/M4)")
+    elif IS_WINDOWS:
+        log(f"      ✅ Detected Windows")
+    log(f"      Project Root: {PROJECT_ROOT}")
 
 def download_odpi():
     """Downloads and extracts the ODPI-C library if it doesn't exist."""
@@ -36,7 +63,7 @@ def download_odpi():
     log("Extracting ODPI-C library...")
     try:
         with zipfile.ZipFile(ODPI_ZIP_PATH, 'r') as zip_ref:
-            zip_ref.extractall(PWD)
+            zip_ref.extractall(PROJECT_ROOT)
         log("       ✅ Extraction completed successfully")
     except Exception as e:
         log(f"❌ Extraction failed: {e}")
@@ -96,9 +123,16 @@ def cleanup():
     for path, typ in [(ODPI_ZIP_PATH, "file"), (ODPI_PATH, "directory")]:
         try:
             if os.path.exists(path):
-                log(f"      🪲 Removing {typ}: {path}")
+                log(f"      🧹 Removing {typ}: {path}")
                 if typ == "directory":
-                    shutil.rmtree(path)
+                    # Handle Windows readonly files
+                    if IS_WINDOWS:
+                        def handle_remove_readonly(func, path, exc):
+                            os.chmod(path, 0o777)
+                            func(path)
+                        shutil.rmtree(path, onerror=handle_remove_readonly)
+                    else:
+                        shutil.rmtree(path)
                 else:
                     os.remove(path)
                 removed += 1
@@ -118,13 +152,38 @@ def cleanup():
 
 def main():
     """Main function to orchestrate the ODPI-C setup process."""
+    log("=" * 60)
+    log("ODPI-C Setup Script")
+    log("=" * 60)
+    detect_platform()
+    log("")
+    
     download_odpi()
     verify_dirs()
     copy_headers()
     copy_sources()
     copy_c_from_include()
     cleanup()
-    log("ODPI-C setup completed successfully \U0001F973\U0001F389")
+    
+    log("")
+    log("=" * 60)
+    log("✅ ODPI-C setup completed successfully! 🎉")
+    log("=" * 60)
+    
+    if IS_APPLE_SILICON:
+        log("\n📝 Next steps for Apple Silicon:")
+        log("   1. Install Oracle Instant Client ARM64:")
+        log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
+        log("   2. Extract to: /opt/oracle/instantclient_23_7")
+        log("   3. Build ODPI-C:")
+        log("      cd internal/lib/odpi && make")
+    elif IS_WINDOWS:
+        log("\n📝 Next steps for Windows:")
+        log("   1. Install Oracle Instant Client:")
+        log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
+        log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")
+        log("   3. Build ODPI-C:")
+        log("      cd internal\\lib\\odpi && make")
 
 if __name__ == "__main__":
     main()

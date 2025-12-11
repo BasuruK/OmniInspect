@@ -32,7 +32,6 @@ var (
 func GetDBInstance() *Database {
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
-
 	if dbConn == nil {
 		dbConn = NewDatabaseConnection()
 	}
@@ -69,51 +68,10 @@ func NewDatabaseConnection() *Database {
 	// Set Context for the connection
 	context := SetContext()
 
-	// Connect to the database
-	var conn *C.dpiConn
-	conn = CreateConnection(username, password, connectionString, context)
+	// Connect to the database := implicitly declare *C.dpiConn type
+	conn := CreateConnection(username, password, connectionString, context)
 
-	// write a statement
-	var stmt *C.dpiStmt
-	query := C.CString("SELECT 'Hellow from DB weeeeee!' FROM DUAL")
-	defer C.free(unsafe.Pointer(query))
-
-	// Prepare the statement
-	if C.dpiConn_prepareStmt(conn, 0, query, C.uint32_t(len(C.GoString(query))), nil, 0, &stmt) != C.DPI_SUCCESS {
-		fmt.Println("Failed to prepare statement")
-		return nil
-	}
-
-	//defer C.dpiStmt_release(stmt) // Release the statement when done
-
-	// Execute the statement
-	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
-		fmt.Println("Failed to execute statement")
-	}
-
-	// Fetch the result
-	for {
-		var found C.int
-		var bufferRowIndex C.uint32_t
-
-		if C.dpiStmt_fetch(stmt, &found, &bufferRowIndex) != C.DPI_SUCCESS || found == 0 {
-			break
-		}
-		var data *C.dpiData
-		var nativeTypeNum C.dpiNativeTypeNum
-
-		if C.dpiStmt_getQueryValue(stmt, 1, &nativeTypeNum, &data) == C.DPI_SUCCESS {
-			ptr := C.getAsBytesPtr(data)
-			length := C.getAsBytesLength(data)
-			str := C.GoStringN(ptr, C.int(length))
-
-			fmt.Println("Result : ", str)
-
-		} else {
-			fmt.Println("Failed to get query value")
-		}
-	}
-
+	// Return the database connection instance
 	db := &Database{
 		Connection: conn,
 		Context:    context,
@@ -130,6 +88,63 @@ func SetContext() *C.dpiContext {
 		fmt.Printf("Failed to create DPI Context: %s", C.GoString(contextError.message))
 	}
 	return context
+}
+
+func PrepareStatement(db *Database, query string, stmt *C.dpiStmt) *C.dpiStmt {
+	cQuery := C.CString(query)
+	defer C.free(unsafe.Pointer(cQuery))
+	// Prepare the statement
+	if C.dpiConn_prepareStmt(db.Connection, 0, cQuery, C.uint32_t(len(query)), nil, 0, &stmt) != C.DPI_SUCCESS {
+		fmt.Println("Failed to prepare statement")
+	}
+	defer C.dpiStmt_release(stmt) // Release the statement when done
+
+	return stmt
+}
+
+func ExecuteStatement(query string) error {
+	var stmt *C.dpiStmt
+	db := GetDBInstance()
+	stmt = PrepareStatement(db, query, stmt)
+
+	// Execute the statement
+	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
+		fmt.Println("Failed to execute statement")
+	}
+	return nil
+}
+
+func FetchData() ([]string, error) {
+	db := GetDBInstance()
+	if db == nil || db.Connection == nil {
+		return nil, fmt.Errorf("database connection is not initialized")
+	}
+
+	var stmt *C.dpiStmt
+	var results []string
+	// Fetch the result
+	for {
+		var found C.int
+		var bufferRowIndex C.uint32_t
+
+		if C.dpiStmt_fetch(stmt, &found, &bufferRowIndex) != C.DPI_SUCCESS || found == 0 {
+			break
+		}
+		var data *C.dpiData
+		var nativeTypeNum C.dpiNativeTypeNum
+
+		if C.dpiStmt_getQueryValue(stmt, 1, &nativeTypeNum, &data) == C.DPI_SUCCESS {
+			ptr := C.getAsBytesPtr(data)
+			length := C.getAsBytesLength(data)
+			str := C.GoStringN(ptr, C.int(length))
+
+			results = append(results, str)
+			fmt.Println("Result : ", str)
+		} else {
+			return results, fmt.Errorf("failed to get query value")
+		}
+	}
+	return results, nil
 }
 
 func CreateConnection(username string, password string, connectionString string, context *C.dpiContext) *C.dpiConn {

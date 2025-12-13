@@ -65,7 +65,8 @@ func NewDatabaseConnection() *Database {
 	// Set connection parameters
 	username := dbConfigs.Username
 	password := dbConfigs.Password
-	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Database, fmt.Sprint(dbConfigs.Port), dbConfigs.Host)
+	// connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Database, fmt.Sprint(dbConfigs.Port), dbConfigs.Host)
+	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Host, fmt.Sprint(dbConfigs.Port), dbConfigs.Database)
 
 	// Set Context for the connection
 	context := SetContext()

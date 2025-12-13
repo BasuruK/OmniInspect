@@ -1,8 +1,10 @@
 package utils
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../lib/odpi/include
-#cgo LDFLAGS: -L${SRCDIR}/../lib/odpi/lib -lodpi
+#cgo darwin CFLAGS: -I${SRCDIR}/../lib/odpi/include
+#cgo darwin LDFLAGS: -L${SRCDIR}/../../lib -lodpi -Wl,-rpath,${SRCDIR}/../../lib -Wl,-rpath,/opt/oracle/instantclient_23_7
+#cgo windows CFLAGS: -I${SRCDIR}/../lib/odpi/include
+#cgo windows LDFLAGS: -L${SRCDIR}/../.. -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
 
 #include "dpi.h"
 #include "dpi_go_helpers.h"

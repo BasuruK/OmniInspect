@@ -16,9 +16,10 @@ INCLUDE = -Iinclude
 
 ifeq ($(DETECTED_OS),Windows)
     # Windows settings
-    INSTANT_CLIENT_DIR = C:/oracle_inst/instantclient_23_7/sdk/lib/msvc
+    INSTANT_CLIENT_DIR = C:/oracle_inst/instantclient_23_7
+    INSTANT_CLIENT_SDK = $(INSTANT_CLIENT_DIR)/sdk
     LIBS = -L$(INSTANT_CLIENT_DIR) -loci
-    CFLAGS = -O2 -Wall $(INCLUDE)
+    CFLAGS = -O2 -Wall $(INCLUDE) -I$(INSTANT_CLIENT_SDK)/include
     LDFLAGS = -shared
     TARGET = lib/odpi.dll
     COPY_TARGET = ../../../odpi.dll
@@ -26,12 +27,15 @@ ifeq ($(DETECTED_OS),Windows)
     RM = rmdir /s /q
 else ifeq ($(DETECTED_OS),MacOS)
     # MacOS settings
-    INSTANT_CLIENT_DIR = /opt/oracle/instantclient_23_7/sdk/lib
-    LDFLAGS = -dynamiclib -arch arm64
-    CFLAGS = -O2 -Wall $(INCLUDE)
+    INSTANT_CLIENT_DIR = /opt/oracle/instantclient_23_7
+    INSTANT_CLIENT_INCLUDE = $(INSTANT_CLIENT_DIR)/sdk/include
+    LDFLAGS = -dynamiclib -arch arm64 \
+        -install_name @rpath/libodpi.dylib \
+        -Wl,-rpath,$(INSTANT_CLIENT_DIR)
+    CFLAGS = -O2 -Wall -Iinclude -I$(INSTANT_CLIENT_INCLUDE) -arch arm64
     TARGET = lib/libodpi.dylib
     LIBS = -L$(INSTANT_CLIENT_DIR) -lclntsh
-    COPY_TARGET = ../../../libodpi.dylib
+    COPY_TARGET = ../../../lib/libodpi.dylib
     MKDIR = mkdir -p $1
     RM = rm -rf
 endif
@@ -71,7 +75,7 @@ ifeq ($(DETECTED_OS),Windows)
 else
 	rm -rf build
 	rm -f src/*.c
-    rm -f src/*.h
+	rm -f src/*.h
 endif
 
 # Phony targets

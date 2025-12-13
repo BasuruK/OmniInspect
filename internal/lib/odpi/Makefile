@@ -27,7 +27,7 @@ ifeq ($(DETECTED_OS),Windows)
     RM = rmdir /s /q
 else ifeq ($(DETECTED_OS),MacOS)
     # MacOS settings
-    INSTANT_CLIENT_DIR = /Users/basuruk/Dev/instantclient_23_7
+    INSTANT_CLIENT_DIR = /opt/oracle/instantclient_23_7
     INSTANT_CLIENT_INCLUDE = $(INSTANT_CLIENT_DIR)/sdk/include
     LDFLAGS = -dynamiclib -arch arm64 \
         -install_name @rpath/libodpi.dylib \

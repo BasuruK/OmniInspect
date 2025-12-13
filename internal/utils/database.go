@@ -2,7 +2,7 @@ package utils
 
 /*
 #cgo darwin CFLAGS: -I${SRCDIR}/../lib/odpi/include
-#cgo darwin LDFLAGS: -L${SRCDIR}/../../lib -lodpi -Wl,-rpath,${SRCDIR}/../../lib -Wl,-rpath,/Users/basuruk/Dev/instantclient_23_7
+#cgo darwin LDFLAGS: -L${SRCDIR}/../../lib -lodpi -Wl,-rpath,${SRCDIR}/../../lib -Wl,-rpath,/opt/oracle/instantclient_23_7
 #cgo windows CFLAGS: -I${SRCDIR}/../lib/odpi/include
 #cgo windows LDFLAGS: -L${SRCDIR}/../.. -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
 

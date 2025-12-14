@@ -43,7 +43,7 @@ func (a *App) StartServer() {
 	fmt.Println("Server started")
 
 	// Connect to the database
-	utils.ExecuteStatement("SELECT 'HELLO WORLD' FROM DUAL")
+	utils.Fetch("SELECT 'HELLO WORLD' FROM DUAL")
 	//utils.FetchData()
 
 	fmt.Println("Press Enter to Continue...")

@@ -31,13 +31,16 @@ var (
 )
 
 // GetDBInstance returns the singleton database connection instance
-func GetDBInstance() *Database {
+func GetDBInstance() (*Database, error) {
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
 	if dbConn == nil {
 		dbConn = NewDatabaseConnection()
 	}
-	return dbConn
+	if dbConn == nil || dbConn.Connection == nil {
+		return nil, fmt.Errorf("Failed to establish database connection")
+	}
+	return dbConn, nil
 }
 
 // CleanupDBConnection releases the database connection and context
@@ -92,38 +95,77 @@ func SetContext() *C.dpiContext {
 	return context
 }
 
-func PrepareStatement(db *Database, query string, stmt *C.dpiStmt) *C.dpiStmt {
+func PrepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
+
 	// Prepare the statement
 	if C.dpiConn_prepareStmt(db.Connection, 0, cQuery, C.uint32_t(len(query)), nil, 0, &stmt) != C.DPI_SUCCESS {
-		fmt.Println("Failed to prepare statement")
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(db.Context, &errInfo)
+		return nil, fmt.Errorf("failed to prepare statement: %s", C.GoString(errInfo.message))
 	}
-	defer C.dpiStmt_release(stmt) // Release the statement when done
-
-	return stmt
+	return stmt, nil
 }
 
 func ExecuteStatement(query string) error {
 	var stmt *C.dpiStmt
-	db := GetDBInstance()
-	stmt = PrepareStatement(db, query, stmt)
+
+	// Get the database instance
+	db, err := GetDBInstance()
+	if err != nil {
+		return err
+	}
+
+	stmt, err = PrepareStatement(db, query, stmt)
+	if err != nil {
+		return err
+	}
+	defer C.dpiStmt_release(stmt)
 
 	// Execute the statement
 	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
-		fmt.Println("Failed to execute statement")
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(db.Context, &errInfo)
+		return fmt.Errorf("failed to execute statement: %s", C.GoString(errInfo.message))
 	}
+
 	return nil
 }
 
-func FetchData() ([]string, error) {
-	db := GetDBInstance()
-	if db == nil || db.Connection == nil {
-		return nil, fmt.Errorf("database connection is not initialized")
+// ExecuteAndReturnStatement executes the given SQL statement and returns the statement object
+func ExecuteAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
+	db, err := GetDBInstance()
+	if err != nil {
+		return nil, err
 	}
 
+	stmt, err = PrepareStatement(db, query, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute the statement
+	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(db.Context, &errInfo)
+		return nil, fmt.Errorf("failed to execute statement: %s", C.GoString(errInfo.message))
+	}
+
+	return stmt, nil
+}
+
+func Fetch(query string) ([]string, error) {
 	var stmt *C.dpiStmt
+	var err error
 	var results []string
+
+	stmt, err = ExecuteAndReturnStatement(query, stmt)
+	if err != nil {
+		return nil, err
+	}
+	defer C.dpiStmt_release(stmt) // Release the statement after execution
+
 	// Fetch the result
 	for {
 		var found C.int

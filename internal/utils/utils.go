@@ -6,3 +6,7 @@ func PrintTraceMessage() {
 	// Connect to the database
 	database.Fetch("SELECT 'HELLO WORLD' FROM DUAL")
 }
+
+func CleanupResources() {
+	database.CleanupDBConnection()
+}

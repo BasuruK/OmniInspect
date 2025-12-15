@@ -16,7 +16,7 @@ INCLUDE = -Iinclude
 
 ifeq ($(DETECTED_OS),Windows)
     # Windows settings
-    INSTANT_CLIENT_DIR = C:/oracle_inst/instantclient_23_7
+    INSTANT_CLIENT_DIR ?= C:/oracle_inst/instantclient_23_7
     INSTANT_CLIENT_SDK = $(INSTANT_CLIENT_DIR)/sdk
     LIBS = -L$(INSTANT_CLIENT_DIR) -loci
     CFLAGS = -O2 -Wall $(INCLUDE) -I$(INSTANT_CLIENT_SDK)/include
@@ -27,7 +27,7 @@ ifeq ($(DETECTED_OS),Windows)
     RM = rmdir /s /q
 else ifeq ($(DETECTED_OS),MacOS)
     # MacOS settings
-    INSTANT_CLIENT_DIR = /opt/oracle/instantclient_23_7
+    INSTANT_CLIENT_DIR ?= /opt/oracle/instantclient_23_7
     INSTANT_CLIENT_INCLUDE = $(INSTANT_CLIENT_DIR)/sdk/include
     LDFLAGS = -dynamiclib -arch arm64 \
         -install_name @rpath/libodpi.dylib \

@@ -45,7 +45,7 @@ func getDBInstance() (*Database, error) {
 }
 
 // CleanupDBConnection releases the database connection and context
-func cleanupDBConnection() {
+func CleanupDBConnection() {
 
 	dbMutex.Lock()
 	defer dbMutex.Unlock() // Ensure thread-safe cleanup

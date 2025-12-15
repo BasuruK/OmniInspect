@@ -16,6 +16,6 @@
     },
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.pythonProjects": [],
-    "makefile.makefilePath": "/Users/basuruk/Dev/OmniInspect/internal/lib/odpi",
+    "makefile.makefilePath": "${workspaceFolder}/internal/lib/odpi",
     "makefile.buildLog": ""
 }

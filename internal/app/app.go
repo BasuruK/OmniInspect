@@ -38,7 +38,7 @@ func (a *App) GetName() string {
 	return a.Name
 }
 
-func (a *App) StartServer() {
+func (a *App) StartServer(done chan struct{}) {
 	// Start the server
 	fmt.Println("Server started")
 
@@ -47,4 +47,6 @@ func (a *App) StartServer() {
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)
 	reader.ReadString('\n')
+
+	close(done)
 }

@@ -33,10 +33,14 @@ var (
 
 // GetDBInstance returns the singleton database connection instance
 func getDBInstance() (*Database, error) {
+	var err error
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
 	if dbConn == nil {
-		dbConn = newDatabaseConnection()
+		dbConn, err = newDatabaseConnection()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if dbConn == nil || dbConn.Connection == nil {
 		return nil, fmt.Errorf("failed to establish database connection")
@@ -46,7 +50,6 @@ func getDBInstance() (*Database, error) {
 
 // CleanupDBConnection releases the database connection and context
 func CleanupDBConnection() {
-
 	dbMutex.Lock()
 	defer dbMutex.Unlock() // Ensure thread-safe cleanup
 
@@ -62,7 +65,7 @@ func CleanupDBConnection() {
 	dbConn = nil
 }
 
-func newDatabaseConnection() *Database {
+func newDatabaseConnection() (*Database, error) {
 	// Load the configurations
 	dbConfigs := config.LoadConfigurations().DatabaseSettings
 
@@ -72,28 +75,34 @@ func newDatabaseConnection() *Database {
 	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Host, fmt.Sprint(dbConfigs.Port), dbConfigs.Database)
 
 	// Set Context for the connection
-	context := setContext()
-
-	// Connect to the database := implicitly declare *C.dpiConn type
-	conn := createConnection(username, password, connectionString, context)
-
-	// Return the database connection instance
-	db := &Database{
-		Connection: conn,
-		Context:    context,
+	context, err := setContext()
+	if err != nil {
+		return nil, err
 	}
 
-	return db
+	// Connect to the database := implicitly declare *C.dpiConn type
+	conn, err := createConnection(username, password, connectionString, context)
+	if err != nil {
+		C.dpiContext_destroy(context)
+		return nil, err
+	}
+
+	// Return the database connection instance
+	return &Database{
+		Connection: conn,
+		Context:    context,
+	}, nil
 }
 
-func setContext() *C.dpiContext {
+func setContext() (*C.dpiContext, error) {
 	var context *C.dpiContext
 	var contextError C.dpiErrorInfo
 
 	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &context, &contextError) != C.DPI_SUCCESS {
-		fmt.Printf("Failed to create DPI Context: %s", C.GoString(contextError.message))
+		C.dpiContext_getError(context, &contextError)
+		return nil, fmt.Errorf("failed to create DPI Context: %s", C.GoString(contextError.message))
 	}
-	return context
+	return context, nil
 }
 
 func prepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
@@ -184,7 +193,6 @@ func Fetch(query string) ([]string, error) {
 			str := C.GoStringN(ptr, C.int(length))
 
 			results = append(results, str)
-			fmt.Println("Result : ", str)
 		} else {
 			return results, fmt.Errorf("failed to get query value")
 		}
@@ -192,7 +200,7 @@ func Fetch(query string) ([]string, error) {
 	return results, nil
 }
 
-func createConnection(username string, password string, connectionString string, context *C.dpiContext) *C.dpiConn {
+func createConnection(username string, password string, connectionString string, context *C.dpiContext) (*C.dpiConn, error) {
 	var conn *C.dpiConn
 	var errInfo C.dpiErrorInfo
 
@@ -206,19 +214,18 @@ func createConnection(username string, password string, connectionString string,
 
 	if C.dpiConn_create(context,
 		c_username,
-		C.uint32_t(len(C.GoString(c_username))),
+		C.uint32_t(len(username)),
 		c_password,
-		C.uint32_t(len(C.GoString(c_password))),
+		C.uint32_t(len(password)),
 		c_connectionString,
-		C.uint32_t(len(C.GoString(c_connectionString))),
+		C.uint32_t(len(connectionString)),
 		nil, // dpiCommonParams
 		nil, // dpiConnCreateParams
 		&conn) == C.DPI_SUCCESS {
 		fmt.Println("Connected to the database")
 	} else {
 		C.dpiContext_getError(context, &errInfo)
-		fmt.Printf("Failed to create database connection Connection: %s", C.GoString(errInfo.message))
-		return nil
+		return nil, fmt.Errorf("failed to create database connection: %s", C.GoString(errInfo.message))
 	}
-	return conn
+	return conn, nil
 }

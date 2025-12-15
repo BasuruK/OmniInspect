@@ -21,8 +21,12 @@ jobs:
       with:
         go-version: '1.24'
 
-    - name: Build
-      run: go build -v ./...
+    - name: Build (without CGO)
+      run: go build -v -tags=no_oracle ./...
+      env:
+        CGO_ENABLED: 0
 
-    - name: Test
-      run: go test -v ./...
+    - name: Test (without CGO)
+      run: go test -v -tags=no_oracle ./...
+      env:
+        CGO_ENABLED: 0

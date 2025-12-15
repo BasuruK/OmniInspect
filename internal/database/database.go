@@ -1,4 +1,4 @@
-package utils
+package database
 
 /*
 #cgo darwin CFLAGS: -I${SRCDIR}/../lib/odpi/include
@@ -14,6 +14,7 @@ package utils
 */
 import "C"
 import (
+	"OmniView/internal/config"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -31,20 +32,20 @@ var (
 )
 
 // GetDBInstance returns the singleton database connection instance
-func GetDBInstance() (*Database, error) {
+func getDBInstance() (*Database, error) {
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
 	if dbConn == nil {
-		dbConn = NewDatabaseConnection()
+		dbConn = newDatabaseConnection()
 	}
 	if dbConn == nil || dbConn.Connection == nil {
-		return nil, fmt.Errorf("Failed to establish database connection")
+		return nil, fmt.Errorf("failed to establish database connection")
 	}
 	return dbConn, nil
 }
 
 // CleanupDBConnection releases the database connection and context
-func CleanupDBConnection() {
+func cleanupDBConnection() {
 
 	dbMutex.Lock()
 	defer dbMutex.Unlock() // Ensure thread-safe cleanup
@@ -61,9 +62,9 @@ func CleanupDBConnection() {
 	dbConn = nil
 }
 
-func NewDatabaseConnection() *Database {
+func newDatabaseConnection() *Database {
 	// Load the configurations
-	dbConfigs := LoadConfigurations().DatabaseSettings
+	dbConfigs := config.LoadConfigurations().DatabaseSettings
 
 	// Set connection parameters
 	username := dbConfigs.Username
@@ -71,10 +72,10 @@ func NewDatabaseConnection() *Database {
 	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Host, fmt.Sprint(dbConfigs.Port), dbConfigs.Database)
 
 	// Set Context for the connection
-	context := SetContext()
+	context := setContext()
 
 	// Connect to the database := implicitly declare *C.dpiConn type
-	conn := CreateConnection(username, password, connectionString, context)
+	conn := createConnection(username, password, connectionString, context)
 
 	// Return the database connection instance
 	db := &Database{
@@ -85,7 +86,7 @@ func NewDatabaseConnection() *Database {
 	return db
 }
 
-func SetContext() *C.dpiContext {
+func setContext() *C.dpiContext {
 	var context *C.dpiContext
 	var contextError C.dpiErrorInfo
 
@@ -95,7 +96,7 @@ func SetContext() *C.dpiContext {
 	return context
 }
 
-func PrepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
+func prepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
 
@@ -112,12 +113,12 @@ func ExecuteStatement(query string) error {
 	var stmt *C.dpiStmt
 
 	// Get the database instance
-	db, err := GetDBInstance()
+	db, err := getDBInstance()
 	if err != nil {
 		return err
 	}
 
-	stmt, err = PrepareStatement(db, query, stmt)
+	stmt, err = prepareStatement(db, query, stmt)
 	if err != nil {
 		return err
 	}
@@ -134,13 +135,13 @@ func ExecuteStatement(query string) error {
 }
 
 // ExecuteAndReturnStatement executes the given SQL statement and returns the statement object
-func ExecuteAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
-	db, err := GetDBInstance()
+func executeAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
+	db, err := getDBInstance()
 	if err != nil {
 		return nil, err
 	}
 
-	stmt, err = PrepareStatement(db, query, stmt)
+	stmt, err = prepareStatement(db, query, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +161,7 @@ func Fetch(query string) ([]string, error) {
 	var err error
 	var results []string
 
-	stmt, err = ExecuteAndReturnStatement(query, stmt)
+	stmt, err = executeAndReturnStatement(query, stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func Fetch(query string) ([]string, error) {
 	return results, nil
 }
 
-func CreateConnection(username string, password string, connectionString string, context *C.dpiContext) *C.dpiConn {
+func createConnection(username string, password string, connectionString string, context *C.dpiContext) *C.dpiConn {
 	var conn *C.dpiConn
 	var errInfo C.dpiErrorInfo
 

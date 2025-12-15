@@ -42,9 +42,7 @@ func (a *App) StartServer() {
 	// Start the server
 	fmt.Println("Server started")
 
-	// Connect to the database
-	utils.Fetch("SELECT 'HELLO WORLD' FROM DUAL")
-	//utils.FetchData()
+	utils.PrintTraceMessage()
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)

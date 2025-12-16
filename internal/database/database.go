@@ -202,7 +202,10 @@ func Fetch(query string) ([]string, error) {
 		fetch := C.dpiStmt_fetch(stmt, &found, &bufferRowIndex)
 		if fetch != C.DPI_SUCCESS {
 			var errInfo C.dpiErrorInfo
-			db, _ := getDBInstance()
+			db, err := getDBInstance()
+			if err != nil {
+				return results, fmt.Errorf("failed to fetch data: %s", err)
+			}
 			C.dpiContext_getError(db.Context, &errInfo)
 			return results, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
 		}

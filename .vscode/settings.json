@@ -15,5 +15,7 @@
         "CGO_LDFLAGS": "-L${SRCDIR}/../lib/odpi/lib -lodpi"
     },
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "makefile.makefilePath": "${workspaceFolder}/internal/lib/odpi",
+    "makefile.buildLog": ""
 }

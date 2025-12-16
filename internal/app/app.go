@@ -38,15 +38,15 @@ func (a *App) GetName() string {
 	return a.Name
 }
 
-func (a *App) StartServer() {
+func (a *App) StartServer(done chan struct{}) {
 	// Start the server
 	fmt.Println("Server started")
 
-	// Connect to the database
-	dbConn := utils.NewDatabaseConnection()
-	fmt.Println(dbConn)
+	utils.PrintTraceMessage()
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)
 	reader.ReadString('\n')
+
+	close(done)
 }

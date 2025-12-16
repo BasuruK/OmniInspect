@@ -12,7 +12,7 @@ import (
 func main() {
 	// Listen to system signals for graceful shutdown (omitted for brevity)
 	signalChan := make(chan os.Signal, 1)
-	done := make(chan struct{}, 1)
+	done := make(chan struct{})
 
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 

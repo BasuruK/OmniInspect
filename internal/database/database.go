@@ -157,15 +157,16 @@ func ExecuteStatement(query string) error {
 	return nil
 }
 
-// executeAndReturnStatement executes the given SQL statement and returns
-// the statement object for further processing. The caller is responsible for releasing the statement.
-func executeAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
+// executeAndReturnStatement executes the given SQL query and returns
+// the statement object for further processing.
+// IMPORTANT: The caller is responsible for releasing the statement.
+func executeAndReturnStatement(query string) (*C.dpiStmt, error) {
 	db, err := getDBInstance()
 	if err != nil {
 		return nil, err
 	}
 
-	stmt, err = prepareStatement(db, query)
+	stmt, err := prepareStatement(db, query)
 	if err != nil {
 		return nil, err
 	}
@@ -184,11 +185,10 @@ func executeAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error
 // It fetches only the first column from each row. The statement is automatically
 // released after fetching completes.
 func Fetch(query string) ([]string, error) {
-	var stmt *C.dpiStmt
 	var err error
 	var results []string
 
-	stmt, err = executeAndReturnStatement(query, stmt)
+	stmt, err := executeAndReturnStatement(query)
 	if err != nil {
 		return nil, err
 	}

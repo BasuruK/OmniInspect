@@ -28,6 +28,4 @@ func main() {
 
 	// Cleanup resources before exiting
 	utils.CleanupResources()
-
-	os.Exit(0)
 }

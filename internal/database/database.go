@@ -1,3 +1,5 @@
+//go:build !no_oracle
+
 package database
 
 /*
@@ -20,6 +22,7 @@ import (
 	"unsafe"
 )
 
+// Database represents an Oracle database connection using ODPI-C. It holds the connection handle and context for database operations.
 type Database struct {
 	Connection *C.dpiConn
 	Context    *C.dpiContext
@@ -28,19 +31,19 @@ type Database struct {
 // Global variable to hold the database connection
 var (
 	dbConn  *Database
+	dbOnce  sync.Once
 	dbMutex sync.Mutex
+	dbErr   error
 )
 
-// GetDBInstance returns the singleton database connection instance
+// getDBInstance returns the singleton database connection instance.
+// It creates a new connection if one doesn't exist. This function is thread-safe and ensures only one database connection is maintained.
 func getDBInstance() (*Database, error) {
-	var err error
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-	if dbConn == nil {
-		dbConn, err = newDatabaseConnection()
-		if err != nil {
-			return nil, err
-		}
+	dbOnce.Do(func() {
+		dbConn, dbErr = newDatabaseConnection()
+	})
+	if dbErr != nil {
+		return nil, dbErr
 	}
 	if dbConn == nil || dbConn.Connection == nil {
 		return nil, fmt.Errorf("failed to establish database connection")
@@ -48,7 +51,8 @@ func getDBInstance() (*Database, error) {
 	return dbConn, nil
 }
 
-// CleanupDBConnection releases the database connection and context
+// CleanupDBConnection releases the database connection and context resources.
+// It should be called when the application shuts down to ensure proper cleanup of Oracle resources. This function is thread-safe.
 func CleanupDBConnection() {
 	dbMutex.Lock()
 	defer dbMutex.Unlock() // Ensure thread-safe cleanup
@@ -63,8 +67,12 @@ func CleanupDBConnection() {
 	}
 
 	dbConn = nil
+	dbErr = nil
+	dbOnce = sync.Once{} // Reset sync.Once for potential future use
 }
 
+// newDatabaseConnection creates a new Oracle database connection using
+// configuration settings. It initializes the DPI context and establishes a connection to the Oracle database.
 func newDatabaseConnection() (*Database, error) {
 	// Load the configurations
 	dbConfigs := config.LoadConfigurations().DatabaseSettings
@@ -94,18 +102,22 @@ func newDatabaseConnection() (*Database, error) {
 	}, nil
 }
 
+// setContext creates and initializes a new DPI context with the current
+// ODPI library version. The context must be destroyed when no longer needed.
 func setContext() (*C.dpiContext, error) {
 	var context *C.dpiContext
 	var contextError C.dpiErrorInfo
 
 	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &context, &contextError) != C.DPI_SUCCESS {
-		C.dpiContext_getError(context, &contextError)
 		return nil, fmt.Errorf("failed to create DPI Context: %s", C.GoString(contextError.message))
 	}
 	return context, nil
 }
 
-func prepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
+// prepareStatement prepares an SQL statement for execution.
+// It returns a statement handle that must be released after use.
+func prepareStatement(db *Database, query string) (*C.dpiStmt, error) {
+	var stmt *C.dpiStmt
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
 
@@ -118,6 +130,8 @@ func prepareStatement(db *Database, query string, stmt *C.dpiStmt) (*C.dpiStmt, 
 	return stmt, nil
 }
 
+// ExecuteStatement executes the given SQL statement without returning results.
+// It's suitable for INSERT, UPDATE, DELETE, or DDL statements.
 func ExecuteStatement(query string) error {
 	var stmt *C.dpiStmt
 
@@ -127,7 +141,7 @@ func ExecuteStatement(query string) error {
 		return err
 	}
 
-	stmt, err = prepareStatement(db, query, stmt)
+	stmt, err = prepareStatement(db, query)
 	if err != nil {
 		return err
 	}
@@ -143,14 +157,15 @@ func ExecuteStatement(query string) error {
 	return nil
 }
 
-// ExecuteAndReturnStatement executes the given SQL statement and returns the statement object
+// executeAndReturnStatement executes the given SQL statement and returns
+// the statement object for further processing. The caller is responsible for releasing the statement.
 func executeAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error) {
 	db, err := getDBInstance()
 	if err != nil {
 		return nil, err
 	}
 
-	stmt, err = prepareStatement(db, query, stmt)
+	stmt, err = prepareStatement(db, query)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +180,9 @@ func executeAndReturnStatement(query string, stmt *C.dpiStmt) (*C.dpiStmt, error
 	return stmt, nil
 }
 
+// Fetch executes a SELECT query and returns all results as a slice of strings.
+// It fetches only the first column from each row. The statement is automatically
+// released after fetching completes.
 func Fetch(query string) ([]string, error) {
 	var stmt *C.dpiStmt
 	var err error
@@ -181,8 +199,15 @@ func Fetch(query string) ([]string, error) {
 		var found C.int
 		var bufferRowIndex C.uint32_t
 
-		if C.dpiStmt_fetch(stmt, &found, &bufferRowIndex) != C.DPI_SUCCESS || found == 0 {
-			break
+		fetch := C.dpiStmt_fetch(stmt, &found, &bufferRowIndex)
+		if fetch != C.DPI_SUCCESS {
+			var errInfo C.dpiErrorInfo
+			db, _ := getDBInstance()
+			C.dpiContext_getError(db.Context, &errInfo)
+			return results, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
+		}
+		if found == 0 {
+			break // No more rows
 		}
 		var data *C.dpiData
 		var nativeTypeNum C.dpiNativeTypeNum
@@ -200,6 +225,8 @@ func Fetch(query string) ([]string, error) {
 	return results, nil
 }
 
+// createConnection establishes a connection to an Oracle database using the provided credentials and connection string. It returns a connection
+// handle that must be released when no longer needed.
 func createConnection(username string, password string, connectionString string, context *C.dpiContext) (*C.dpiConn, error) {
 	var conn *C.dpiConn
 	var errInfo C.dpiErrorInfo

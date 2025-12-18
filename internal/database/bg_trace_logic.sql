@@ -1,1 +1,0 @@
--- Use this sql file to define background trace logic utilities

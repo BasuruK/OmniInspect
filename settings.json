@@ -3,7 +3,7 @@
         "Database": "FREEPDB1",
         "Host": "127.0.0.1",
         "Port": 1521,
-        "Username": "SYSTEM",
+        "Username": "IFSAPP",
         "Password": "ifsapp"
     },
     "ClientSettings": {

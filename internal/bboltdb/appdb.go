@@ -8,11 +8,27 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-var db *bolt.DB
+type DatabaseConfig struct {
+	ID       string `json:"id"`
+	Database string `json:"database"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Default  bool   `json:"default"`
+}
 
-// Buckets
+type ClientConfig struct {
+	EnableUtf8 bool `json:"enable_utf8"`
+}
+
 var (
+	// BoltDB instance
+	db *bolt.DB
+	// Buckets
 	DatabaseConfigBucket = []byte("DatabaseConfigurations")
+	// Bucket Defaults
+	DefaultDatabaseConfigKey = "db:default"
 )
 
 // Initialize opens the BoltDB database file and creates necessary buckets.
@@ -40,6 +56,8 @@ func Close() error {
 }
 
 // Core CRUD operations
+// Core operations for interacting with BoltDB
+
 // Insert adds a key-value pair to the specified bucket.
 func Insert(bucket []byte, key, value string) error {
 	return db.Update(func(tx *bolt.Tx) error {
@@ -114,13 +132,49 @@ func InsertJSON(bucket []byte, key string, obj interface{}) error {
 }
 
 // GetJSON retrieves a JSON string from the specified bucket and unmarshals it into the provided object.
-func GetJSON(bucket []byte, key string, obj interface{}) error {
+func GetJSON(bucket []byte, key string, jsonOut interface{}) error {
 	return db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
 		v := b.Get([]byte(key))
 		if v == nil {
 			return fmt.Errorf("key not found")
 		}
-		return json.Unmarshal(v, obj)
+		return json.Unmarshal(v, jsonOut)
 	})
+}
+
+// Bucket specific CRUD operations
+// DatabaseConfig operations
+
+// InsertDatabaseConfig adds a database configuration to the DatabaseConfig bucket.
+// If the database is marked as default, it updates the default entry accordingly under db:default: key with the config ID.
+func InsertDatabaseJSONConfig(config DatabaseConfig) error {
+	key := fmt.Sprintf("db:config:%s", config.ID)
+	if err := InsertJSON(DatabaseConfigBucket, key, config); err != nil {
+		return err
+	}
+	if config.Default {
+		// Also set as default
+		if err := Insert(DatabaseConfigBucket, DefaultDatabaseConfigKey, config.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetDatabaseConfig retrieves the default database configuration from the DatabaseConfig bucket.
+func GetDefaultDatabaseJSONConfig() (DatabaseConfig, error) {
+	var config DatabaseConfig
+	defaultID, err := Get(DatabaseConfigBucket, DefaultDatabaseConfigKey)
+	if err != nil {
+		return DatabaseConfig{}, fmt.Errorf("failed to get default database config ID: %w", err)
+	}
+
+	key := fmt.Sprintf("db:config:%s", defaultID)
+	if err := GetJSON(DatabaseConfigBucket, key, &config); err != nil {
+		return DatabaseConfig{}, err
+	}
+
+	return config, nil
 }

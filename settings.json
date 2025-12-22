@@ -4,7 +4,8 @@
         "Host": "127.0.0.1",
         "Port": 1521,
         "Username": "IFSAPP",
-        "Password": "ifsapp"
+        "Password": "ifsapp",
+        "Default" : true
     },
     "ClientSettings": {
         "EnableUtf8": false

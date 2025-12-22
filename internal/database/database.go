@@ -18,6 +18,7 @@ import "C"
 import (
 	"OmniView/internal/config"
 	"fmt"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -75,7 +76,7 @@ func CleanupDBConnection() {
 // configuration settings. It initializes the DPI context and establishes a connection to the Oracle database.
 func newDatabaseConnection() (*Database, error) {
 	// Load the configurations
-	dbConfigs := config.LoadConfigurations().DatabaseSettings
+	dbConfigs := config.GetDefaultDatabaseConfigurations().DatabaseSettings
 
 	// Set connection parameters
 	username := dbConfigs.Username
@@ -258,4 +259,55 @@ func createConnection(username string, password string, connectionString string,
 		return nil, fmt.Errorf("failed to create database connection: %s", C.GoString(errInfo.message))
 	}
 	return conn, nil
+}
+
+// PackageExists checks if a specific package exists and is valid in the connected Oracle database.
+func PackageExists(packageName string) (bool, error) {
+	query := fmt.Sprintf(`SELECT COUNT(*) 
+						  FROM user_objects 
+						  WHERE object_type = 'PACKAGE' 
+						  AND object_name = UPPER('%s') 
+						  AND status = 'VALID'`, strings.ToUpper(packageName))
+	results, err := Fetch(query)
+	if err != nil {
+		return false, err
+	}
+	if len(results) > 0 {
+		return true, nil
+	}
+	return false, nil
+}
+
+// DeployPackage deploys the given SQL package to the connected Oracle database.
+// Package structure should contain Package Specification and Package Body as a single string in the correct order.
+func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
+	// Execution Order: Sequence -> Package Specification -> Package Body
+	// Step 1: Deploy Sequences
+	if sequences != nil {
+		for _, seq := range sequences {
+			if err := ExecuteStatement(seq); err != nil {
+				return fmt.Errorf("failed to deploy sequence: %s", err)
+			}
+		}
+	}
+
+	// Step 2: Deploy Package Specifications
+	if packageSpec != nil {
+		for _, spec := range packageSpec {
+			if err := ExecuteStatement(spec); err != nil {
+				return fmt.Errorf("failed to deploy package specification: %s", err)
+			}
+		}
+	}
+
+	// Step 3: Deploy Package Body
+	if packageBody != nil {
+		for _, body := range packageBody {
+			if err := ExecuteStatement(body); err != nil {
+				return fmt.Errorf("failed to deploy package body: %s", err)
+			}
+		}
+	}
+
+	return nil
 }

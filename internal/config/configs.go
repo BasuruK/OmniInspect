@@ -1,6 +1,7 @@
 package config
 
 import (
+	"OmniView/internal/bboltdb"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ type ClientConfigurations struct {
 		Port     int
 		Username string
 		Password string
+		Default  bool
 	}
 	ClientSettings struct {
 		EnableUtf8 bool
@@ -45,6 +47,7 @@ func (c *ClientConfigurations) GetDatabaseSettingsStruct() struct {
 	Port     int
 	Username string
 	Password string
+	Default  bool
 } {
 	return c.DatabaseSettings
 }
@@ -56,13 +59,13 @@ func (c *ClientConfigurations) GetClientSettingsStruct() struct {
 	return c.ClientSettings
 }
 
-func LoadClientConfigurations() ClientConfigurations {
+func loadClientConfigurations() error {
 	var configStruct ClientConfigurations
 
 	// Open the JSON file
 	file, err := os.Open("settings.json")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to open settings.json: %w", err)
 	}
 	defer file.Close()
 
@@ -70,11 +73,54 @@ func LoadClientConfigurations() ClientConfigurations {
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&configStruct)
 	if err != nil {
+		return fmt.Errorf("failed to open settings.json: %w", err)
+	}
+
+	saveClientConfigurations(configStruct) // Save to BoltDB
+
+	return nil
+}
+
+func GetDefaultDatabaseConfigurations() ClientConfigurations {
+	// Retrieve the default database configuration from BoltDB
+	// TODO: Remove loading from file when the full migration to BoltDB is done
+	var configStruct ClientConfigurations
+	loadClientConfigurations()
+	databaseConfig, err := bboltdb.GetDefaultDatabaseJSONConfig()
+	if err != nil {
 		panic(err)
 	}
-	return ClientConfigurations{
-		DatabaseSettings: configStruct.DatabaseSettings,
-		ClientSettings:   configStruct.ClientSettings}
+
+	configStruct.DatabaseSettings.Database = databaseConfig.Database
+	configStruct.DatabaseSettings.Host = databaseConfig.Host
+	configStruct.DatabaseSettings.Port = databaseConfig.Port
+	configStruct.DatabaseSettings.Username = databaseConfig.Username
+	configStruct.DatabaseSettings.Password = databaseConfig.Password
+	configStruct.DatabaseSettings.Default = databaseConfig.Default
+
+	return configStruct
+}
+
+func saveClientConfigurations(config ClientConfigurations) error {
+	dbConfig := bboltdb.DatabaseConfig{
+		ID:       config.DatabaseSettings.Database + "_" + config.DatabaseSettings.Username,
+		Database: config.DatabaseSettings.Database,
+		Host:     config.DatabaseSettings.Host,
+		Port:     config.DatabaseSettings.Port,
+		Username: config.DatabaseSettings.Username,
+		Password: config.DatabaseSettings.Password,
+		Default:  config.DatabaseSettings.Default,
+	}
+
+	// clientConfig := ClientConfig{
+	// 	EnableUtf8: config.ClientSettings.EnableUtf8,
+	// }
+
+	// Insert Database Config
+	if err := bboltdb.InsertDatabaseJSONConfig(dbConfig); err != nil {
+		return fmt.Errorf("failed to save Database Config %w", err)
+	}
+	return nil
 }
 
 func saveSystemConfigurations(config SystemConfigurations) error {
@@ -184,8 +230,20 @@ func SystemsSettingsCheck() bool {
 		// Check if it's the first run
 		if systemSettings.RunCycleStruct.IsFirstRun {
 			fmt.Println("Systems Initializing...")
-			// Perform any first-run specific setup here
+			// Initialize a fresh setup
+			systemSettings.configureDependancies()
 		}
 	}
 	return true
+}
+
+func (s *SystemConfigurations) configureDependancies() error {
+	// Check for required database permissions
+	// Deploy permission checks package and run the checks
+
+	// if ok, err := permissions.HandleDatabasePermissions(); !ok || err != nil {
+	// 	return err
+	// }
+
+	return nil
 }

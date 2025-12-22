@@ -101,6 +101,17 @@ func GetDefaultDatabaseConfigurations() ClientConfigurations {
 	return configStruct
 }
 
+func GetClientConfigurations() ClientConfigurations {
+	var configStruct ClientConfigurations
+	// Retrieve the default client configuration from BoltDB
+	clientConfig, err := bboltdb.GetClientJSONConfig()
+	if err != nil {
+		panic(err)
+	}
+	configStruct.ClientSettings.EnableUtf8 = clientConfig.EnableUtf8
+	return configStruct
+}
+
 func saveClientConfigurations(config ClientConfigurations) error {
 	dbConfig := bboltdb.DatabaseConfig{
 		ID:       config.DatabaseSettings.Database + "_" + config.DatabaseSettings.Username,
@@ -112,13 +123,17 @@ func saveClientConfigurations(config ClientConfigurations) error {
 		Default:  config.DatabaseSettings.Default,
 	}
 
-	// clientConfig := ClientConfig{
-	// 	EnableUtf8: config.ClientSettings.EnableUtf8,
-	// }
+	clientConfig := bboltdb.ClientConfig{
+		EnableUtf8: config.ClientSettings.EnableUtf8,
+	}
 
 	// Insert Database Config
 	if err := bboltdb.InsertDatabaseJSONConfig(dbConfig); err != nil {
 		return fmt.Errorf("failed to save Database Config %w", err)
+	}
+	// Insert Client Config
+	if err := bboltdb.InsertClientJSONConfig(clientConfig); err != nil {
+		return fmt.Errorf("failed to save Client Config %w", err)
 	}
 	return nil
 }

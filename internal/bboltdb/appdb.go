@@ -27,8 +27,10 @@ var (
 	db *bolt.DB
 	// Buckets
 	DatabaseConfigBucket = []byte("DatabaseConfigurations")
+	ClientConfigBucket   = []byte("ClientConfigurations")
 	// Bucket Defaults
 	DefaultDatabaseConfigKey = "db:default"
+	DefaultClientConfigKey   = "client:default"
 )
 
 // Initialize opens the BoltDB database file and creates necessary buckets.
@@ -41,6 +43,9 @@ func Initialize(dbPath string) error {
 	// Create necessary buckets if not exist
 	return db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists(DatabaseConfigBucket); err != nil {
+			return fmt.Errorf("failed to create bucket: %v", err)
+		}
+		if _, err := tx.CreateBucketIfNotExists(ClientConfigBucket); err != nil {
 			return fmt.Errorf("failed to create bucket: %v", err)
 		}
 		return nil
@@ -176,5 +181,24 @@ func GetDefaultDatabaseJSONConfig() (DatabaseConfig, error) {
 		return DatabaseConfig{}, err
 	}
 
+	return config, nil
+}
+
+// ClientConfig operations
+
+// InsertClientJSONConfig adds a client configuration to the ClientConfig bucket.
+func InsertClientJSONConfig(config ClientConfig) error {
+	if err := InsertJSON(ClientConfigBucket, DefaultClientConfigKey, config); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetClientConfig retrieves the default client configuration from the ClientConfig bucket.
+func GetClientJSONConfig() (ClientConfig, error) {
+	var config ClientConfig
+	if err := GetJSON(ClientConfigBucket, DefaultClientConfigKey, &config); err != nil {
+		return ClientConfig{}, err
+	}
 	return config, nil
 }

@@ -70,3 +70,15 @@ func Fetch(query string) ([]string, error) {
 func createConnection(username string, password string, connectionString string, context interface{}) (interface{}, error) {
 	return nil, ErrOracleNotSupported
 }
+
+func ExtractSequenceBlocks(plsqlContent string) ([]string, error) {
+	return nil, ErrOracleNotSupported
+}
+
+func ExtractPackageSpecBlocks(plsqlContent string) ([]string, error) {
+	return nil, ErrOracleNotSupported
+}
+
+func ExtractPackageBodyBlocks(plsqlContent string) ([]string, error) {
+	return nil, ErrOracleNotSupported
+}

@@ -76,12 +76,15 @@ func CleanupDBConnection() {
 // configuration settings. It initializes the DPI context and establishes a connection to the Oracle database.
 func newDatabaseConnection() (*Database, error) {
 	// Load the configurations
-	dbConfigs := config.GetDefaultDatabaseConfigurations().DatabaseSettings
+	dbConfigs, err := config.GetDefaultDatabaseConfigurations()
+	if err != nil {
+		return nil, err
+	}
 
 	// Set connection parameters
-	username := dbConfigs.Username
-	password := dbConfigs.Password
-	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Host, fmt.Sprint(dbConfigs.Port), dbConfigs.Database)
+	username := dbConfigs.DatabaseSettings.Username
+	password := dbConfigs.DatabaseSettings.Password
+	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.DatabaseSettings.Host, fmt.Sprint(dbConfigs.DatabaseSettings.Port), dbConfigs.DatabaseSettings.Database)
 
 	// Set Context for the connection
 	context, err := setContext()

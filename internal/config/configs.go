@@ -73,7 +73,7 @@ func loadClientConfigurations() error {
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&configStruct)
 	if err != nil {
-		return fmt.Errorf("failed to open settings.json: %w", err)
+		return fmt.Errorf("failed to decode settings.json: %w", err)
 	}
 
 	saveClientConfigurations(configStruct) // Save to BoltDB
@@ -81,14 +81,16 @@ func loadClientConfigurations() error {
 	return nil
 }
 
-func GetDefaultDatabaseConfigurations() ClientConfigurations {
+func GetDefaultDatabaseConfigurations() (ClientConfigurations, error) {
 	// Retrieve the default database configuration from BoltDB
 	// TODO: Remove loading from file when the full migration to BoltDB is done
 	var configStruct ClientConfigurations
-	loadClientConfigurations()
+	if err := loadClientConfigurations(); err != nil {
+		return ClientConfigurations{}, fmt.Errorf("failed to load database configurations: %v", err)
+	}
 	databaseConfig, err := bboltdb.GetDefaultDatabaseJSONConfig()
 	if err != nil {
-		panic(err)
+		return ClientConfigurations{}, fmt.Errorf("failed to load default database configurations: %v", err)
 	}
 
 	configStruct.DatabaseSettings.Database = databaseConfig.Database
@@ -98,18 +100,18 @@ func GetDefaultDatabaseConfigurations() ClientConfigurations {
 	configStruct.DatabaseSettings.Password = databaseConfig.Password
 	configStruct.DatabaseSettings.Default = databaseConfig.Default
 
-	return configStruct
+	return configStruct, nil
 }
 
-func GetClientConfigurations() ClientConfigurations {
+func GetClientConfigurations() (ClientConfigurations, error) {
 	var configStruct ClientConfigurations
 	// Retrieve the default client configuration from BoltDB
 	clientConfig, err := bboltdb.GetClientJSONConfig()
 	if err != nil {
-		panic(err)
+		return ClientConfigurations{}, fmt.Errorf("failed to get client config: %w", err)
 	}
 	configStruct.ClientSettings.EnableUtf8 = clientConfig.EnableUtf8
-	return configStruct
+	return configStruct, nil
 }
 
 func saveClientConfigurations(config ClientConfigurations) error {

@@ -18,6 +18,7 @@ import "C"
 import (
 	"OmniView/internal/config"
 	"fmt"
+	"strconv"
 	"sync"
 	"unsafe"
 )
@@ -378,10 +379,16 @@ func PackageExists(packageName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if len(results) > 0 {
-		return true, nil
+	if len(results) == 0 {
+		return false, fmt.Errorf("no results returned from package existence query")
 	}
-	return false, nil
+
+	count, err := strconv.Atoi(results[0])
+	if err != nil {
+		return false, fmt.Errorf("failed to parse count result: %v", err)
+	}
+
+	return count > 0, nil
 }
 
 // DeployPackages deploys the given SQL package to the connected Oracle database.

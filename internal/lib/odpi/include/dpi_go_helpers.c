@@ -38,6 +38,7 @@ void initDPIDataAsBytes(dpiData* data, const char* ptr, uint32_t length) {
  * @param value the int64 value
  */
 void initDPIDataAsInt64(dpiData* data, int64_t value) {
+    if (data == NULL) return;
     data->isNull = 0;
     data->value.asInt64 = value;
 }
@@ -48,6 +49,7 @@ void initDPIDataAsInt64(dpiData* data, int64_t value) {
  * @param value the double value
  */
 void initDPIDataAsDouble(dpiData* data, double value) {
+    if (data == NULL) return;
     data->isNull = 0;
     data->value.asDouble = value;
 }

@@ -226,8 +226,6 @@ func Fetch(query string) ([]string, error) {
 
 // FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
 func FetchWithParams(query string, params map[string]interface{}) ([]string, error) {
-	var err error
-	var results []string
 	// Get the database instance
 	db, err := getDBInstance()
 	if err != nil {
@@ -241,7 +239,7 @@ func FetchWithParams(query string, params map[string]interface{}) ([]string, err
 	defer C.dpiStmt_release(stmt) // Release the statement after execution
 
 	// Bind parameters to the statement
-	if err := bindParamsToQuery(stmt, params); err != nil {
+	if err = bindParamsToQuery(stmt, params); err != nil {
 		return nil, err
 	}
 
@@ -256,16 +254,20 @@ func FetchWithParams(query string, params map[string]interface{}) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	results = append(results, fetched...)
-	return results, nil
+
+	return fetched, nil
 }
 
 // bindParamsToQuery binds parameters to a prepared statement.
 // It supports string, int, and float64 parameter types.
 func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
+	db, err := getDBInstance()
+	if err != nil {
+		return err
+	}
+
 	for name, value := range params {
 		cName := C.CString(name)
-		defer C.free(unsafe.Pointer(cName))
 
 		var dpiData C.dpiData
 		var nativeType C.dpiNativeTypeNum
@@ -274,8 +276,18 @@ func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
 		case string:
 			nativeType = C.DPI_NATIVE_TYPE_BYTES
 			cValue := C.CString(v)
-			defer C.free(unsafe.Pointer(cValue))
 			C.initDPIDataAsBytes(&dpiData, cValue, C.uint32_t(len(v)))
+
+			// Bind the parameter
+			// For string values, the binding is done here to ensure proper memory management, and the C string is freed after binding.
+			if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
+				C.free(unsafe.Pointer(cName))
+				C.free(unsafe.Pointer(cValue))
+				return fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+			}
+			C.free(unsafe.Pointer(cName))
+			C.free(unsafe.Pointer(cValue))
+			continue
 		case int:
 			nativeType = C.DPI_NATIVE_TYPE_INT64
 			C.initDPIDataAsInt64(&dpiData, C.int64_t(v))
@@ -283,12 +295,18 @@ func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
 			nativeType = C.DPI_NATIVE_TYPE_DOUBLE
 			C.initDPIDataAsDouble(&dpiData, C.double(v))
 		default:
+			C.free(unsafe.Pointer(cName))
 			return fmt.Errorf("unsupported parameter type for %s", name)
 		}
 
 		if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
-			return fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+			C.free(unsafe.Pointer(cName))
+
+			var errInfo C.dpiErrorInfo
+			C.dpiContext_getError(db.Context, &errInfo)
+			return fmt.Errorf("failed to bind parameter %s: %s with type %d", name, C.GoString(errInfo.message), nativeType)
 		}
+		C.free(unsafe.Pointer(cName))
 	}
 	return nil
 }
@@ -297,8 +315,12 @@ func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
 // first column values as a slice of strings. The caller is responsible
 // for releasing the statement handle.
 func fetchData(stmt *C.dpiStmt) ([]string, error) {
-	var results []string
+	db, err := getDBInstance()
+	if err != nil {
+		return nil, err
+	}
 
+	var results []string
 	for {
 		var found C.int
 		var bufferRowIndex C.uint32_t
@@ -306,12 +328,8 @@ func fetchData(stmt *C.dpiStmt) ([]string, error) {
 		fetch := C.dpiStmt_fetch(stmt, &found, &bufferRowIndex)
 		if fetch != C.DPI_SUCCESS {
 			var errInfo C.dpiErrorInfo
-			db, err := getDBInstance()
-			if err != nil {
-				return results, fmt.Errorf("failed to fetch data: %s", err)
-			}
 			C.dpiContext_getError(db.Context, &errInfo)
-			return results, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
+			return nil, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
 		}
 		if found == 0 {
 			break // No more rows
@@ -395,36 +413,25 @@ func PackageExists(packageName string) (bool, error) {
 // Package structure should contain Package Specification and Package Body as a single string in the correct order.
 func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body
+	// The loops are nil safe, so empty slices will be skipped.
 	// Step 1: Deploy Sequences
-	if sequences == nil {
-		// sequences slice is nil — nothing to deploy
-	} else {
-		for _, seq := range sequences {
-			if err := ExecuteStatement(seq); err != nil {
-				return fmt.Errorf("failed to deploy sequence: %s", err)
-			}
+	for _, seq := range sequences {
+		if err := ExecuteStatement(seq); err != nil {
+			return fmt.Errorf("failed to deploy sequence: %s", err)
 		}
 	}
 
 	// Step 2: Deploy Package Specifications
-	if packageSpec == nil {
-		// packageSpec slice is nil — nothing to deploy
-	} else {
-		for _, spec := range packageSpec {
-			if err := ExecuteStatement(spec); err != nil {
-				return fmt.Errorf("failed to deploy package specification: %s", err)
-			}
+	for _, spec := range packageSpec {
+		if err := ExecuteStatement(spec); err != nil {
+			return fmt.Errorf("failed to deploy package specification: %s", err)
 		}
 	}
 
 	// Step 3: Deploy Package Body
-	if packageBody == nil {
-		// packageBody slice is nil — nothing to deploy
-	} else {
-		for _, body := range packageBody {
-			if err := ExecuteStatement(body); err != nil {
-				return fmt.Errorf("failed to deploy package body: %s", err)
-			}
+	for _, body := range packageBody {
+		if err := ExecuteStatement(body); err != nil {
+			return fmt.Errorf("failed to deploy package body: %s", err)
 		}
 	}
 

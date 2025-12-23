@@ -244,7 +244,7 @@ func SystemsSettingsCheck() bool {
 		if systemSettings.RunCycleStruct.IsFirstRun {
 			fmt.Println("Systems Initializing...")
 			// Initialize a fresh setup
-			if err := systemSettings.configureDependancies(); err != nil {
+			if err := systemSettings.configureDependencies(); err != nil {
 				fmt.Printf("failure configuring dependencies %s", err)
 				return false
 			}
@@ -253,7 +253,7 @@ func SystemsSettingsCheck() bool {
 	return true
 }
 
-func (s *SystemConfigurations) configureDependancies() error {
+func (s *SystemConfigurations) configureDependencies() error {
 	// Check for required database permissions
 	// Deploy permission checks package and run the checks
 

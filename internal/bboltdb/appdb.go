@@ -188,10 +188,7 @@ func GetDefaultDatabaseJSONConfig() (DatabaseConfig, error) {
 
 // InsertClientJSONConfig adds a client configuration to the ClientConfig bucket.
 func InsertClientJSONConfig(config ClientConfig) error {
-	if err := InsertJSON(ClientConfigBucket, DefaultClientConfigKey, config); err != nil {
-		return err
-	}
-	return nil
+	return InsertJSON(ClientConfigBucket, DefaultClientConfigKey, config)
 }
 
 // GetClientConfig retrieves the default client configuration from the ClientConfig bucket.

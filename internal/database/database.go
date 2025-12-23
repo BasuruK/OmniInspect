@@ -18,6 +18,7 @@ import "C"
 import (
 	"OmniView/internal/config"
 	"fmt"
+	"strconv"
 	"sync"
 	"unsafe"
 )
@@ -75,12 +76,15 @@ func CleanupDBConnection() {
 // configuration settings. It initializes the DPI context and establishes a connection to the Oracle database.
 func newDatabaseConnection() (*Database, error) {
 	// Load the configurations
-	dbConfigs := config.LoadConfigurations().DatabaseSettings
+	dbConfigs, err := config.GetDefaultDatabaseConfigurations()
+	if err != nil {
+		return nil, err
+	}
 
 	// Set connection parameters
-	username := dbConfigs.Username
-	password := dbConfigs.Password
-	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.Host, fmt.Sprint(dbConfigs.Port), dbConfigs.Database)
+	username := dbConfigs.DatabaseSettings.Username
+	password := dbConfigs.DatabaseSettings.Password
+	connectionString := fmt.Sprintf("%s:%s/%s", dbConfigs.DatabaseSettings.Host, fmt.Sprint(dbConfigs.DatabaseSettings.Port), dbConfigs.DatabaseSettings.Database)
 
 	// Set Context for the connection
 	context, err := setContext()
@@ -181,6 +185,24 @@ func executeAndReturnStatement(query string) (*C.dpiStmt, error) {
 	return stmt, nil
 }
 
+// executeWithStatement executes the given SQL statement which is already prepared and returns
+// the statement object for further processing.
+// IMPORTANT: The caller is responsible for releasing the statement.
+func executeWithStatement(stmt *C.dpiStmt) error {
+	db, err := getDBInstance()
+	if err != nil {
+		return err
+	}
+	// Execute the statement
+	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(db.Context, &errInfo)
+		return fmt.Errorf("failed to execute statement: %s", C.GoString(errInfo.message))
+	}
+
+	return nil
+}
+
 // Fetch executes a SELECT query and returns all results as a slice of strings.
 // It fetches only the first column from each row. The statement is automatically
 // released after fetching completes.
@@ -193,8 +215,112 @@ func Fetch(query string) ([]string, error) {
 		return nil, err
 	}
 	defer C.dpiStmt_release(stmt) // Release the statement after execution
+	// Fetch the result using helper
+	fetched, err := fetchData(stmt)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, fetched...)
+	return results, nil
+}
 
-	// Fetch the result
+// FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
+func FetchWithParams(query string, params map[string]interface{}) ([]string, error) {
+	// Get the database instance
+	db, err := getDBInstance()
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := prepareStatement(db, query)
+	if err != nil {
+		return nil, err
+	}
+	defer C.dpiStmt_release(stmt) // Release the statement after execution
+
+	// Bind parameters to the statement
+	if err = bindParamsToQuery(stmt, params); err != nil {
+		return nil, err
+	}
+
+	// Execute the statement after binding parameters
+	err = executeWithStatement(stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	// After binding params, fetch using helper
+	fetched, err := fetchData(stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	return fetched, nil
+}
+
+// bindParamsToQuery binds parameters to a prepared statement.
+// It supports string, int, and float64 parameter types.
+func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
+	db, err := getDBInstance()
+	if err != nil {
+		return err
+	}
+
+	for name, value := range params {
+		cName := C.CString(name)
+
+		var dpiData C.dpiData
+		var nativeType C.dpiNativeTypeNum
+
+		switch v := value.(type) {
+		case string:
+			nativeType = C.DPI_NATIVE_TYPE_BYTES
+			cValue := C.CString(v)
+			C.initDPIDataAsBytes(&dpiData, cValue, C.uint32_t(len(v)))
+
+			// Bind the parameter
+			// For string values, the binding is done here to ensure proper memory management, and the C string is freed after binding.
+			if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
+				C.free(unsafe.Pointer(cName))
+				C.free(unsafe.Pointer(cValue))
+				return fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+			}
+			C.free(unsafe.Pointer(cName))
+			C.free(unsafe.Pointer(cValue))
+			continue
+		case int:
+			nativeType = C.DPI_NATIVE_TYPE_INT64
+			C.initDPIDataAsInt64(&dpiData, C.int64_t(v))
+		case float64:
+			nativeType = C.DPI_NATIVE_TYPE_DOUBLE
+			C.initDPIDataAsDouble(&dpiData, C.double(v))
+		default:
+			C.free(unsafe.Pointer(cName))
+			return fmt.Errorf("unsupported parameter type for %s", name)
+		}
+
+		if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
+			C.free(unsafe.Pointer(cName))
+
+			var errInfo C.dpiErrorInfo
+			C.dpiContext_getError(db.Context, &errInfo)
+			return fmt.Errorf("failed to bind parameter %s: %s with type %d", name, C.GoString(errInfo.message), nativeType)
+		}
+		C.free(unsafe.Pointer(cName))
+	}
+	return nil
+}
+
+// fetchData reads all rows from the provided statement and returns the
+// first column values as a slice of strings. The caller is responsible
+// for releasing the statement handle.
+func fetchData(stmt *C.dpiStmt) ([]string, error) {
+	db, err := getDBInstance()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []string
 	for {
 		var found C.int
 		var bufferRowIndex C.uint32_t
@@ -202,12 +328,8 @@ func Fetch(query string) ([]string, error) {
 		fetch := C.dpiStmt_fetch(stmt, &found, &bufferRowIndex)
 		if fetch != C.DPI_SUCCESS {
 			var errInfo C.dpiErrorInfo
-			db, err := getDBInstance()
-			if err != nil {
-				return results, fmt.Errorf("failed to fetch data: %s", err)
-			}
 			C.dpiContext_getError(db.Context, &errInfo)
-			return results, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
+			return nil, fmt.Errorf("failed to fetch data: %s", C.GoString(errInfo.message))
 		}
 		if found == 0 {
 			break // No more rows
@@ -258,4 +380,60 @@ func createConnection(username string, password string, connectionString string,
 		return nil, fmt.Errorf("failed to create database connection: %s", C.GoString(errInfo.message))
 	}
 	return conn, nil
+}
+
+// PackageExists checks if a specific package exists and is valid in the connected Oracle database.
+func PackageExists(packageName string) (bool, error) {
+	query := `SELECT COUNT(1) 
+			FROM user_objects 
+			WHERE object_type = 'PACKAGE' 
+			AND object_name = UPPER(:packageName) 
+			AND status = 'VALID'`
+
+	results, err := FetchWithParams(query, map[string]interface{}{
+		"packageName": packageName,
+	})
+
+	if err != nil {
+		return false, err
+	}
+	if len(results) == 0 {
+		return false, fmt.Errorf("no results returned from package existence query")
+	}
+
+	count, err := strconv.Atoi(results[0])
+	if err != nil {
+		return false, fmt.Errorf("failed to parse count result: %v", err)
+	}
+
+	return count > 0, nil
+}
+
+// DeployPackages deploys the given SQL package to the connected Oracle database.
+// Package structure should contain Package Specification and Package Body as a single string in the correct order.
+func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
+	// Execution Order: Sequence -> Package Specification -> Package Body
+	// The loops are nil safe, so empty slices will be skipped.
+	// Step 1: Deploy Sequences
+	for _, seq := range sequences {
+		if err := ExecuteStatement(seq); err != nil {
+			return fmt.Errorf("failed to deploy sequence: %s", err)
+		}
+	}
+
+	// Step 2: Deploy Package Specifications
+	for _, spec := range packageSpec {
+		if err := ExecuteStatement(spec); err != nil {
+			return fmt.Errorf("failed to deploy package specification: %s", err)
+		}
+	}
+
+	// Step 3: Deploy Package Body
+	for _, body := range packageBody {
+		if err := ExecuteStatement(body); err != nil {
+			return fmt.Errorf("failed to deploy package body: %s", err)
+		}
+	}
+
+	return nil
 }

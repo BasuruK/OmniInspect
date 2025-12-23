@@ -3,8 +3,9 @@
         "Database": "FREEPDB1",
         "Host": "127.0.0.1",
         "Port": 1521,
-        "Username": "SYSTEM",
-        "Password": "ifsapp"
+        "Username": "IFSAPP",
+        "Password": "ifsapp",
+        "Default" : true
     },
     "ClientSettings": {
         "EnableUtf8": false

@@ -49,8 +49,18 @@ func ExecuteStatement(query string) error {
 	return ErrOracleNotSupported
 }
 
-func executeAndReturnStatement(query string, stmt interface{}) (interface{}, error) {
+func executeAndReturnStatement(query string) (interface{}, error) {
 	return nil, ErrOracleNotSupported
+}
+
+// PackageExists checks if a specific package exists in the database.
+func PackageExists(packageName string) (bool, error) {
+	return false, ErrOracleNotSupported
+}
+
+// DeployPackages deploys sequences, package specifications and package bodies in order.
+func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
+	return ErrOracleNotSupported
 }
 
 func Fetch(query string) ([]string, error) {
@@ -58,5 +68,17 @@ func Fetch(query string) ([]string, error) {
 }
 
 func createConnection(username string, password string, connectionString string, context interface{}) (interface{}, error) {
+	return nil, ErrOracleNotSupported
+}
+
+func ExtractSequenceBlocks(plsqlContent string) ([]string, error) {
+	return nil, ErrOracleNotSupported
+}
+
+func ExtractPackageSpecBlocks(plsqlContent string) ([]string, error) {
+	return nil, ErrOracleNotSupported
+}
+
+func ExtractPackageBodyBlocks(plsqlContent string) ([]string, error) {
 	return nil, ErrOracleNotSupported
 }

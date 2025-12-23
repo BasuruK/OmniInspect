@@ -392,7 +392,9 @@ func PackageExists(packageName string) (bool, error) {
 func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body
 	// Step 1: Deploy Sequences
-	if sequences != nil {
+	if sequences == nil {
+		// sequences slice is nil — nothing to deploy
+	} else {
 		for _, seq := range sequences {
 			if err := ExecuteStatement(seq); err != nil {
 				return fmt.Errorf("failed to deploy sequence: %s", err)
@@ -401,7 +403,9 @@ func DeployPackages(sequences []string, packageSpec []string, packageBody []stri
 	}
 
 	// Step 2: Deploy Package Specifications
-	if packageSpec != nil {
+	if packageSpec == nil {
+		// packageSpec slice is nil — nothing to deploy
+	} else {
 		for _, spec := range packageSpec {
 			if err := ExecuteStatement(spec); err != nil {
 				return fmt.Errorf("failed to deploy package specification: %s", err)
@@ -410,7 +414,9 @@ func DeployPackages(sequences []string, packageSpec []string, packageBody []stri
 	}
 
 	// Step 3: Deploy Package Body
-	if packageBody != nil {
+	if packageBody == nil {
+		// packageBody slice is nil — nothing to deploy
+	} else {
 		for _, body := range packageBody {
 			if err := ExecuteStatement(body); err != nil {
 				return fmt.Errorf("failed to deploy package body: %s", err)

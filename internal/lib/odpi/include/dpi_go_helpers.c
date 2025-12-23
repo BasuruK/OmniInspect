@@ -1,4 +1,5 @@
 #include "dpi.h"
+#include "stddef.h"
 
 /**
  * @brief Gets byte array pointer from dpiData
@@ -25,6 +26,7 @@ uint32_t getAsBytesLength(dpiData* data) {
  * @param length length of the byte data
  */
 void initDPIDataAsBytes(dpiData* data, const char* ptr, uint32_t length) {
+    if (data == NULL) return;
     data->isNull = 0;
     data->value.asBytes.ptr = (char*)ptr;
     data->value.asBytes.length = length;

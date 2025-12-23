@@ -275,15 +275,12 @@ func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
 			cValue := C.CString(v)
 			defer C.free(unsafe.Pointer(cValue))
 			C.initDPIDataAsBytes(&dpiData, cValue, C.uint32_t(len(v)))
-			dpiData.isNull = 0
 		case int:
 			nativeType = C.DPI_NATIVE_TYPE_INT64
 			C.initDPIDataAsInt64(&dpiData, C.int64_t(v))
-			dpiData.isNull = 0
 		case float64:
 			nativeType = C.DPI_NATIVE_TYPE_DOUBLE
 			C.initDPIDataAsDouble(&dpiData, C.double(v))
-			dpiData.isNull = 0
 		default:
 			return fmt.Errorf("unsupported parameter type for %s", name)
 		}
@@ -368,7 +365,7 @@ func createConnection(username string, password string, connectionString string,
 
 // PackageExists checks if a specific package exists and is valid in the connected Oracle database.
 func PackageExists(packageName string) (bool, error) {
-	query := `SELECT COUNT(*) 
+	query := `SELECT COUNT(1) 
 			FROM user_objects 
 			WHERE object_type = 'PACKAGE' 
 			AND object_name = UPPER(:packageName) 

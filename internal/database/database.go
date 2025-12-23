@@ -184,6 +184,24 @@ func executeAndReturnStatement(query string) (*C.dpiStmt, error) {
 	return stmt, nil
 }
 
+// executeWithStatement executes the given SQL statement which is already prepared and returns
+// the statement object for further processing.
+// IMPORTANT: The caller is responsible for releasing the statement.
+func executeWithStatement(stmt *C.dpiStmt) error {
+	db, err := getDBInstance()
+	if err != nil {
+		return err
+	}
+	// Execute the statement
+	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(db.Context, &errInfo)
+		return fmt.Errorf("failed to execute statement: %s", C.GoString(errInfo.message))
+	}
+
+	return nil
+}
+
 // Fetch executes a SELECT query and returns all results as a slice of strings.
 // It fetches only the first column from each row. The statement is automatically
 // released after fetching completes.
@@ -209,12 +227,41 @@ func Fetch(query string) ([]string, error) {
 func FetchWithParams(query string, params map[string]interface{}) ([]string, error) {
 	var err error
 	var results []string
+	// Get the database instance
+	db, err := getDBInstance()
+	if err != nil {
+		return nil, err
+	}
 
-	stmt, err := executeAndReturnStatement(query)
+	stmt, err := prepareStatement(db, query)
 	if err != nil {
 		return nil, err
 	}
 	defer C.dpiStmt_release(stmt) // Release the statement after execution
+
+	// Bind parameters to the statement
+	if err := bindParamsToQuery(stmt, params); err != nil {
+		return nil, err
+	}
+
+	// Execute the statement after binding parameters
+	err = executeWithStatement(stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	// After binding params, fetch using helper
+	fetched, err := fetchData(stmt)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, fetched...)
+	return results, nil
+}
+
+// bindParamsToQuery binds parameters to a prepared statement.
+// It supports string, int, and float64 parameter types.
+func bindParamsToQuery(stmt *C.dpiStmt, params map[string]interface{}) error {
 	for name, value := range params {
 		cName := C.CString(name)
 		defer C.free(unsafe.Pointer(cName))
@@ -238,22 +285,14 @@ func FetchWithParams(query string, params map[string]interface{}) ([]string, err
 			C.initDPIDataAsDouble(&dpiData, C.double(v))
 			dpiData.isNull = 0
 		default:
-			C.dpiStmt_release(stmt)
-			return nil, fmt.Errorf("unsupported parameter type for %s", name)
+			return fmt.Errorf("unsupported parameter type for %s", name)
 		}
 
 		if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
-			return nil, fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+			return fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
 		}
 	}
-
-	// After binding params, fetch using helper
-	fetched, err := fetchData(stmt)
-	if err != nil {
-		return nil, err
-	}
-	results = append(results, fetched...)
-	return results, nil
+	return nil
 }
 
 // fetchData reads all rows from the provided statement and returns the

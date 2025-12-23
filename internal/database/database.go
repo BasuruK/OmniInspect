@@ -18,7 +18,6 @@ import "C"
 import (
 	"OmniView/internal/config"
 	"fmt"
-	"strings"
 	"sync"
 	"unsafe"
 )
@@ -197,8 +196,72 @@ func Fetch(query string) ([]string, error) {
 		return nil, err
 	}
 	defer C.dpiStmt_release(stmt) // Release the statement after execution
+	// Fetch the result using helper
+	fetched, err := fetchData(stmt)
+	if err != nil {
+		return results, err
+	}
+	results = append(results, fetched...)
+	return results, nil
+}
 
-	// Fetch the result
+// FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
+func FetchWithParams(query string, params map[string]interface{}) ([]string, error) {
+	var err error
+	var results []string
+
+	stmt, err := executeAndReturnStatement(query)
+	if err != nil {
+		return nil, err
+	}
+	defer C.dpiStmt_release(stmt) // Release the statement after execution
+	for name, value := range params {
+		cName := C.CString(name)
+		defer C.free(unsafe.Pointer(cName))
+
+		var dpiData C.dpiData
+		var nativeType C.dpiNativeTypeNum
+
+		switch v := value.(type) {
+		case string:
+			nativeType = C.DPI_NATIVE_TYPE_BYTES
+			cValue := C.CString(v)
+			defer C.free(unsafe.Pointer(cValue))
+			C.initDPIDataAsBytes(&dpiData, cValue, C.uint32_t(len(v)))
+			dpiData.isNull = 0
+		case int:
+			nativeType = C.DPI_NATIVE_TYPE_INT64
+			C.initDPIDataAsInt64(&dpiData, C.int64_t(v))
+			dpiData.isNull = 0
+		case float64:
+			nativeType = C.DPI_NATIVE_TYPE_DOUBLE
+			C.initDPIDataAsDouble(&dpiData, C.double(v))
+			dpiData.isNull = 0
+		default:
+			C.dpiStmt_release(stmt)
+			return nil, fmt.Errorf("unsupported parameter type for %s", name)
+		}
+
+		if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
+			return nil, fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+		}
+	}
+
+	// After binding params, fetch using helper
+	fetched, err := fetchData(stmt)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, fetched...)
+	return results, nil
+}
+
+// fetchData reads all rows from the provided statement and returns the
+// first column values as a slice of strings. The caller is responsible
+// for releasing the statement handle.
+func fetchData(stmt *C.dpiStmt) ([]string, error) {
+	var results []string
+
 	for {
 		var found C.int
 		var bufferRowIndex C.uint32_t
@@ -266,12 +329,16 @@ func createConnection(username string, password string, connectionString string,
 
 // PackageExists checks if a specific package exists and is valid in the connected Oracle database.
 func PackageExists(packageName string) (bool, error) {
-	query := fmt.Sprintf(`SELECT COUNT(*) 
-						  FROM user_objects 
-						  WHERE object_type = 'PACKAGE' 
-						  AND object_name = UPPER('%s') 
-						  AND status = 'VALID'`, strings.ToUpper(packageName))
-	results, err := Fetch(query)
+	query := `SELECT COUNT(*) 
+			FROM user_objects 
+			WHERE object_type = 'PACKAGE' 
+			AND object_name = UPPER(:packageName) 
+			AND status = 'VALID'`
+
+	results, err := FetchWithParams(query, map[string]interface{}{
+		"packageName": packageName,
+	})
+
 	if err != nil {
 		return false, err
 	}
@@ -281,7 +348,7 @@ func PackageExists(packageName string) (bool, error) {
 	return false, nil
 }
 
-// DeployPackage deploys the given SQL package to the connected Oracle database.
+// DeployPackages deploys the given SQL package to the connected Oracle database.
 // Package structure should contain Package Specification and Package Body as a single string in the correct order.
 func DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body

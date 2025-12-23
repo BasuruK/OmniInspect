@@ -76,7 +76,9 @@ func loadClientConfigurations() error {
 		return fmt.Errorf("failed to decode settings.json: %w", err)
 	}
 
-	saveClientConfigurations(configStruct) // Save to BoltDB
+	if err := saveClientConfigurations(configStruct); err != nil { // Save to BoltDB
+		return err
+	}
 
 	return nil
 }
@@ -146,6 +148,7 @@ func saveSystemConfigurations(config SystemConfigurations) error {
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
 	// Encode the struct as JSON with indentation for readability
 	encoder := json.NewEncoder(file)
@@ -155,13 +158,7 @@ func saveSystemConfigurations(config SystemConfigurations) error {
 		return err
 	}
 
-	if err := file.Sync(); err != nil {
-		return err
-	}
-
-	defer file.Close()
-
-	return nil
+	return file.Sync()
 }
 
 func checkSystemConfigurations() bool {
@@ -237,18 +234,20 @@ func SystemsSettingsCheck() bool {
 	if !checkSystemConfigurations() {
 		err := createDefaultSystemConfigurations()
 		if err != nil {
-			fmt.Printf("Failiure creating config.sys file %s", err)
+			fmt.Printf("failure creating config.cfg file %s", err)
 			return false
 		}
 	} else {
 		// Load the configurations from the file
 		systemSettings := loadSystemConfigurations()
-		fmt.Println(systemSettings)
 		// Check if it's the first run
 		if systemSettings.RunCycleStruct.IsFirstRun {
 			fmt.Println("Systems Initializing...")
 			// Initialize a fresh setup
-			systemSettings.configureDependancies()
+			if err := systemSettings.configureDependancies(); err != nil {
+				fmt.Printf("failure configuring dependencies %s", err)
+				return false
+			}
 		}
 	}
 	return true

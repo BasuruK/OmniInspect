@@ -12,8 +12,8 @@ type PermissionService struct {
 	db ports.DatabaseRepository
 }
 
-// Constructor: NewPermissionService Constructor for PermissionService
-func NewPermissionService(db ports.DatabaseRepository) *PermissionService {
+// Constructor: NewService Constructor for PermissionService
+func NewService(db ports.DatabaseRepository) *PermissionService {
 	return &PermissionService{db: db}
 }
 

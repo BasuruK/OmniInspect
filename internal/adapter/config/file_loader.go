@@ -25,7 +25,7 @@ func (fcl *FileConfigLoader) LoadClientConfigurations() (*domain.AppConfiguratio
 	// Open the JSON file
 	file, err := os.Open(fcl.FilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open settings.json: %w", err)
+		return nil, fmt.Errorf("failed to open settings.json: %w", err)
 	}
 	defer file.Close()
 

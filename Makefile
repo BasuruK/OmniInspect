@@ -69,7 +69,7 @@ ifeq ($(DETECTED_OS),Windows)
 	@if exist $(subst /,\,$(ODPI_BASE)\src) (del /f /q $(subst /,\,$(ODPI_BASE)\src\*.h))
 else
 	rm -rf $(ODPI_BASE)/build
-	rm -f $(ODPI_BASE)/src
+	rm -rf $(ODPI_BASE)/src
 endif
 
 # Phony targets

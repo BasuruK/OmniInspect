@@ -1,9 +1,10 @@
 package main
 
 import (
+	"OmniView/internal/adapter/config"
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/app"
-	"OmniView/internal/utils"
 	"fmt"
 	"log"
 	"os"
@@ -26,6 +27,27 @@ func main() {
 	}
 	defer boltAdapter.Close()
 
+	// 1. Infastructure Setup (Logging, Config, etc.)
+	// Load Configurations
+	cfgLoader := config.NewFileConfigLoader("settings.json")
+	appConfig, err := cfgLoader.LoadClientConfigurations()
+	if err != nil {
+		log.Fatalf("failed to load configurations: %v", err)
+	}
+
+	// Initialize Oracle DB Adapter (inject Configurations)
+	dbAdapter := oracle.NewOracleAdapter(appConfig.DatabaseSettings)
+	if err := dbAdapter.Connect(); err != nil {
+		log.Fatalf("failed to connect to Oracle DB: %v", err)
+	}
+	defer dbAdapter.Close()
+
+	// 2. Services (Inject Adapters)
+	//permissionService := permissions.NewPermissionService(dbAdapter)
+
+	// 3. Application Bootstrap
+	// Run Startup Tasks using Services
+
 	// Initialize application
 	omniApp := app.New()
 	fmt.Println(omniApp.GetVersion())
@@ -37,5 +59,5 @@ func main() {
 	}
 
 	// Cleanup resources before exiting
-	utils.CleanupResources()
+
 }

@@ -1,19 +1,19 @@
 package oracle
 
 /*
-#cgo darwin CFLAGS: -I${SRCDIR}/../../../third_party/odpi/include
-#cgo darwin LDFLAGS: -L${SRCDIR}/../../../third_party/odpi/lib -lodpi -Wl,-rpath,${SRCDIR}/../../../third_party/odpi/lib -Wl,-rpath,/opt/oracle/instantclient_23_7
-#cgo windows CFLAGS: -I${SRCDIR}/../../../third_party/odpi/include
-#cgo windows LDFLAGS: -L${SRCDIR}/../../../third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
+#cgo darwin CFLAGS: -I${SRCDIR}/../../../../third_party/odpi/include
+#cgo darwin LDFLAGS: -L${SRCDIR}/../../../../third_party/odpi/lib -lodpi -Wl,-rpath,${SRCDIR}/../../../../third_party/odpi/lib -Wl,-rpath,/opt/oracle/instantclient_23_7
+
+#cgo windows CFLAGS: -I${SRCDIR}/../../../../third_party/odpi/include
+#cgo windows LDFLAGS: -L${SRCDIR}/../../../../third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
 
 #include "dpi.h"
 #include "dpi_go_helpers.h"
 #include <stdio.h>
 #include <stdlib.h>
-
 */
-
 import "C"
+
 import (
 	"OmniView/internal/core/domain"
 	"fmt"

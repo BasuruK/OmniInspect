@@ -1,7 +1,6 @@
 package app
 
 import (
-	"OmniView/internal/utils"
 	"bufio"
 	"fmt"
 	"os"
@@ -40,15 +39,9 @@ func (a *App) GetName() string {
 
 func (a *App) StartServer(done chan struct{}) {
 	// Run startup resource checks
-	err := utils.StartupResources()
-	if err != nil {
-		fmt.Printf("Error during startup resource checks: %v\n", err)
-		return
-	}
+
 	// Start the server
 	fmt.Println("Server started")
-
-	utils.PrintTraceMessage()
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)

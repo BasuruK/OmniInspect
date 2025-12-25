@@ -1,1 +1,2 @@
-internal/.DS_Store
+# macOS metadata files
+.DS_Store

@@ -21,8 +21,8 @@ ODPI_PATH = os.path.join(PROJECT_ROOT, ODPI_DIR)
 ODPI_ZIP_PATH = os.path.join(PROJECT_ROOT, ODPI_ZIP)
 INCLUDE_SRC = os.path.join(ODPI_PATH, "include")
 SRC_SRC = os.path.join(ODPI_PATH, "src")
-DEST_INCLUDE = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi", "include")
-DEST_SRC = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi", "src")
+DEST_INCLUDE = os.path.join(PROJECT_ROOT, "third_party", "odpi", "include")
+DEST_SRC = os.path.join(PROJECT_ROOT, "third_party", "odpi", "src")
 
 # Detect platform
 SYSTEM = platform.system()
@@ -153,8 +153,8 @@ def cleanup():
         log("ℹ️ No items needed cleanup")
 
 def run_make():
-    """Navigates to internal/lib/odpi and runs make, then make clean."""
-    odpi_build_dir = os.path.join(PROJECT_ROOT, "internal", "lib", "odpi")
+    """Navigates to third_party/odpi and runs make, then make clean."""
+    odpi_build_dir = os.path.join(PROJECT_ROOT, "third_party", "odpi")
     
     if not os.path.exists(odpi_build_dir):
         log(f"❌ Build directory does not exist: {odpi_build_dir}")
@@ -249,7 +249,7 @@ def main():
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
             log("   2. Extract to: /opt/oracle/instantclient_23_7")
             log("   3. Build ODPI-C:")
-            log("      cd internal/lib/odpi && make")
+            log("      cd third_party/odpi && make")
             log("\n   Or run this script with --make flag to build automatically:")
             log("      python ai_agents/setup_odpi.py --make")
         elif IS_WINDOWS:
@@ -258,7 +258,7 @@ def main():
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
             log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")
             log("   3. Build ODPI-C:")
-            log("      cd internal\\lib\\odpi && make")
+            log("      cd third_party\\odpi && make")
             log("\n   Or run this script with --make flag to build automatically:")
             log("      python ai_agents\\setup_odpi.py --make")
 

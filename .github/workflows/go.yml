@@ -16,17 +16,46 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Download and setup ODPI-C
+      run: python scripts/setup_odpi.py --make
+
+    - name: Download Oracle Instant Client (Windows)
+      run: |
+        # Download Oracle Instant Client Basic (Windows x64)
+        curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2370000/instantclient-basic-windows.x64-23.7.0.24.12.zip
+        
+        # Create directory and extract
+        mkdir -p C:\oracle_inst\instantclient_23_7
+        tar -xf instantclient-basic.zip -C C:\oracle_inst
+        
+        # Rename extracted folder to match expected path
+        move C:\oracle_inst\instantclient_23_7 C:\oracle_inst\instantclient_23_7_temp || true
+        move C:\oracle_inst\instantclient_* C:\oracle_inst\instantclient_23_7 || true
+      shell: pwsh
+
+    - name: Add Oracle Instant Client to PATH
+      run: echo "C:\oracle_inst\instantclient_23_7" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      shell: pwsh
+
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.24'
 
-    - name: Build (without CGO)
-      run: go build -v -tags=no_oracle ./...
+    - name: Build
+      run: go build -v ./...
       env:
-        CGO_ENABLED: 0
+        CGO_ENABLED: 1
+        CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
+        CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
 
-    - name: Test (without CGO)
-      run: go test -v -tags=no_oracle ./...
+    - name: Test
+      run: go test -v ./...
       env:
-        CGO_ENABLED: 0
+        CGO_ENABLED: 1
+        PATH: C:\oracle_inst\instantclient_23_7;${{ env.PATH }}

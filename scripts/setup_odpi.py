@@ -153,8 +153,8 @@ def cleanup():
         log("[INFO] No items needed cleanup")
 
 def run_make():
-    """Navigates to third_party/odpi and runs make, then make clean."""
-    odpi_build_dir = os.path.join(PROJECT_ROOT, "third_party", "odpi")
+    """Navigates to project root and runs make, then make clean."""
+    odpi_build_dir = PROJECT_ROOT
     
     if not os.path.exists(odpi_build_dir):
         log(f"[ERROR] Build directory does not exist: {odpi_build_dir}")

@@ -21,9 +21,6 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: Download and setup ODPI-C
-      run: python scripts/setup_odpi.py --make
-
     - name: Download Oracle Instant Client (Windows)
       run: |
         # Download Oracle Instant Client Basic (Windows x64)
@@ -41,6 +38,9 @@ jobs:
     - name: Add Oracle Instant Client to PATH
       run: echo "C:\oracle_inst\instantclient_23_7" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       shell: pwsh
+
+    - name: Download and setup ODPI-C
+      run: python scripts/setup_odpi.py --make
 
     - name: Set up Go
       uses: actions/setup-go@v4

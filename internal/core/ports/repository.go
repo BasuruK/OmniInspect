@@ -10,12 +10,11 @@ type DatabaseRepository interface {
 	PackageExists(packageName string) (bool, error)
 	DeployPackages(sequences []string, packageSpecs []string, packageBodies []string) error
 	DeployFile(sqlContent string) error
-	CleanupDBConnection()
 }
 
-// Port: ConfigRepository Defines the interface for configuration storage in bopltDB
+// Port: ConfigRepository Defines the interface for configuration storage in boltDB
 type ConfigRepository interface {
-	Initialize(dbPath string) error
+	Initialize() error
 	Close() error
 	SaveDatabaseConfig(config domain.DatabaseSettings) error
 	GetDefaultDatabaseConfig() (domain.DatabaseSettings, error)

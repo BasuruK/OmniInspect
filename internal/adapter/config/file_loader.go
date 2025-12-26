@@ -25,7 +25,7 @@ func (fcl *FileConfigLoader) LoadClientConfigurations() (*domain.AppConfiguratio
 	// Open the JSON file
 	file, err := os.Open(fcl.FilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open settings.json: %w", err)
+		return nil, fmt.Errorf("failed to open config file %s: %w", fcl.FilePath, err)
 	}
 	defer file.Close()
 
@@ -33,7 +33,7 @@ func (fcl *FileConfigLoader) LoadClientConfigurations() (*domain.AppConfiguratio
 	var config domain.AppConfigurations
 	decoder := json.NewDecoder(file)
 	if err = decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("failed to decode settings.json: %w", err)
+		return nil, fmt.Errorf("failed to decode config file %s: %w", fcl.FilePath, err)
 	}
 
 	return &config, nil

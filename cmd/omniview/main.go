@@ -5,6 +5,7 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/app"
+	"OmniView/internal/service/permissions"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +14,7 @@ import (
 )
 
 func main() {
-	// Listen to system signals for graceful shutdown (omitted for brevity)
+	// Listen to system signals for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
 	done := make(chan struct{})
 
@@ -27,7 +28,7 @@ func main() {
 	}
 	defer boltAdapter.Close()
 
-	// 1. Infastructure Setup (Logging, Config, etc.)
+	// 1. Infrastructure Setup (Logging, Config, etc.)
 	// Load Configurations
 	cfgLoader := config.NewFileConfigLoader("settings.json")
 	appConfig, err := cfgLoader.LoadClientConfigurations()
@@ -43,13 +44,16 @@ func main() {
 	defer dbAdapter.Close()
 
 	// 2. Services (Inject Adapters)
-	//permissionService := permissions.NewPermissionService(dbAdapter)
+	permissionService := permissions.NewPermissionService(dbAdapter)
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
+	if _, err := permissionService.CheckAndDeploy(); err != nil {
+		log.Fatalf("failed to run permission checks: %v", err)
+	}
 
-	// Initialize application
-	omniApp := app.New()
+	// 4. Start Application
+	omniApp := app.New(appConfig, dbAdapter)
 	fmt.Println(omniApp.GetVersion())
 	go omniApp.StartServer(done)
 

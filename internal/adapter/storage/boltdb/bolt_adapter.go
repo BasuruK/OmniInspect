@@ -61,7 +61,7 @@ func (ba *BoltAdapter) Close() error {
 }
 
 func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error {
-	key := fmt.Sprintf("%s%s", DatabaseConfigKeyPrefix, config.Username+"_"+config.Database)
+	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username, config.Database)
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
@@ -90,7 +90,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 func (ba *BoltAdapter) GetDefaultDatabaseConfig() (domain.DatabaseSettings, error) {
 	var config domain.DatabaseSettings
 
-	// Get Defult Key
+	// Get Default Key
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 
@@ -99,8 +99,7 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (domain.DatabaseSettings, erro
 			return fmt.Errorf("default database config not found")
 		}
 		// Get Config JSON
-		configKey := fmt.Sprintf("%s%s", DatabaseConfigKeyPrefix, string(defaultKey))
-		configData := b.Get([]byte(configKey))
+		configData := b.Get(defaultKey)
 		if configData == nil {
 			return fmt.Errorf("database config not found for key: %s", string(defaultKey))
 		}

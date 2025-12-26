@@ -24,15 +24,20 @@ jobs:
     - name: Download Oracle Instant Client (Windows)
       run: |
         # Download Oracle Instant Client Basic (Windows x64)
-        curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2370000/instantclient-basic-windows.x64-23.7.0.24.12.zip
+        curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-sdk-windows.x64-23.26.0.0.0.zip
         
         # Create directory and extract
         mkdir -p C:\oracle_inst\instantclient_23_7
         tar -xf instantclient-basic.zip -C C:\oracle_inst
         
-        # Rename extracted folder to match expected path
-        move C:\oracle_inst\instantclient_23_7 C:\oracle_inst\instantclient_23_7_temp || true
-        move C:\oracle_inst\instantclient_* C:\oracle_inst\instantclient_23_7 || true
+        # Verify extraction and normalize directory name  
+        $extractedDir = Get-ChildItem -Path C:\oracle_inst -Directory -Filter "instantclient*" | Select-Object -First 1  
+        if (-not $extractedDir) {  
+          throw "Oracle Instant Client extraction failed - no directory found"  
+        }  
+        if ($extractedDir.FullName -ne "C:\oracle_inst\instantclient_23_7") {  
+          Move-Item -Path $extractedDir.FullName -Destination C:\oracle_inst\instantclient_23_7 -Force  
+        }
       shell: pwsh
 
     - name: Add Oracle Instant Client to PATH

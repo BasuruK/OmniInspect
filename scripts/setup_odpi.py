@@ -42,42 +42,42 @@ def detect_platform():
     log(f"      OS: {SYSTEM}")
     log(f"      Architecture: {MACHINE}")
     if IS_APPLE_SILICON:
-        log(f"      ✅ Detected Apple Silicon (M1/M2/M3/M4)")
+        log(f"      [OK] Detected Apple Silicon (M1/M2/M3/M4)")
     elif IS_WINDOWS:
-        log(f"      ✅ Detected Windows")
+        log(f"      [OK] Detected Windows")
     log(f"      Project Root: {PROJECT_ROOT}")
 
 def download_odpi():
     """Downloads and extracts the ODPI-C library if it doesn't exist."""
     if os.path.exists(ODPI_PATH):
-        log(f"ℹ️ {ODPI_DIR} already exists, skipping download and extraction")
+        log(f"[INFO] {ODPI_DIR} already exists, skipping download and extraction")
         return
     if os.path.exists(ODPI_ZIP_PATH):
-        log(f"ℹ️ {ODPI_ZIP} already exists, skipping download")
+        log(f"[INFO] {ODPI_ZIP} already exists, skipping download")
     else:
         log(f"Downloading ODPI-C v{ODPI_VERSION}...")
         try:
             urllib.request.urlretrieve(ODPI_URL, ODPI_ZIP_PATH)
-            log("       ✅ Download successful")
+            log("       [OK] Download successful")
         except Exception as e:
-            log(f"❌ Download failed: {e}")
+            log(f"[ERROR] Download failed: {e}")
             exit(1)
     log("Extracting ODPI-C library...")
     try:
         with zipfile.ZipFile(ODPI_ZIP_PATH, 'r') as zip_ref:
             zip_ref.extractall(PROJECT_ROOT)
-        log("       ✅ Extraction completed successfully")
+        log("       [OK] Extraction completed successfully")
     except Exception as e:
-        log(f"❌ Extraction failed: {e}")
+        log(f"[ERROR] Extraction failed: {e}")
         exit(1)
 
 def verify_dirs():
     """Verifies the presence of include/ and src/ directories after extraction."""
     log("Verifying extracted directories...")
     if os.path.isdir(INCLUDE_SRC) and os.path.isdir(SRC_SRC):
-        log("       ✅ Verification successful - both include/ and src/ directories exist")
+        log("       [OK] Verification successful - both include/ and src/ directories exist")
     else:
-        log("❌ Verification failed - required directories missing")
+        log("[ERROR] Verification failed - required directories missing")
         exit(1)
 
 def copy_headers():
@@ -88,9 +88,9 @@ def copy_headers():
     for f in header_files:
         shutil.copy2(os.path.join(INCLUDE_SRC, f), DEST_INCLUDE)
     if header_files:
-        log(f"      ✅ Header files copied successfully ({len(header_files)})")
+        log(f"      [OK] Header files copied successfully ({len(header_files)})")
     else:
-        log("❌ No header files found to copy")
+        log("[ERROR] No header files found to copy")
         exit(1)
 
 def copy_sources():
@@ -101,9 +101,9 @@ def copy_sources():
     for f in src_files:
         shutil.copy2(os.path.join(SRC_SRC, f), DEST_SRC)
     if src_files:
-        log(f"      ✅ Source files copied successfully ({len(src_files)})")
+        log(f"      [OK] Source files copied successfully ({len(src_files)})")
     else:
-        log("❌ No source files found to copy")
+        log("[ERROR] No source files found to copy")
         exit(1)
 
 def copy_c_from_include():
@@ -113,9 +113,9 @@ def copy_c_from_include():
     if c_files:
         for f in c_files:
             shutil.copy2(os.path.join(DEST_INCLUDE, f), DEST_SRC)
-        log(f"      ✅ Copied {len(c_files)} .c files to src directory")
+        log(f"      [OK] Copied {len(c_files)} .c files to src directory")
     else:
-        log("❌ No .c files found in include directory")
+        log("[ERROR] No .c files found in include directory")
 
 def cleanup():
     """Cleans up temporary files and directories created during the setup process."""
@@ -125,7 +125,7 @@ def cleanup():
     for path, typ in [(ODPI_ZIP_PATH, "file"), (ODPI_PATH, "directory")]:
         try:
             if os.path.exists(path):
-                log(f"      🧹 Removing {typ}: {path}")
+                log(f"      [CLEAN] Removing {typ}: {path}")
                 if typ == "directory":
                     # Handle Windows readonly files
                     if IS_WINDOWS:
@@ -139,25 +139,25 @@ def cleanup():
                     os.remove(path)
                 removed += 1
             else:
-                log(f"ℹ️ {typ} {path} does not exist, skipping...")
+                log(f"[INFO] {typ} {path} does not exist, skipping...")
         except Exception as e:
             errors.append(f"Failed to remove {typ} '{path}': {e}")
     if errors:
-        log("⚠️ Encountered errors during cleanup:")
+        log("[WARN] Encountered errors during cleanup:")
         for err in errors:
             log(f"   {err}")
-        log("❌ Please manually delete the problematic files")
+        log("[ERROR] Please manually delete the problematic files")
     if removed:
-        log(f"      ✅ Cleanup successful - Removed {removed} item(s)")
+        log(f"      [OK] Cleanup successful - Removed {removed} item(s)")
     else:
-        log("ℹ️ No items needed cleanup")
+        log("[INFO] No items needed cleanup")
 
 def run_make():
     """Navigates to third_party/odpi and runs make, then make clean."""
     odpi_build_dir = os.path.join(PROJECT_ROOT, "third_party", "odpi")
     
     if not os.path.exists(odpi_build_dir):
-        log(f"❌ Build directory does not exist: {odpi_build_dir}")
+        log(f"[ERROR] Build directory does not exist: {odpi_build_dir}")
         return False
     
     log("")
@@ -175,7 +175,7 @@ def run_make():
             capture_output=True,
             text=True
         )
-        log("       ✅ Build completed successfully")
+        log("       [OK] Build completed successfully")
         if result.stdout:
             log(f"\nBuild output:\n{result.stdout}")
         
@@ -188,20 +188,20 @@ def run_make():
             capture_output=True,
             text=True
         )
-        log("       ✅ Cleanup completed successfully")
+        log("       [OK] Cleanup completed successfully")
         if result.stdout:
             log(f"\nCleanup output:\n{result.stdout}")
         
         return True
     except subprocess.CalledProcessError as e:
-        log(f"❌ Make command failed with exit code {e.returncode}")
+        log(f"[ERROR] Make command failed with exit code {e.returncode}")
         if e.stdout:
             log(f"stdout: {e.stdout}")
         if e.stderr:
             log(f"stderr: {e.stderr}")
         return False
     except FileNotFoundError:
-        log("❌ 'make' command not found. Please ensure make is installed and in your PATH.")
+        log("[ERROR] 'make' command not found. Please ensure make is installed and in your PATH.")
         return False
 
 def main():
@@ -226,7 +226,7 @@ def main():
     
     log("")
     log("=" * 60)
-    log("✅ ODPI-C setup completed successfully! 🎉")
+    log("[SUCCESS] ODPI-C setup completed successfully!")
     log("=" * 60)
     
     # Run make if --make flag is provided
@@ -234,17 +234,17 @@ def main():
         if run_make():
             log("")
             log("=" * 60)
-            log("✅ Build and cleanup completed successfully! 🎉")
+            log("[SUCCESS] Build and cleanup completed successfully!")
             log("=" * 60)
         else:
             log("")
             log("=" * 60)
-            log("⚠️ Setup completed but build failed")
+            log("[WARN] Setup completed but build failed")
             log("=" * 60)
             sys.exit(1)
     else:
         if IS_APPLE_SILICON:
-            log("\n📝 Next steps for Apple Silicon:")
+            log("\n[NOTE] Next steps for Apple Silicon:")
             log("   1. Install Oracle Instant Client ARM64:")
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
             log("   2. Extract to: /opt/oracle/instantclient_23_7")
@@ -253,7 +253,7 @@ def main():
             log("\n   Or run this script with --make flag to build automatically:")
             log("      python ai_agents/setup_odpi.py --make")
         elif IS_WINDOWS:
-            log("\n📝 Next steps for Windows:")
+            log("\n[NOTE] Next steps for Windows:")
             log("   1. Install Oracle Instant Client:")
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
             log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")

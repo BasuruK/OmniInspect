@@ -2,6 +2,7 @@ package ports
 
 import "OmniView/internal/core/domain"
 
+// Oracle
 // Port: DatabaseRepository Defines the interface for database repository operations
 type DatabaseRepository interface {
 	ExecuteStatement(query string) error
@@ -12,6 +13,7 @@ type DatabaseRepository interface {
 	DeployFile(sqlContent string) error
 }
 
+// BoltDB
 // Port: ConfigRepository Defines the interface for configuration storage in boltDB
 type ConfigRepository interface {
 	Initialize() error

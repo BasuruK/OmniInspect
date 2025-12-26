@@ -1,6 +1,7 @@
 package app
 
 import (
+	"OmniView/internal/core/ports"
 	"bufio"
 	"fmt"
 	"os"
@@ -14,7 +15,7 @@ type App struct {
 }
 
 // New creates a new instance of the application
-func New() *App {
+func New(config ports.ConfigRepository, db ports.DatabaseRepository) *App {
 	return &App{
 		Version: "0.1.0",
 		Author:  "Basuru Balasuriya",

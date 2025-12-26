@@ -53,7 +53,7 @@ func main() {
 	}
 
 	// 4. Start Application
-	omniApp := app.New(appConfig, dbAdapter)
+	omniApp := app.New(boltAdapter, dbAdapter)
 	fmt.Println(omniApp.GetVersion())
 	go omniApp.StartServer(done)
 

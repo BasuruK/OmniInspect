@@ -23,12 +23,16 @@ jobs:
 
     - name: Download Oracle Instant Client (Windows)
       run: |
-        # Download Oracle Instant Client Basic (Windows x64)
-        curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-sdk-windows.x64-23.26.0.0.0.zip
+        # Download Oracle Instant Client Basic AND SDK (Windows x64)
+        curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-basic-windows.x64-23.26.0.0.0.zip
+        curl -L -o instantclient-sdk.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-sdk-windows.x64-23.26.0.0.0.zip
         
-        # Create directory and extract
-        mkdir -p C:\oracle_inst\instantclient_23_7
+        # Create directory
+        New-Item -ItemType Directory -Force -Path C:\oracle_inst\instantclient_23_7
+        
+        # Extract both packages to the same directory
         tar -xf instantclient-basic.zip -C C:\oracle_inst
+        tar -xf instantclient-sdk.zip -C C:\oracle_inst
         
         # Verify extraction and normalize directory name  
         $extractedDir = Get-ChildItem -Path C:\oracle_inst -Directory -Filter "instantclient*" | Select-Object -First 1  
@@ -37,6 +41,11 @@ jobs:
         }  
         if ($extractedDir.FullName -ne "C:\oracle_inst\instantclient_23_7") {  
           Move-Item -Path $extractedDir.FullName -Destination C:\oracle_inst\instantclient_23_7 -Force  
+        }
+        
+        # Verify oci.dll exists
+        if (-not (Test-Path "C:\oracle_inst\instantclient_23_7\oci.dll")) {
+          throw "oci.dll not found in Instant Client directory"
         }
       shell: pwsh
 

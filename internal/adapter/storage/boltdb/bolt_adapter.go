@@ -33,6 +33,10 @@ func NewBoltAdapter(dbPath string) *BoltAdapter {
 }
 
 func (ba *BoltAdapter) Initialize() error {
+	if ba.db != nil {
+		return fmt.Errorf("BoltAdapter already initialized")
+	}
+
 	var err error
 	if ba.db, err = bolt.Open(ba.dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second}); err != nil {
 		return fmt.Errorf("failed to open BoltDB: %v", err)

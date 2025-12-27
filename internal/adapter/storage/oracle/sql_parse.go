@@ -52,7 +52,7 @@ func extractPackageSpecBlocks(plsqlContent string) ([]string, error) {
 	var packageSpecs []string
 	sections, err := extractSections(plsqlContent, packageSpecStart, packageSpecEnd)
 
-	if err != nil && strings.Contains(err.Error(), "WARN:") {
+	if err != nil && errors.Is(err, errNoCodeBlocks) {
 		// No package specifications found, return empty slice without error
 		return nil, nil
 	}
@@ -67,7 +67,7 @@ func extractPackageBodyBlocks(plsqlContent string) ([]string, error) {
 	var packageBodies []string
 	sections, err := extractSections(plsqlContent, packageBodyStart, packageBodyEnd)
 
-	if err != nil && strings.Contains(err.Error(), "WARN:") {
+	if err != nil && errors.Is(err, errNoCodeBlocks) {
 		// No package bodies found, return empty slice without error
 		return nil, nil
 	}

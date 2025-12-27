@@ -44,7 +44,7 @@ jobs:
         }
         
         # Verify oci.dll exists
-        if (-not (Test-Path "C:\oracle_inst\instantclient_23_7\oci.dll")) {
+        if (-not (Test-Path "C:\oracle_inst\instantclient_23_7\instantclient_23_0\sdk\lib\msvc\oci.dll")) {
           throw "oci.dll not found in Instant Client directory"
         }
       shell: pwsh

@@ -61,7 +61,4 @@ func main() {
 	case <-done:
 	case <-signalChan:
 	}
-
-	// Cleanup resources before exiting
-
 }

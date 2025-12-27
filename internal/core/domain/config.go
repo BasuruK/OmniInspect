@@ -1,6 +1,6 @@
 package domain
 
-// Value Object : Represents database connection settings
+// Entity: Represents database connection settings
 type DatabaseSettings struct {
 	ID       string
 	Database string
@@ -11,17 +11,17 @@ type DatabaseSettings struct {
 	Default  bool
 }
 
-// Value Object : Represents client-specific settings
+// Entity: Represents client-specific settings
 type ClientSettings struct {
 	EnableUtf8 bool
 }
 
-// Value Object : Status of the application's run cycle
+// Entity : Status of the application's run cycle
 type RunCycleStatus struct {
 	IsFirstRun bool
 }
 
-// Value Object : Status of deployed database packages
+// Entity : Status of deployed database packages
 type DatabasePackageStatus struct {
 	TracerAPIExists bool
 }

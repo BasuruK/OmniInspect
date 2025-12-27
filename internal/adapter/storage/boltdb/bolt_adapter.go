@@ -119,12 +119,15 @@ func (ba *BoltAdapter) DatabaseConfigExists(key string) (bool, error) {
 
 // Exists checks if a key exists in the specified bucket.
 func exists(ba *BoltAdapter, bucket []byte, key string) (bool, error) {
-	var exists bool
+	var found bool
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", string(bucket))
+		}
 		v := b.Get([]byte(key))
-		exists = v != nil
+		found = v != nil
 		return nil
 	})
-	return exists, err
+	return found, err
 }

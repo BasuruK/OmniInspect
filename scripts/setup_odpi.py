@@ -251,7 +251,7 @@ def main():
             log("   3. Build ODPI-C:")
             log("      cd third_party/odpi && make")
             log("\n   Or run this script with --make flag to build automatically:")
-            log("      python ai_agents/setup_odpi.py --make")
+            log("      python scripts/setup_odpi.py --make")
         elif IS_WINDOWS:
             log("\n[NOTE] Next steps for Windows:")
             log("   1. Install Oracle Instant Client:")
@@ -260,7 +260,7 @@ def main():
             log("   3. Build ODPI-C:")
             log("      cd third_party\\odpi && make")
             log("\n   Or run this script with --make flag to build automatically:")
-            log("      python ai_agents\\setup_odpi.py --make")
+            log("      python scripts\\setup_odpi.py --make")
 
 if __name__ == "__main__":
     main()

@@ -47,14 +47,14 @@ $(ODPI_BASE)/build/%.o: $(ODPI_BASE)/src/%.c | $(ODPI_BASE)/build
 
 $(ODPI_BASE)/build:
 ifeq ($(DETECTED_OS),Windows)
-	@if not exist $(subst /,\,$(ODPI_BASE)\build) mkdir $(subst /,\,$(ODPI_BASE)\build)
+	@cmd /c "if not exist $(subst /,\,$(ODPI_BASE)\build) mkdir $(subst /,\,$(ODPI_BASE)\build)"
 else
 	mkdir -p $(ODPI_BASE)/build
 endif
 
 $(ODPI_BASE)/lib:
 ifeq ($(DETECTED_OS),Windows)
-	@if not exist $(subst /,\,$(ODPI_BASE)\lib) mkdir $(subst /,\,$(ODPI_BASE)\lib)
+	@cmd /c "if not exist $(subst /,\,$(ODPI_BASE)\lib) mkdir $(subst /,\,$(ODPI_BASE)\lib)"
 else
 	mkdir -p $(ODPI_BASE)/lib
 endif
@@ -64,9 +64,9 @@ $(TARGET): $(ODPI_OBJ) | $(ODPI_BASE)/lib
 
 clean:
 ifeq ($(DETECTED_OS),Windows)
-	@if exist $(subst /,\,$(ODPI_BASE)\build) (rmdir /s /q $(subst /,\,$(ODPI_BASE)\build))
-	@if exist $(subst /,\,$(ODPI_BASE)\src) (del /f /q $(subst /,\,$(ODPI_BASE)\src\*.c))
-	@if exist $(subst /,\,$(ODPI_BASE)\src) (del /f /q $(subst /,\,$(ODPI_BASE)\src\*.h))
+	@cmd /c "if exist $(subst /,\,$(ODPI_BASE)\build) (rmdir /s /q $(subst /,\,$(ODPI_BASE)\build))"
+	@cmd /c "if exist $(subst /,\,$(ODPI_BASE)\src) (del /f /q $(subst /,\,$(ODPI_BASE)\src\*.c))"
+	@cmd /c "if exist $(subst /,\,$(ODPI_BASE)\src) (del /f /q $(subst /,\,$(ODPI_BASE)\src\*.h))"
 else
 	rm -rf $(ODPI_BASE)/build
 	rm -rf $(ODPI_BASE)/src

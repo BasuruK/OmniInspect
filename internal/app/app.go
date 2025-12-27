@@ -39,8 +39,6 @@ func (a *App) GetName() string {
 }
 
 func (a *App) StartServer(done chan struct{}) {
-	// Run startup resource checks
-
 	// Start the server
 	fmt.Println("Server started")
 

@@ -46,18 +46,10 @@ $(ODPI_BASE)/build/%.o: $(ODPI_BASE)/src/%.c | $(ODPI_BASE)/build
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(ODPI_BASE)/build:
-ifeq ($(DETECTED_OS),Windows)
-	@cmd /c "if not exist $(subst /,\,$(ODPI_BASE)\build) mkdir $(subst /,\,$(ODPI_BASE)\build)"
-else
-	mkdir -p $(ODPI_BASE)/build
-endif
+	@mkdir -p $(ODPI_BASE)/build
 
 $(ODPI_BASE)/lib:
-ifeq ($(DETECTED_OS),Windows)
-	@cmd /c "if not exist $(subst /,\,$(ODPI_BASE)\lib) mkdir $(subst /,\,$(ODPI_BASE)\lib)"
-else
-	mkdir -p $(ODPI_BASE)/lib
-endif
+	@mkdir -p $(ODPI_BASE)/lib
 
 $(TARGET): $(ODPI_OBJ) | $(ODPI_BASE)/lib
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)

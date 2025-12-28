@@ -14,6 +14,7 @@ var (
 	packageBodyStart     = "-- @SECTION: PACKAGE_BODY"
 	packageBodyEnd       = "-- @END_SECTION: PACKAGE_BODY"
 	errNoCodeBlocks      = errors.New("no code blocks found in section")
+	errNoSectionMarkers  = errors.New("section markers not found in PL/SQL content")
 )
 
 // Extract parses the raw PL/SQL content and splits it into executable blocks.
@@ -34,7 +35,7 @@ func extractSequenceBlocks(plsqlContent string) ([]string, error) {
 	var sequences []string
 	sections, err := extractSections(plsqlContent, sequenceSectionStart, sequenceSectionEnd)
 
-	if err != nil && errors.Is(err, errNoCodeBlocks) {
+	if err != nil && errors.Is(err, errNoSectionMarkers) {
 		// No sequences found, return empty slice without error
 		return nil, nil
 	} else if err != nil {
@@ -67,7 +68,7 @@ func extractPackageBodyBlocks(plsqlContent string) ([]string, error) {
 	var packageBodies []string
 	sections, err := extractSections(plsqlContent, packageBodyStart, packageBodyEnd)
 
-	if err != nil && errors.Is(err, errNoCodeBlocks) {
+	if err != nil && errors.Is(err, errNoSectionMarkers) {
 		// No package bodies found, return empty slice without error
 		return nil, nil
 	}
@@ -84,7 +85,7 @@ func extractSections(plsqlContent string, startMarker string, endMarker string) 
 	endIdx := strings.Index(plsqlContent, endMarker)
 
 	if startIdx == -1 || endIdx == -1 {
-		return nil, fmt.Errorf("section markers not found")
+		return nil, errNoSectionMarkers
 	}
 
 	sectionContent := plsqlContent[startIdx+len(startMarker) : endIdx]
@@ -98,7 +99,7 @@ func extractSections(plsqlContent string, startMarker string, endMarker string) 
 	}
 
 	if len(sections) == 0 {
-		return nil, errNoCodeBlocks
+		return nil, errNoSectionMarkers
 	}
 
 	return sections, nil

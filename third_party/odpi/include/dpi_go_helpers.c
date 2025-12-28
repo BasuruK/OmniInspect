@@ -20,6 +20,42 @@ uint32_t getAsBytesLength(dpiData* data) {
 }
 
 /**
+ * @brief Gets int64 value from dpiData
+ * @param data pointer to the dpiData structure
+ * @return The int64 value
+ */
+int64_t getAsInt64(dpiData* data) {
+	return data->value.asInt64;
+}
+
+/**
+ * @brief Gets uint64 value from dpiData
+ * @param data pointer to the dpiData structure
+ * @return The uint64 value
+ */
+uint64_t getAsUint64(dpiData* data) {
+	return data->value.asUint64;
+}
+
+/**
+ * @brief Gets double value from dpiData
+ * @param data pointer to the dpiData structure
+ * @return The double value
+ */
+double getAsDouble(dpiData* data) {
+	return data->value.asDouble;
+}
+
+/**
+ * @brief Gets float value from dpiData
+ * @param data pointer to the dpiData structure
+ * @return The float value
+ */
+float getAsFloat(dpiData* data) {
+	return data->value.asFloat;
+}
+
+/**
  * @brief Initialize dpiData as bytes
  * @param data pointer to the dpiData structure
  * @param ptr pointer to the byte data

@@ -91,7 +91,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 
 }
 
-func (ba *BoltAdapter) GetDefaultDatabaseConfig() (domain.DatabaseSettings, error) {
+func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
 	var config domain.DatabaseSettings
 
 	// Get Default Key
@@ -110,10 +110,10 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (domain.DatabaseSettings, erro
 		return json.Unmarshal(configData, &config)
 	})
 	if err != nil {
-		return domain.DatabaseSettings{}, err
+		return nil, err
 	}
 
-	return config, nil
+	return &config, nil
 }
 
 // DatabaseConfigExists checks if a database configuration exists for the given key.

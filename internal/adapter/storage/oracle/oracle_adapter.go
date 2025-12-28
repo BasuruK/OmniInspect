@@ -29,9 +29,9 @@ type OracleAdapter struct {
 }
 
 // Constructor: Creates a new OracleAdapter and injects configuratios
-func NewOracleAdapter(cfg domain.DatabaseSettings) *OracleAdapter {
+func NewOracleAdapter(cfg *domain.DatabaseSettings) *OracleAdapter {
 	return &OracleAdapter{
-		config: cfg,
+		config: *cfg,
 	}
 }
 
@@ -107,9 +107,31 @@ func (oa *OracleAdapter) FetchData(stmt *C.dpiStmt) ([]string, error) {
 		var nativeTypeNum C.dpiNativeTypeNum
 
 		if C.dpiStmt_getQueryValue(stmt, 1, &nativeTypeNum, &data) == C.DPI_SUCCESS {
-			ptr := C.getAsBytesPtr(data)
-			length := C.getAsBytesLength(data)
-			str := C.GoStringN(ptr, C.int(length))
+			var str string
+			// Handle different data types
+			switch nativeTypeNum {
+			case C.DPI_NATIVE_TYPE_BYTES:
+				ptr := C.getAsBytesPtr(data)
+				length := C.getAsBytesLength(data)
+				str = C.GoStringN(ptr, C.int(length))
+			case C.DPI_NATIVE_TYPE_INT64:
+				intVal := C.getAsInt64(data)
+				str = fmt.Sprintf("%d", intVal)
+			case C.DPI_NATIVE_TYPE_UINT64:
+				uintVal := C.getAsUint64(data)
+				str = fmt.Sprintf("%d", uintVal)
+			case C.DPI_NATIVE_TYPE_DOUBLE:
+				doubleVal := C.getAsDouble(data)
+				str = fmt.Sprintf("%g", doubleVal)
+			case C.DPI_NATIVE_TYPE_FLOAT:
+				floatVal := C.getAsFloat(data)
+				str = fmt.Sprintf("%g", floatVal)
+			default:
+				// Fallback to bytes for unknown types
+				ptr := C.getAsBytesPtr(data)
+				length := C.getAsBytesLength(data)
+				str = C.GoStringN(ptr, C.int(length))
+			}
 
 			results = append(results, str)
 		} else {
@@ -257,7 +279,7 @@ func (oa *OracleAdapter) BindParamsToQuery(stmt *C.dpiStmt, params map[string]in
 			}
 			C.free(unsafe.Pointer(cName))
 			C.free(unsafe.Pointer(cValue))
-			continue
+			continue // Skip the second bind call below since string binding is complete
 		case int:
 			nativeType = C.DPI_NATIVE_TYPE_INT64
 			C.initDPIDataAsInt64(&dpiData, C.int64_t(v))
@@ -300,11 +322,18 @@ func (oa *OracleAdapter) PackageExists(packageName string) (bool, error) {
 		return false, fmt.Errorf("no results returned from package existence query")
 	}
 
-	count, err := strconv.Atoi(results[0])
-	if err != nil {
-		return false, fmt.Errorf("failed to parse count result: %v", err)
+	var count int
+	if results[0] == "" {
+		count = 0
+	} else {
+		var err error
+		count, err = strconv.Atoi(results[0])
+		if err != nil {
+			return false, fmt.Errorf("failed to parse count result: %v", err)
+		}
 	}
 
+	fmt.Printf("DEBUG - Package '%s' count: %d\n", packageName, count)
 	return count > 0, nil
 }
 

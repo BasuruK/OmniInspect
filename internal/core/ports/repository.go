@@ -19,6 +19,6 @@ type ConfigRepository interface {
 	Initialize() error
 	Close() error
 	SaveDatabaseConfig(config domain.DatabaseSettings) error
-	GetDefaultDatabaseConfig() (domain.DatabaseSettings, error)
+	GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error)
 	DatabaseConfigExists(key string) (bool, error)
 }

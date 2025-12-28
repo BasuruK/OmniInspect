@@ -30,14 +30,14 @@ func main() {
 
 	// 1. Infrastructure Setup (Logging, Config, etc.)
 	// Load Configurations
-	cfgLoader := config.NewFileConfigLoader("settings.json")
+	cfgLoader := config.NewConfigLoader(boltAdapter)
 	appConfig, err := cfgLoader.LoadClientConfigurations()
 	if err != nil {
 		log.Fatalf("failed to load configurations: %v", err)
 	}
 
 	// Initialize Oracle DB Adapter (inject Configurations)
-	dbAdapter := oracle.NewOracleAdapter(appConfig.DatabaseSettings)
+	dbAdapter := oracle.NewOracleAdapter(appConfig)
 	if err := dbAdapter.Connect(); err != nil {
 		log.Fatalf("failed to connect to Oracle DB: %v", err)
 	}

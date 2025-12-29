@@ -333,7 +333,6 @@ func (oa *OracleAdapter) PackageExists(packageName string) (bool, error) {
 		}
 	}
 
-	fmt.Printf("DEBUG - Package '%s' count: %d\n", packageName, count)
 	return count > 0, nil
 }
 

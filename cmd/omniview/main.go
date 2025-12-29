@@ -48,9 +48,13 @@ func main() {
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
-	if _, err := permissionService.CheckAndDeploy(); err != nil {
+	// 3.1 Ensure Permission Checks Package is Deployed
+	if _, err := permissionService.Check(appConfig.Username); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
 	}
+	// 3.2 Check for Permissions
+	// 3.2.1 Check if permission check has already been performed.
+	// 3.2.2 If not, run permission checks against the database.
 
 	// 4. Start Application
 	omniApp := app.New(boltAdapter, dbAdapter)

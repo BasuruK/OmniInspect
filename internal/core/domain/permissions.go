@@ -2,14 +2,14 @@ package domain
 
 // Value Object : Results of permission checks
 type PermissionStatus struct {
-	CanCreateSequence      bool
-	CanCreateTable         bool
-	CanCreateProcedure     bool
-	HasAQAdministratorRole bool
-	HasAQUserRole          bool
-	HasDBMSAQADMExec       bool
-	HasDBMSAQExec          bool
-	AllPermissionsValid    bool
+	Schema              string
+	CreateSequence      bool
+	CreateProcedure     bool
+	AQAdministratorRole bool
+	AQUserRole          bool
+	DBMSAQADMExecute    bool
+	DBMSAQExecute       bool
+	AllValid            bool
 }
 
 // Entity : Represents database permissions for operations

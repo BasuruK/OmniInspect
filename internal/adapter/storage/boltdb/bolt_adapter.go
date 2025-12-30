@@ -14,8 +14,10 @@ const (
 	DatabaseConfigBucket = "DatabaseConfigurations"
 	ClientConfigBucket   = "ClientConfigurations"
 	// Bucket Defaults
-	DefaultDatabaseConfigKey = "db:default"
-	DefaultClientConfigKey   = "client:default"
+	DefaultDatabaseConfigKey   = "db:default"
+	DefaultClientConfigKey     = "client:default"
+	DefaultPermissionConfigKey = "client:permissions"
+	RunCycleStatusKey          = "run:status"
 	// Bucket Key Signatures
 	DatabaseConfigKeyPrefix = "db:config:"
 )
@@ -116,6 +118,26 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, err
 	return &config, nil
 }
 
+func (ba *BoltAdapter) SaveClientConfig(config domain.DatabasePermissions) error {
+	key := DefaultPermissionConfigKey
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+
+		// Marshal the config to JSON
+		jsonData, err := json.Marshal(config.Permissions)
+		if err != nil {
+			return fmt.Errorf("failed to marshal client config: %v", err)
+		}
+		// Save Config
+		if err := b.Put([]byte(key), jsonData); err != nil {
+			return fmt.Errorf("failed to save client config: %v", err)
+		}
+
+		return nil
+	})
+}
+
 // DatabaseConfigExists checks if a database configuration exists for the given key.
 func (ba *BoltAdapter) DatabaseConfigExists(key string) (bool, error) {
 	return exists(ba, []byte(DatabaseConfigBucket), key)
@@ -134,4 +156,40 @@ func exists(ba *BoltAdapter, bucket []byte, key string) (bool, error) {
 		return nil
 	})
 	return found, err
+}
+
+// IsApplicationFirstRun checks if the application is running for the first time
+// by verifying the presence of the run cycle status key in BoltDB.
+// first run is to determine if initial setup tasks need to be performed.
+func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
+	var isFirstRun bool
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
+		v := b.Get([]byte(RunCycleStatusKey))
+		isFirstRun = v == nil
+		return nil
+	})
+	return isFirstRun, err
+}
+
+// SetFirstRunCycleStatus saves the current run cycle status to BoltDB.
+func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) error {
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+
+		// Marshal the status to JSON
+		jsonData, err := json.Marshal(status)
+		if err != nil {
+			return fmt.Errorf("failed to marshal run cycle status: %v", err)
+		}
+		// Save Status
+		if err := b.Put([]byte(RunCycleStatusKey), jsonData); err != nil {
+			return fmt.Errorf("failed to save run cycle status: %v", err)
+		}
+
+		return nil
+	})
 }

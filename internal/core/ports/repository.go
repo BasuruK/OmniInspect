@@ -16,9 +16,16 @@ type DatabaseRepository interface {
 // BoltDB
 // Port: ConfigRepository Defines the interface for configuration storage in boltDB
 type ConfigRepository interface {
+	// Application Initialization
 	Initialize() error
 	Close() error
+	// Database Configurations
 	SaveDatabaseConfig(config domain.DatabaseSettings) error
 	GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error)
+	SaveClientConfig(config domain.DatabasePermissions) error
 	DatabaseConfigExists(key string) (bool, error)
+	// Application Startup Settings
+	// Application Run Cycle
+	SetFirstRunCycleStatus(status domain.RunCycleStatus) error
+	IsApplicationFirstRun() (bool, error)
 }

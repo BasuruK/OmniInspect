@@ -44,17 +44,16 @@ func main() {
 	defer dbAdapter.Close()
 
 	// 2. Services (Inject Adapters)
-	permissionService := permissions.NewPermissionService(dbAdapter)
+	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
 	// 3.1 Ensure Permission Checks Package is Deployed
+	// 3.2 Check if permission check has already been performed.
+	// 3.3 If not, run permission checks against the database.
 	if _, err := permissionService.Check(appConfig.Username); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
 	}
-	// 3.2 Check for Permissions
-	// 3.2.1 Check if permission check has already been performed.
-	// 3.2.2 If not, run permission checks against the database.
 
 	// 4. Start Application
 	omniApp := app.New(boltAdapter, dbAdapter)

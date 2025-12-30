@@ -25,7 +25,7 @@ func NewConfigLoader(configRepo ports.ConfigRepository) *ConfigLoader {
 
 // LoadClientConfigurations loads client configurations from a file
 func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, error) {
-	// 1. Try to load from BoltDB
+	// 1. Try to load Database Settings from BoltDB
 	config, err := cl.ConfigRepo.GetDefaultDatabaseConfig()
 	if err == nil {
 		fmt.Println("✓ loaded database from boltDB")

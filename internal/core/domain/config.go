@@ -26,6 +26,12 @@ type DatabasePackageStatus struct {
 	TracerAPIExists bool
 }
 
+// Entity : Aggregates of Application Startup settings
+type AppStartupSettings struct {
+	RunCycleStatus        RunCycleStatus
+	DatabasePackageStatus DatabasePackageStatus
+}
+
 // Entity : Aggregates full application configurations
 type AppConfigurations struct {
 	DatabaseSettings DatabaseSettings

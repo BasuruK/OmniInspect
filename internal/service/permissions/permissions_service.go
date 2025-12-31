@@ -49,6 +49,11 @@ func (ps *PermissionService) Check(schema string) (bool, error) {
 		if err := ps.bolt.SetFirstRunCycleStatus(domain.RunCycleStatus{IsFirstRun: false}); err != nil {
 			return false, err
 		}
+		// Drop the permission checks package from the database
+		// Dropping the package to maintain a clean database state and security
+		if err := dropPermissionChecksPackage(ps); err != nil {
+			return false, err
+		}
 	}
 
 	return true, nil
@@ -104,20 +109,20 @@ func checkPermissions(ps *PermissionService, schema string, perStatus *domain.Da
 		if b {
 			return "[OK]"
 		}
-		return "[NOT GRANTED]"
+		return "[NO]"
 	}
 
 	permStructTable := fmt.Sprintf("\nPermission Status Details:\n"+
-		"┌─────────────────────────────────────┬─────────┐\n"+
-		"│ %-35s │ %-7s │\n"+
-		"├─────────────────────────────────────┼─────────┤\n"+
-		"│ %-35s │ %-7s │\n"+
-		"│ %-35s │ %-7s │\n"+
-		"│ %-35s │ %-7s │\n"+
-		"│ %-35s │ %-7s │\n"+
-		"│ %-35s │ %-7s │\n"+
-		"│ %-35s │ %-7s │\n"+
-		"└─────────────────────────────────────┴─────────┘",
+		"┌───────────────────────────┬─────────┐\n"+
+		"│ %-25s │ %-7s │\n"+
+		"├───────────────────────────┼─────────┤\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"└───────────────────────────┴─────────┘",
 		"Permission", "Status",
 		"Create Sequence", statusMark(perStatus.Permissions.CreateSequence),
 		"Create Procedure", statusMark(perStatus.Permissions.CreateProcedure),
@@ -140,5 +145,23 @@ func savePermissionStatus(ps *PermissionService, status *domain.DatabasePermissi
 	if err := ps.bolt.SaveClientConfig(*status); err != nil {
 		return err
 	}
+	return nil
+}
+
+// DropPermissionChecksPackage drops the permission checks package from the database
+func dropPermissionChecksPackage(ps *PermissionService) error {
+	dropQuery := `BEGIN
+		EXECUTE IMMEDIATE 'DROP PACKAGE TXEVENTQ_PERMISSION_CHECK_API';
+	EXCEPTION
+		WHEN OTHERS THEN
+			IF SQLCODE != -4043 THEN
+				RAISE;
+			END IF;
+	END;`
+
+	if err := ps.db.ExecuteStatement(dropQuery); err != nil {
+		return fmt.Errorf("failed to drop permission checks package: %w", err)
+	}
+
 	return nil
 }

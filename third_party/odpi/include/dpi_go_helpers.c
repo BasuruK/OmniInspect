@@ -17,7 +17,7 @@ const char* getAsBytesPtr(dpiData* data) {
  * @return Length of the byte array as uint32_t
  */
 uint32_t getAsBytesLength(dpiData* data) {
-    if (data == NULL || data->isNull) return NULL;
+    if (data == NULL || data->isNull) return 0;
 	return data->value.asBytes.length;
 }
 

@@ -1,7 +1,7 @@
 package app
 
 import (
-	"OmniView/internal/utils"
+	"OmniView/internal/core/ports"
 	"bufio"
 	"fmt"
 	"os"
@@ -15,7 +15,7 @@ type App struct {
 }
 
 // New creates a new instance of the application
-func New() *App {
+func New(config ports.ConfigRepository, db ports.DatabaseRepository) *App {
 	return &App{
 		Version: "0.1.0",
 		Author:  "Basuru Balasuriya",
@@ -39,16 +39,8 @@ func (a *App) GetName() string {
 }
 
 func (a *App) StartServer(done chan struct{}) {
-	// Run startup resource checks
-	err := utils.StartupResources()
-	if err != nil {
-		fmt.Printf("Error during startup resource checks: %v\n", err)
-		return
-	}
 	// Start the server
 	fmt.Println("Server started")
-
-	utils.PrintTraceMessage()
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)

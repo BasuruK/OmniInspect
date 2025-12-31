@@ -30,71 +30,71 @@ END TXEVENTQ_PERMISSION_CHECK_API;
 CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
 
     FUNCTION Has_Create_Sequence_Priv(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_sys_privs
         WHERE privilege IN ('CREATE SEQUENCE', 'CREATE ANY SEQUENCE');
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_Create_Sequence_Priv;
 
     FUNCTION Has_Create_Procedure_Priv(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_sys_privs
         WHERE privilege IN ('CREATE PROCEDURE', 'CREATE ANY PROCEDURE');
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_Create_Procedure_Priv;
 
     FUNCTION Has_AQ_Admin_Role(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_role_privs
         WHERE granted_role = 'AQ_ADMINISTRATOR_ROLE';
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_AQ_Admin_Role;
 
     FUNCTION Has_AQ_User_Role(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_role_privs
         WHERE granted_role = 'AQ_USER_ROLE';
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_AQ_User_Role;
 
     FUNCTION Has_DBMS_AQADM_Exec(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQADM'
           AND privilege = 'EXECUTE';
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_DBMS_AQADM_Exec;
 
     FUNCTION Has_DBMS_AQ_Exec(p_schema IN VARCHAR2) RETURN BOOLEAN IS
-        v_count NUMBER;
+        count_ NUMBER;
     BEGIN
         SELECT COUNT(*)
-        INTO v_count
+        INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQ'
           AND privilege = 'EXECUTE';
 
-        RETURN v_count > 0;
+        RETURN count_ > 0;
     END Has_DBMS_AQ_Exec;
 
     FUNCTION Validate_All_Permissions(p_schema IN VARCHAR2) RETURN BOOLEAN IS
@@ -108,35 +108,54 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
     END Validate_All_Permissions;
 
     FUNCTION Get_Permission_Report(p_schema IN VARCHAR2) RETURN VARCHAR2 IS
-        v_report VARCHAR2(4000);
+        report_         VARCHAR2(4000);
+        create_seq_     BOOLEAN;
+        create_proc_    BOOLEAN;
+        aq_admin_       BOOLEAN;
+        aq_user_        BOOLEAN;
+        dbms_aqadm_     BOOLEAN;
+        dbms_aq_        BOOLEAN;
+        all_valid_      BOOLEAN;
     BEGIN
-        v_report := '{';
-        v_report := v_report || '"Schema":"' || p_schema || '",';
+        -- Call each check once
+        create_seq_     := Has_Create_Sequence_Priv(p_schema);
+        create_proc_    := Has_Create_Procedure_Priv(p_schema);
+        aq_admin_       := Has_AQ_Admin_Role(p_schema);
+        aq_user_        := Has_AQ_User_Role(p_schema);
+        dbms_aqadm_     := Has_DBMS_AQADM_Exec(p_schema);
+        dbms_aq_        := Has_DBMS_AQ_Exec(p_schema);
+        all_valid_      := create_seq_ AND create_proc_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_;
 
-        v_report := v_report || '"CreateSequence":' || 
-            CASE WHEN Has_Create_Sequence_Priv(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := '{';
+        report_ := report_ || '"Schema":"' || p_schema || '",';
 
-        v_report := v_report || '"CreateProcedure":' || 
-            CASE WHEN Has_Create_Procedure_Priv(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := report_ || '"CreateSequence":' || 
+            CASE WHEN create_seq_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '"AQAdministratorRole":' || 
-            CASE WHEN Has_AQ_Admin_Role(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := report_ || '"CreateProcedure":' || 
+            CASE WHEN create_proc_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '"AQUserRole":' || 
-            CASE WHEN Has_AQ_User_Role(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := report_ || '"AQAdministratorRole":' || 
+            CASE WHEN aq_admin_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '"DBMSAQADMExecute":' || 
-            CASE WHEN Has_DBMS_AQADM_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := report_ || '"AQUserRole":' || 
+            CASE WHEN aq_user_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '"DBMSAQExecute":' || 
-            CASE WHEN Has_DBMS_AQ_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+        report_ := report_ || '"DBMSAQADMExecute":' || 
+            CASE WHEN dbms_aqadm_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '"AllValid":' || 
-            CASE WHEN Validate_All_Permissions(p_schema) THEN 'true' ELSE 'false' END;
+        report_ := report_ || '"DBMSAQExecute":' || 
+            CASE WHEN dbms_aq_ THEN 'true' ELSE 'false' END || ',';
 
-        v_report := v_report || '}';
+        report_ := report_ || '"AllValid":' || 
+            CASE WHEN all_valid_ THEN 'true' ELSE 'false' END;
 
-        RETURN v_report;
+        report_ := report_ || '}';
+
+        RETURN report_;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE;
     END Get_Permission_Report;
 
 END TXEVENTQ_PERMISSION_CHECK_API;

@@ -7,27 +7,28 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Adapter: Loads configurations from database
 type ConfigLoader struct {
-	ConfigRepo ports.ConfigRepository
+	configRepo ports.ConfigRepository
 	reader     *bufio.Reader
 }
 
 // NewConfigLoader creates a new instance of ConfigLoader
 func NewConfigLoader(configRepo ports.ConfigRepository) *ConfigLoader {
 	return &ConfigLoader{
-		ConfigRepo: configRepo,
+		configRepo: configRepo,
 		reader:     bufio.NewReader(os.Stdin),
 	}
 }
 
-// LoadClientConfigurations loads client configurations from a file
+// LoadClientConfigurations loads client configurations from boltDB or prompts user for input
 func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, error) {
 	// 1. Try to load Database Settings from BoltDB
-	config, err := cl.ConfigRepo.GetDefaultDatabaseConfig()
-	if err == nil {
+	config, err := cl.configRepo.GetDefaultDatabaseConfig()
+	if err == nil && config != nil {
 		fmt.Println("✓ loaded database from boltDB")
 		return config, nil
 	}
@@ -40,7 +41,7 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 	}
 
 	// Save the new configuration to BoltDB
-	if err := cl.ConfigRepo.SaveDatabaseConfig(*config); err != nil {
+	if err := cl.configRepo.SaveDatabaseConfig(*config); err != nil {
 		return nil, fmt.Errorf("failed to save database config to boltDB: %w", err)
 	}
 	fmt.Println("✓ saved database config to boltDB")
@@ -57,38 +58,38 @@ func (cl *ConfigLoader) GetDatabaseDetailsFromUser() (*domain.DatabaseSettings, 
 	var err error
 
 	// Host
-	config.Host, err = cl.promptUser("Database Host (e.g., localhost)")
+	config.Host, err = cl.promptUserRequired("Database Host (e.g., localhost)")
 	if err != nil {
-		return &domain.DatabaseSettings{}, err
+		return nil, err
 	}
 
 	// Port
-	portStr, err := cl.promptUser("Database Port (e.g., 1521)")
+	portStr, err := cl.promptUserRequired("Database Port (e.g., 1521)")
 	if err != nil {
-		return &domain.DatabaseSettings{}, err
+		return nil, err
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return &domain.DatabaseSettings{}, fmt.Errorf("invalid port number: %w", err)
+		return nil, fmt.Errorf("invalid port number: %w", err)
 	}
 	config.Port = port
 
 	// Database Name (Service/SID)
-	config.Database, err = cl.promptUser("Database Name (Service/SID)")
+	config.Database, err = cl.promptUserRequired("Database Name (Service/SID)")
 	if err != nil {
-		return &domain.DatabaseSettings{}, err
+		return nil, err
 	}
 
 	// Username
-	config.Username, err = cl.promptUser("Username")
+	config.Username, err = cl.promptUserRequired("Username")
 	if err != nil {
-		return &domain.DatabaseSettings{}, err
+		return nil, err
 	}
 
 	// Password
-	config.Password, err = cl.promptUser("Password")
+	config.Password, err = cl.promptUserRequired("Password")
 	if err != nil {
-		return &domain.DatabaseSettings{}, err
+		return nil, err
 	}
 
 	return config, nil
@@ -101,5 +102,20 @@ func (cl *ConfigLoader) promptUser(prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return input[:len(input)-1], nil // Remove newline character
+	return strings.TrimSpace(input), nil // Remove newline characters
+}
+
+// Prompt user for required input (non-empty)
+func (cl *ConfigLoader) promptUserRequired(prompt string) (string, error) {
+	for {
+		input, err := cl.promptUser(prompt)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(input) == "" {
+			fmt.Printf("%s cannot be empty!\n", prompt)
+		} else {
+			return input, nil
+		}
+	}
 }

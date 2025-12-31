@@ -44,7 +44,7 @@ jobs:
         
         # Verify final location
         if (-not (Test-Path "C:\oracle_inst\instantclient_23_7\sdk\lib\msvc\oci.lib")) {
-          throw "oci.dll not found"
+          throw "oci.dll not found in SDK directory"
         }
       shell: pwsh
 

@@ -249,7 +249,7 @@ def main():
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html")
             log("   2. Extract to: /opt/oracle/instantclient_23_7")
             log("   3. Build ODPI-C:")
-            log("      cd third_party/odpi && make")
+            log("      make")
             log("\n   Or run this script with --make flag to build automatically:")
             log("      python scripts/setup_odpi.py --make")
         elif IS_WINDOWS:
@@ -258,7 +258,7 @@ def main():
             log("      Download from: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html")
             log("   2. Extract to: C:\\oracle_inst\\instantclient_23_7")
             log("   3. Build ODPI-C:")
-            log("      cd third_party\\odpi && make")
+            log("      make")
             log("\n   Or run this script with --make flag to build automatically:")
             log("      python scripts\\setup_odpi.py --make")
 

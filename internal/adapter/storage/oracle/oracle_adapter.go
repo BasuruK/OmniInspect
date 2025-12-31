@@ -30,6 +30,9 @@ type OracleAdapter struct {
 
 // Constructor: Creates a new OracleAdapter and injects configuratios
 func NewOracleAdapter(cfg *domain.DatabaseSettings) *OracleAdapter {
+	if cfg == nil {
+		return nil // or return an error, or use default config
+	}
 	return &OracleAdapter{
 		config: *cfg,
 	}
@@ -65,6 +68,7 @@ func (oa *OracleAdapter) ExecuteAndReturnStatement(query string) (*C.dpiStmt, er
 	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
+		C.dpiStmt_release(stmt)
 		return nil, fmt.Errorf("failed to execute statement: %s", C.GoString(errInfo.message))
 	}
 
@@ -75,6 +79,9 @@ func (oa *OracleAdapter) ExecuteAndReturnStatement(query string) (*C.dpiStmt, er
 // the statement object for further processing.
 // IMPORTANT: The caller is responsible for releasing the statement.
 func (oa *OracleAdapter) ExecuteWithStatement(stmt *C.dpiStmt) error {
+	if oa.Connection == nil {
+		return fmt.Errorf("database connection is not established")
+	}
 	// Execute the statement
 	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
@@ -89,6 +96,10 @@ func (oa *OracleAdapter) ExecuteWithStatement(stmt *C.dpiStmt) error {
 // first column values as a slice of strings. The caller is responsible
 // for releasing the statement handle.
 func (oa *OracleAdapter) FetchData(stmt *C.dpiStmt) ([]string, error) {
+	if oa.Connection == nil {
+		return nil, fmt.Errorf("database connection is not established")
+	}
+
 	var results []string
 	for {
 		var found C.int
@@ -144,6 +155,10 @@ func (oa *OracleAdapter) FetchData(stmt *C.dpiStmt) ([]string, error) {
 // prepareStatement prepares an SQL statement for execution.
 // It returns a statement handle that must be released after use.
 func (oa *OracleAdapter) PrepareStatement(query string) (*C.dpiStmt, error) {
+	if oa.Connection == nil {
+		return nil, fmt.Errorf("database connection is not established")
+	}
+
 	var stmt *C.dpiStmt
 	cQuery := C.CString(query)
 	defer C.free(unsafe.Pointer(cQuery))
@@ -192,7 +207,7 @@ func (oa *OracleAdapter) Connect() error {
 		oa.Context = nil
 		return err
 	}
-	fmt.Println("Connected to the database")
+	fmt.Println("✓ Connected to the database")
 
 	return nil
 }
@@ -273,9 +288,11 @@ func (oa *OracleAdapter) BindParamsToQuery(stmt *C.dpiStmt, params map[string]in
 			// Bind the parameter
 			// For string values, the binding is done here to ensure proper memory management, and the C string is freed after binding.
 			if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(name)), nativeType, &dpiData) != C.DPI_SUCCESS {
+				var errInfo C.dpiErrorInfo
+				C.dpiContext_getError(oa.Context, &errInfo)
 				C.free(unsafe.Pointer(cName))
 				C.free(unsafe.Pointer(cValue))
-				return fmt.Errorf("failed to bind parameter %s with type %d", name, nativeType)
+				return fmt.Errorf("failed to bind parameter %s: %s", name, C.GoString(errInfo.message))
 			}
 			C.free(unsafe.Pointer(cName))
 			C.free(unsafe.Pointer(cValue))

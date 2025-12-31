@@ -7,6 +7,7 @@
  * @return Pointer to the byte array
  */
 const char* getAsBytesPtr(dpiData* data) {
+    if (data == NULL || data->isNull) return NULL;
 	return (const char*)data->value.asBytes.ptr;
 }
 
@@ -16,6 +17,7 @@ const char* getAsBytesPtr(dpiData* data) {
  * @return Length of the byte array as uint32_t
  */
 uint32_t getAsBytesLength(dpiData* data) {
+    if (data == NULL || data->isNull) return NULL;
 	return data->value.asBytes.length;
 }
 
@@ -25,6 +27,7 @@ uint32_t getAsBytesLength(dpiData* data) {
  * @return The int64 value
  */
 int64_t getAsInt64(dpiData* data) {
+    if (data == NULL || data->isNull) return 0;
 	return data->value.asInt64;
 }
 
@@ -34,6 +37,7 @@ int64_t getAsInt64(dpiData* data) {
  * @return The uint64 value
  */
 uint64_t getAsUint64(dpiData* data) {
+    if (data == NULL || data->isNull) return 0;
 	return data->value.asUint64;
 }
 
@@ -43,6 +47,7 @@ uint64_t getAsUint64(dpiData* data) {
  * @return The double value
  */
 double getAsDouble(dpiData* data) {
+    if (data == NULL || data->isNull) return 0;
 	return data->value.asDouble;
 }
 
@@ -52,6 +57,7 @@ double getAsDouble(dpiData* data) {
  * @return The float value
  */
 float getAsFloat(dpiData* data) {
+    if (data == NULL || data->isNull) return 0;
 	return data->value.asFloat;
 }
 
@@ -88,4 +94,26 @@ void initDPIDataAsDouble(dpiData* data, double value) {
     if (data == NULL) return;
     data->isNull = 0;
     data->value.asDouble = value;
+}
+
+/**
+ * @brief Initialize dpiData as uint64
+ * @param data pointer to the dpiData structure
+ * @param value the uint64 value
+ */
+void initDPIDataAsUint64(dpiData* data, uint64_t value) {
+    if (data == NULL) return;
+    data->isNull = 0;
+    data->value.asUint64 = value;
+}
+
+/**
+ * @brief Initialize dpiData as float
+ * @param data pointer to the dpiData structure
+ * @param value the float value
+ */
+void initDPIDataAsFloat(dpiData* data, float value) {
+    if (data == NULL) return;
+    data->isNull = 0;
+    data->value.asFloat = value;
 }

@@ -88,6 +88,10 @@ func extractSections(plsqlContent string, startMarker string, endMarker string) 
 		return nil, errNoSectionMarkers
 	}
 
+	if endIdx <= startIdx+len(startMarker) {
+		return nil, errNoCodeBlocks
+	}
+
 	sectionContent := plsqlContent[startIdx+len(startMarker) : endIdx]
 	codeBlocks := strings.Split(sectionContent, "\n/\n")
 
@@ -99,7 +103,7 @@ func extractSections(plsqlContent string, startMarker string, endMarker string) 
 	}
 
 	if len(sections) == 0 {
-		return nil, errNoSectionMarkers
+		return nil, errNoCodeBlocks
 	}
 
 	return sections, nil

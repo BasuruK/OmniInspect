@@ -60,13 +60,19 @@ func (ba *BoltAdapter) Initialize() error {
 // Close closes the BoltDB database.
 func (ba *BoltAdapter) Close() error {
 	if ba.db != nil {
-		return ba.db.Close()
+		err := ba.db.Close()
+		ba.db = nil
+		return err
 	}
 
 	return nil
 }
 
 func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error {
+	if ba.db == nil {
+		return fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username, config.Database)
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
@@ -94,6 +100,10 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 }
 
 func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
+	if ba.db == nil {
+		return nil, fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	var config domain.DatabaseSettings
 
 	// Get Default Key
@@ -119,6 +129,10 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, err
 }
 
 func (ba *BoltAdapter) SaveClientConfig(config domain.DatabasePermissions) error {
+	if ba.db == nil {
+		return fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	key := DefaultPermissionConfigKey
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
@@ -145,6 +159,10 @@ func (ba *BoltAdapter) DatabaseConfigExists(key string) (bool, error) {
 
 // Exists checks if a key exists in the specified bucket.
 func exists(ba *BoltAdapter, bucket []byte, key string) (bool, error) {
+	if ba.db == nil {
+		return false, fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	var found bool
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucket)
@@ -162,6 +180,10 @@ func exists(ba *BoltAdapter, bucket []byte, key string) (bool, error) {
 // by verifying the presence of the run cycle status key in BoltDB.
 // first run is to determine if initial setup tasks need to be performed.
 func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
+	if ba.db == nil {
+		return false, fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	var isFirstRun bool
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
@@ -177,6 +199,10 @@ func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
 
 // SetFirstRunCycleStatus saves the current run cycle status to BoltDB.
 func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) error {
+	if ba.db == nil {
+		return fmt.Errorf("BoltAdapter not initialized")
+	}
+
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 

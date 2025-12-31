@@ -43,6 +43,7 @@ END BACKGROUND_TRACER_API;
 
 CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
     PROCEDURE Initialize IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
         queue_exists_ NUMBER;
     BEGIN
         -- Check if queue exists
@@ -60,11 +61,10 @@ CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
                 queue_name => TRACER_QUEUE_NAME
             );
         END IF;
-        
+
         COMMIT;
     EXCEPTION
         WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('FATAL ERROR in Initialize: ' || SQLERRM);
             RAISE;
     END Initialize;
 

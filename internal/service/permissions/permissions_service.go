@@ -23,8 +23,8 @@ func NewPermissionService(db ports.DatabaseRepository, bolt ports.ConfigReposito
 	}
 }
 
-// Check ensures the necessary permission checks package is deployed, checked and dropped
-func (ps *PermissionService) Check(schema string) (bool, error) {
+// DeployAndCheck ensures the necessary permission checks package is deployed, checked and dropped
+func (ps *PermissionService) DeployAndCheck(schema string) (bool, error) {
 	// Check if permission checks have already been performed
 	isFirstRun, err := ps.bolt.IsApplicationFirstRun()
 	if err != nil {

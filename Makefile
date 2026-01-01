@@ -111,12 +111,10 @@ ifeq ($(DETECTED_OS),Windows)
     else
 	@if exist $(subst /,\,$(ODPI_BASE)\build) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\build)
 	@if exist $(subst /,\,$(ODPI_BASE)\src) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\src)
-	@if exist odpi.dll $(DEL_CMD) odpi.dll
     endif
 else
 	@$(RM_CMD) $(ODPI_BASE)/build
 	@$(RM_CMD) $(ODPI_BASE)/src
-	@rm -f libodpi.dylib
 endif
 
 # Phony targets

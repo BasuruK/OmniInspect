@@ -1,6 +1,6 @@
 /*
-Background Tracer API
-This Package and its contents provides functionality for tracing background jobs and processes within the database.
+OMNI TRACER API
+This Package and its contents provides functionality for tracing OMNI jobs and processes within the database.
 Do not modify this file directly unless you are certain of the implications.
 
 Copyright (c) 2025.
@@ -15,11 +15,11 @@ BEGIN
     SELECT COUNT(*)
     INTO v_count
     FROM user_sequences
-    WHERE sequence_name = 'BACKGROUND_TRACER_ID_SEQ';
+    WHERE sequence_name = 'OMNI_TRACER_ID_SEQ';
     
     -- Create only if it doesn't exist
     IF v_count = 0 THEN
-        EXECUTE IMMEDIATE 'CREATE SEQUENCE background_tracer_id_seq START WITH 1 INCREMENT BY 1 NOCACHE';
+        EXECUTE IMMEDIATE 'CREATE SEQUENCE OMNI_TRACER_ID_SEQ START WITH 1 INCREMENT BY 1 NOCACHE';
     END IF;
 END;
 /
@@ -28,20 +28,20 @@ END;
 
 -- @SECTION: PACKAGE_SPECIFICATION
 
-CREATE OR REPLACE PACKAGE BACKGROUND_TRACER_API AS 
-    TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'BACKGROUND_TRACER_QUEUE';
+CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS 
+    TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'OMNI_TRACER_QUEUE';
 
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN VARCHAR2);
     FUNCTION Fetch_Next_Trace_Message RETURN CLOB;
-END BACKGROUND_TRACER_API;
+END OMNI_TRACER_API;
 /
 
 -- @END_SECTION: PACKAGE_SPECIFICATION
 
 -- @SECTION: PACKAGE_BODY
 
-CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
+CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
         queue_exists_ NUMBER;
@@ -64,8 +64,13 @@ CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
 
         COMMIT;
     EXCEPTION
-        WHEN OTHERS THEN
+    WHEN OTHERS THEN
+        IF SQLCODE = -24001 THEN                
+        -- Queue already exists (race condition), ignore
+            NULL;
+        ELSE
             RAISE;
+        END IF;
     END Initialize;
 
     PROCEDURE Enqueue_Event___ (
@@ -83,7 +88,7 @@ CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message is visible immediately, impervious to rollbacks, and runs an internal commit.
 
         message_ := JSON_OBJECT_T();
-        message_.PUT('MESSAGE_ID', TO_CHAR(background_tracer_id_seq.NEXTVAL));
+        message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
         message_.PUT('PROCESS_NAME', process_name_);
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
@@ -163,7 +168,7 @@ CREATE OR REPLACE PACKAGE BODY BACKGROUND_TRACER_API AS
         RETURN message_;
     END Fetch_Next_Trace_Message;
 
-END BACKGROUND_TRACER_API;
+END OMNI_TRACER_API;
 /
 
 -- @END_SECTION: PACKAGE_BODY

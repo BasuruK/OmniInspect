@@ -6,6 +6,7 @@ import (
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/app"
 	"OmniView/internal/service/permissions"
+	"OmniView/internal/service/tracer"
 	"fmt"
 	"log"
 	"os"
@@ -45,14 +46,18 @@ func main() {
 
 	// 2. Services (Inject Adapters)
 	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
+	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
-	// 3.1 Ensure Permission Checks Package is Deployed
-	// 3.2 Check if permission check has already been performed.
-	// 3.3 If not, run permission checks against the database.
-	if _, err := permissionService.Check(appConfig.Username); err != nil {
+	// 3.1 Ensure Permission Checks Package is Deployed and permissions are granted
+	if _, err := permissionService.DeployAndCheck(appConfig.Username); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
+	}
+
+	// 3.2. Ensure Tracer Package is Deployed and initialized
+	if err := tracerService.DeployAndCheck(); err != nil {
+		log.Fatalf("failed to deploy tracer package: %v", err)
 	}
 
 	// 4. Start Application

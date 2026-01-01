@@ -97,6 +97,7 @@ func extractSections(plsqlContent string, startMarker string, endMarker string) 
 
 	for _, block := range codeBlocks {
 		trimmedBlock := strings.TrimSpace(block)
+		trimmedBlock = strings.TrimSuffix(trimmedBlock, "/")
 		if trimmedBlock != "" {
 			sections = append(sections, trimmedBlock)
 		}

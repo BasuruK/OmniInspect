@@ -21,7 +21,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 	}
 }
 
-// Start ensures the necessary tracer package is deployed and initialized
+// DeployAndCheck ensures the necessary tracer package is deployed and initialized
 func (ts *TracerService) DeployAndCheck() error {
 	// Check if the tracer package is already deployed
 	// if not, deploy it

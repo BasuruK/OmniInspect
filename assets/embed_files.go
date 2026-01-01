@@ -29,6 +29,9 @@ func GetSQLFile(fileName string) ([]byte, error) {
 	return data, nil
 }
 
+// GetInsFile reads an embedded INS file by name.
+// fileName should be just the base filename (e.g., "config.ins") without the "ins/" directory prefix.
+// Returns the file contents or an error if the file cannot be read.
 func GetInsFile(fileName string) ([]byte, error) {
 	// Prevent path traversal attempts
 	if strings.Contains(fileName, "..") || strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") {

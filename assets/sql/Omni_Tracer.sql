@@ -64,8 +64,13 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
         COMMIT;
     EXCEPTION
-        WHEN OTHERS THEN
+    WHEN OTHERS THEN
+        IF SQLCODE = -24001 THEN                
+        -- Queue already exists (race condition), ignore
+            NULL;
+        ELSE
             RAISE;
+        END IF;
     END Initialize;
 
     PROCEDURE Enqueue_Event___ (

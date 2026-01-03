@@ -98,7 +98,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         PRAGMA AUTONOMOUS_TRANSACTION;
         sub_ SYS.AQ$_AGENT;
     BEGIN
-        IF subscriber_name_ IS NULL OR LENGTH(subscriber_name_) = 0 THEN
+        IF subscriber_name_ IS NULL THEN
             RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
         END IF;
 
@@ -172,6 +172,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
         END IF;
 
+        IF subscriber_name_ IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Subscriber name cannot be NULL for multi-consumer queue');
+        END IF;
+
         -- Async Listening
         dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait := wait_time_;
@@ -196,11 +200,17 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             payload_array_(i_).get_text(temp_clob_);
             messages_(i_) := temp_clob_;
             message_ids_(i_) := msg_id_array_(i_);
+
+            IF DBMS_LOB.ISTEMPORARY(temp_clob_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(temp_clob_);
+            END IF;
         END LOOP;
     EXCEPTION
         WHEN OTHERS THEN
             IF SQLCODE = -25228 THEN
                 -- No message available
+                messages_.DELETE;
+                message_ids_.DELETE;
                 msg_count_ := 0;
             ELSE
                 RAISE;

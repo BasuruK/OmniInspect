@@ -37,8 +37,3 @@ type AppConfigurations struct {
 	DatabaseSettings DatabaseSettings
 	ClientSettings   ClientSettings
 }
-
-// Entity : Subscriber information
-type Subscriber struct {
-	Name string
-}

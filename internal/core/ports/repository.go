@@ -33,6 +33,6 @@ type ConfigRepository interface {
 	SetFirstRunCycleStatus(status domain.RunCycleStatus) error
 	IsApplicationFirstRun() (bool, error)
 	// Subscriber Information
-	SetSubscriberName(subscriber domain.Subscriber) error
-	GetSubscriberName() (*domain.Subscriber, error)
+	SetSubscriber(subscriber domain.Subscriber) error
+	GetSubscriber() (*domain.Subscriber, error)
 }

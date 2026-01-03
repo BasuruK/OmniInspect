@@ -23,20 +23,20 @@ func NewSubscriberService(db ports.DatabaseRepository, bolt ports.ConfigReposito
 	}
 }
 
-// SetSubscriberName Retrieves the subscriber name from the bolt database
-func (ss *SubscriberService) SetSubscriberName(subscriber domain.Subscriber) error {
-	return ss.bolt.SetSubscriberName(subscriber)
+// SetSubscriber stores the subscriber in the bolt database
+func (ss *SubscriberService) SetSubscriber(subscriber domain.Subscriber) error {
+	return ss.bolt.SetSubscriber(subscriber)
 }
 
-// GetSubscriberName Retrieves the subscriber name from the bolt database
-func (ss *SubscriberService) GetSubscriberName() (*domain.Subscriber, error) {
-	return ss.bolt.GetSubscriberName()
+// GetSubscriber retrieves the subscriber from the bolt database
+func (ss *SubscriberService) GetSubscriber() (*domain.Subscriber, error) {
+	return ss.bolt.GetSubscriber()
 }
 
 // NewSubscriber Generates and stores a new unique subscriber name
 func (ss *SubscriberService) NewSubscriber() (string, error) {
 	subscriberName := generateSubscriberName()
-	if err := ss.SetSubscriberName(domain.Subscriber{Name: subscriberName}); err != nil {
+	if err := ss.SetSubscriber(domain.Subscriber{Name: subscriberName}); err != nil {
 		return "", err
 	}
 	return subscriberName, nil
@@ -45,9 +45,9 @@ func (ss *SubscriberService) NewSubscriber() (string, error) {
 // RegisterSubscriber Retrieves existing subscriber or creates a new one if not found
 // Registers the subscriber as a listener in the oracle database.
 func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
-	subscriber, err := ss.GetSubscriberName()
+	subscriber, err := ss.GetSubscriber()
 	if err != nil {
-		if err.Error() != "subscriber name not found" {
+		if err.Error() != domain.ErrSubscriberNotFound {
 			return domain.Subscriber{}, err // return other errors
 		}
 		// If not found, create a new subscriber

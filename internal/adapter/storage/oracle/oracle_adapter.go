@@ -470,9 +470,10 @@ func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) err
 func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
 	query := `SELECT COUNT(*)
 			FROM ALL_QUEUE_SUBSCRIBERS
-			WHERE QUEUE_NAME = 'OMNI_TRACER_QUEUE'
+			WHERE QUEUE_NAME = :queueName
 			AND CONSUMER_NAME = :subscriberName`
 	results, err := oa.FetchWithParams(query, map[string]interface{}{
+		"queueName":      domain.QueueName,
 		"subscriberName": subscriber.Name,
 	})
 	if err != nil {

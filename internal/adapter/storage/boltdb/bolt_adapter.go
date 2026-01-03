@@ -221,8 +221,8 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) erro
 	})
 }
 
-// SetSubscriberName saves the subscriber information to BoltDB.
-func (ba *BoltAdapter) SetSubscriberName(subscriber domain.Subscriber) error {
+// SetSubscriber saves the subscriber information to BoltDB.
+func (ba *BoltAdapter) SetSubscriber(subscriber domain.Subscriber) error {
 	if ba.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
@@ -245,8 +245,8 @@ func (ba *BoltAdapter) SetSubscriberName(subscriber domain.Subscriber) error {
 	})
 }
 
-// GetSubscriberName retrieves the subscriber information from BoltDB.
-func (ba *BoltAdapter) GetSubscriberName() (*domain.Subscriber, error) {
+// GetSubscriber retrieves the subscriber information from BoltDB.
+func (ba *BoltAdapter) GetSubscriber() (*domain.Subscriber, error) {
 	if ba.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
@@ -258,7 +258,7 @@ func (ba *BoltAdapter) GetSubscriberName() (*domain.Subscriber, error) {
 		// Get Subscriber Name JSON
 		data := b.Get([]byte(SubscriberNameKey))
 		if data == nil {
-			return fmt.Errorf("subscriber name not found")
+			return fmt.Errorf("%s", domain.ErrSubscriberNotFound)
 		}
 
 		return json.Unmarshal(data, &subscriber)

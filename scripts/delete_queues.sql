@@ -60,7 +60,7 @@ DECLARE
                 DBMS_OUTPUT.PUT_LINE('⚠️  Error stopping queue: ' || SQLERRM || ' (will try force drop)');
         END;
         
-        -- Drop queue with FORCE
+        -- Drop queue
         BEGIN
             DBMS_AQADM.DROP_QUEUE(queue_name => v_qualified_name);
             DBMS_OUTPUT.PUT_LINE('✓ Queue dropped: ' || v_qualified_name);

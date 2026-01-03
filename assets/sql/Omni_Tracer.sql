@@ -81,7 +81,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             );
             COMMIT;
 
-            Register_Subscriber('OMNIVIEW_CONSUMER');
         END IF;  
     EXCEPTION
     WHEN OTHERS THEN
@@ -168,7 +167,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         -- initialize
         messages_ := clob_tab();
         message_ids_ := raw_tab();
-        
+
         -- Async Listening
         dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait := wait_time_;

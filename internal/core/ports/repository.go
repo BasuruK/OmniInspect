@@ -1,6 +1,8 @@
 package ports
 
-import "OmniView/internal/core/domain"
+import (
+	"OmniView/internal/core/domain"
+)
 
 // Oracle
 // Port: DatabaseRepository Defines the interface for database repository operations
@@ -28,4 +30,7 @@ type ConfigRepository interface {
 	// Application Run Cycle
 	SetFirstRunCycleStatus(status domain.RunCycleStatus) error
 	IsApplicationFirstRun() (bool, error)
+	// Subscriber Information
+	SetSubscriberName(subscriber domain.Subscriber) error
+	GetSubscriberName() (*domain.Subscriber, error)
 }

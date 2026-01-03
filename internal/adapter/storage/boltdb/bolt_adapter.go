@@ -18,6 +18,7 @@ const (
 	DefaultClientConfigKey     = "client:default"
 	DefaultPermissionConfigKey = "client:permissions"
 	RunCycleStatusKey          = "run:status"
+	SubscriberNameKey          = "subscriber:name"
 	// Bucket Key Signatures
 	DatabaseConfigKeyPrefix = "db:config:"
 )
@@ -218,4 +219,53 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) erro
 
 		return nil
 	})
+}
+
+// SetSubscriberName saves the subscriber information to BoltDB.
+func (ba *BoltAdapter) SetSubscriberName(subscriber domain.Subscriber) error {
+	if ba.db == nil {
+		return fmt.Errorf("BoltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+
+		// Marshal the name to JSON
+		jsonData, err := json.Marshal(subscriber)
+		if err != nil {
+			return fmt.Errorf("failed to marshal subscriber name: %v", err)
+		}
+
+		// Save Subscriber Name
+		if err := b.Put([]byte(SubscriberNameKey), jsonData); err != nil {
+			return fmt.Errorf("failed to save subscriber name: %v", err)
+		}
+
+		return nil
+	})
+}
+
+// GetSubscriberName retrieves the subscriber information from BoltDB.
+func (ba *BoltAdapter) GetSubscriberName() (*domain.Subscriber, error) {
+	if ba.db == nil {
+		return nil, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var subscriber domain.Subscriber
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+
+		// Get Subscriber Name JSON
+		data := b.Get([]byte(SubscriberNameKey))
+		if data == nil {
+			return fmt.Errorf("subscriber name not found")
+		}
+
+		return json.Unmarshal(data, &subscriber)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &subscriber, nil
 }

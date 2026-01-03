@@ -6,6 +6,7 @@ import (
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/app"
 	"OmniView/internal/service/permissions"
+	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
 	"fmt"
 	"log"
@@ -47,6 +48,7 @@ func main() {
 	// 2. Services (Inject Adapters)
 	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
 	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
+	subscriberService := subscribers.NewSubscriberService(boltAdapter)
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
@@ -59,6 +61,13 @@ func main() {
 	if err := tracerService.DeployAndCheck(); err != nil {
 		log.Fatalf("failed to deploy tracer package: %v", err)
 	}
+
+	// 3.3. Subscriber Registration
+	subscriber, err := subscriberService.RegisterSubscriber()
+	if err != nil {
+		log.Fatalf("failed to register subscriber: %v", err)
+	}
+	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name)
 
 	// 4. Start Application
 	omniApp := app.New(boltAdapter, dbAdapter)

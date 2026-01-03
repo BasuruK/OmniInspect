@@ -10,9 +10,11 @@ type DatabaseRepository interface {
 	ExecuteStatement(query string) error
 	Fetch(query string) ([]string, error)
 	FetchWithParams(query string, params map[string]interface{}) ([]string, error)
+	ExecuteWithParams(query string, params map[string]interface{}) error
 	PackageExists(packageName string) (bool, error)
 	DeployPackages(sequences []string, packageSpecs []string, packageBodies []string) error
 	DeployFile(sqlContent string) error
+	RegisterNewSubscriber(subscriber domain.Subscriber) error
 }
 
 // BoltDB

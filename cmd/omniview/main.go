@@ -48,7 +48,7 @@ func main() {
 	// 2. Services (Inject Adapters)
 	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
 	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
-	subscriberService := subscribers.NewSubscriberService(boltAdapter)
+	subscriberService := subscribers.NewSubscriberService(dbAdapter, boltAdapter)
 
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services

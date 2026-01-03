@@ -98,6 +98,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         PRAGMA AUTONOMOUS_TRANSACTION;
         sub_ SYS.AQ$_AGENT;
     BEGIN
+        IF subscriber_name_ IS NULL OR LENGTH(subscriber_name_) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
+        END IF;
+
         sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
         DBMS_AQADM.ADD_SUBSCRIBER (
             queue_name      => TRACER_QUEUE_NAME,
@@ -153,8 +157,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         subscriber_name_ IN VARCHAR2,
         batch_size_      IN INTEGER,
         wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_         OUT clob_tab,
-        message_ids_      OUT raw_tab,
+        messages_        OUT clob_tab,
+        message_ids_     OUT raw_tab,
         msg_count_       OUT INTEGER)
     IS
         dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
@@ -164,9 +168,9 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         count_               NUMBER;
         temp_clob_           CLOB;
     BEGIN
-        -- initialize
-        messages_ := clob_tab();
-        message_ids_ := raw_tab();
+        IF batch_size_ IS NULL OR batch_size_ <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
+        END IF;
 
         -- Async Listening
         dequeue_options_.consumer_name := subscriber_name_;

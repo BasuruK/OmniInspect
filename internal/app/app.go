@@ -12,6 +12,8 @@ type App struct {
 	Name    string // Name of the application
 	Author  string // Author of the program
 	Version string // Version of the application
+	db      ports.DatabaseRepository
+	config  ports.ConfigRepository
 }
 
 // New creates a new instance of the application
@@ -20,6 +22,8 @@ func New(config ports.ConfigRepository, db ports.DatabaseRepository) *App {
 		Version: "0.1.0",
 		Author:  "Basuru Balasuriya",
 		Name:    "OmniView",
+		db:      db,
+		config:  config,
 	}
 }
 
@@ -40,7 +44,7 @@ func (a *App) GetName() string {
 
 func (a *App) StartServer(done chan struct{}) {
 	// Start the server
-	fmt.Println("Server started")
+	fmt.Println("Tracer started")
 
 	fmt.Println("Press Enter to Continue...")
 	reader := bufio.NewReader(os.Stdin)

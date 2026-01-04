@@ -1,6 +1,8 @@
 package ports
 
-import "OmniView/internal/core/domain"
+import (
+	"OmniView/internal/core/domain"
+)
 
 // Oracle
 // Port: DatabaseRepository Defines the interface for database repository operations
@@ -8,9 +10,11 @@ type DatabaseRepository interface {
 	ExecuteStatement(query string) error
 	Fetch(query string) ([]string, error)
 	FetchWithParams(query string, params map[string]interface{}) ([]string, error)
+	ExecuteWithParams(query string, params map[string]interface{}) error
 	PackageExists(packageName string) (bool, error)
 	DeployPackages(sequences []string, packageSpecs []string, packageBodies []string) error
 	DeployFile(sqlContent string) error
+	RegisterNewSubscriber(subscriber domain.Subscriber) error
 }
 
 // BoltDB
@@ -28,4 +32,7 @@ type ConfigRepository interface {
 	// Application Run Cycle
 	SetFirstRunCycleStatus(status domain.RunCycleStatus) error
 	IsApplicationFirstRun() (bool, error)
+	// Subscriber Information
+	SetSubscriber(subscriber domain.Subscriber) error
+	GetSubscriber() (*domain.Subscriber, error)
 }

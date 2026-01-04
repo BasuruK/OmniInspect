@@ -31,9 +31,27 @@ END;
 CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS 
     TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'OMNI_TRACER_QUEUE';
 
+    -- Collection types for bulk operations
+    TYPE clob_tab IS TABLE OF CLOB INDEX BY PLS_INTEGER;
+    TYPE raw_tab IS TABLE OF RAW(16) INDEX BY PLS_INTEGER;
+
+    -- Core Methods
     PROCEDURE Initialize;
-    PROCEDURE Trace_Message(message_ IN VARCHAR2);
-    FUNCTION Fetch_Next_Trace_Message RETURN CLOB;
+    PROCEDURE Trace_Message(message_ IN VARCHAR2, log_level_ IN VARCHAR2 DEFAULT 'INFO');
+ 
+    -- Subscriber Management
+    PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
+    --PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
+
+    -- Enqueue/Dequeue Methods
+    -- High Performance bulk Array Dequeue
+    PROCEDURE Dequeue_Array_Events (
+        subscriber_name_ IN VARCHAR2,
+        batch_size_      IN INTEGER,
+        wait_time_      IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_       OUT clob_tab,
+        message_ids_    OUT raw_tab,
+        msg_count_      OUT INTEGER);
 END OMNI_TRACER_API;
 /
 
@@ -42,6 +60,7 @@ END OMNI_TRACER_API;
 -- @SECTION: PACKAGE_BODY
 
 CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
         queue_exists_ NUMBER;
@@ -55,14 +74,14 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         IF queue_exists_ = 0 THEN
             DBMS_AQADM.CREATE_TRANSACTIONAL_EVENT_QUEUE (
                 queue_name => TRACER_QUEUE_NAME,
-                multiple_consumers => FALSE
+                multiple_consumers => TRUE -- setting this value true here, cause it allows named subscribers
             );
             DBMS_AQADM.START_QUEUE (
                 queue_name => TRACER_QUEUE_NAME
             );
-        END IF;
+            COMMIT;
 
-        COMMIT;
+        END IF;  
     EXCEPTION
     WHEN OTHERS THEN
         IF SQLCODE = -24001 THEN                
@@ -72,6 +91,32 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             RAISE;
         END IF;
     END Initialize;
+
+
+    PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2) 
+    IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
+        sub_ SYS.AQ$_AGENT;
+    BEGIN
+        IF subscriber_name_ IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
+        END IF;
+
+        sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
+        DBMS_AQADM.ADD_SUBSCRIBER (
+            queue_name      => TRACER_QUEUE_NAME,
+            subscriber      => sub_
+        );
+        COMMIT;
+    EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE = -24034 THEN -- Subscriber already exists
+            NULL;
+        ELSE
+            RAISE;
+        END IF;
+    END Register_Subscriber;
+
 
     PROCEDURE Enqueue_Event___ (
         process_name_   IN VARCHAR2,
@@ -107,66 +152,84 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         );
     END Enqueue_Event___;
 
-    PROCEDURE Dequeue_Event___ (
-        wait_time_  IN NUMBER DEFAULT DBMS_AQ.FOREVER,
-        message_    OUT CLOB,
-        message_id_ OUT RAW )
+
+    PROCEDURE Dequeue_Array_Events (
+        subscriber_name_ IN VARCHAR2,
+        batch_size_      IN INTEGER,
+        wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT clob_tab,
+        message_ids_     OUT raw_tab,
+        msg_count_       OUT INTEGER)
     IS
-        dequeue_options_    DBMS_AQ.DEQUEUE_OPTIONS_T;
-        message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
-        payload_            SYS.AQ$_JMS_TEXT_MESSAGE;
+        dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
+        message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
+        payload_array_       SYS.AQ$_JMS_TEXT_MESSAGES;
+        msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
+        count_               NUMBER;
+        temp_clob_           CLOB;
     BEGIN
+        IF batch_size_ IS NULL OR batch_size_ <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
+        END IF;
+
+        IF subscriber_name_ IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Subscriber name cannot be NULL for multi-consumer queue');
+        END IF;
+
         -- Async Listening
+        dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait := wait_time_;
         dequeue_options_.navigation := DBMS_AQ.FIRST_MESSAGE;
         dequeue_options_.visibility := DBMS_AQ.IMMEDIATE;
 
-        DBMS_AQ.DEQUEUE (
-            queue_name          => TRACER_QUEUE_NAME,
-            dequeue_options     => dequeue_options_,
-            message_properties  => message_properties_,
-            payload             => payload_,
-            msgid               => message_id_
+        -- Initialize output collections
+        payload_array_ := SYS.AQ$_JMS_TEXT_MESSAGES();
+
+        count_ := DBMS_AQ.DEQUEUE_ARRAY (
+            queue_name                => TRACER_QUEUE_NAME,
+            dequeue_options           => dequeue_options_,
+            array_size                => batch_size_,
+            message_properties_array  => message_props_array_,
+            payload_array             => payload_array_,
+            msgid_array               => msg_id_array_
         );
 
-        payload_.get_text(message_);
+        msg_count_ := count_;
+
+        FOR i_ IN 1 .. count_ LOOP
+            payload_array_(i_).get_text(temp_clob_);
+            messages_(i_) := temp_clob_;
+            message_ids_(i_) := msg_id_array_(i_);
+
+            IF DBMS_LOB.ISTEMPORARY(temp_clob_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(temp_clob_);
+            END IF;
+        END LOOP;
     EXCEPTION
         WHEN OTHERS THEN
             IF SQLCODE = -25228 THEN
                 -- No message available
-                message_ := NULL;
-                message_id_ := NULL;
+                messages_.DELETE;
+                message_ids_.DELETE;
+                msg_count_ := 0;
             ELSE
                 RAISE;
             END IF;
-    END Dequeue_Event___;
+    END Dequeue_Array_Events;
 
     PROCEDURE Trace_Message (
-        message_ IN VARCHAR2 ) 
+        message_    IN VARCHAR2,
+        log_level_  IN VARCHAR2 DEFAULT 'INFO') 
     IS
         calling_process_ VARCHAR2(100);
     BEGIN
         calling_process_ := SUBSTR(DBMS_UTILITY.FORMAT_CALL_STACK, 1, 100);
-
         Enqueue_Event___(
             process_name_   => calling_process_,
-            log_level_      => 'INFO',
+            log_level_      => log_level_,
             payload         => message_
         );
     END Trace_Message;
-
-    FUNCTION Fetch_Next_Trace_Message RETURN CLOB 
-    IS
-        message_    CLOB;
-        message_id_ RAW(16);
-    BEGIN
-        Dequeue_Event___(
-            wait_time_  => 100,
-            message_    => message_,
-            message_id_ => message_id_
-        );
-        RETURN message_;
-    END Fetch_Next_Trace_Message;
 
 END OMNI_TRACER_API;
 /

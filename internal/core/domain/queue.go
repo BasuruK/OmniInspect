@@ -1,5 +1,7 @@
 package domain
 
+import "errors"
+
 // Value Object : Queue Name
 const (
 	QueueName = "OMNI_TRACER_QUEUE"
@@ -12,5 +14,5 @@ type Subscriber struct {
 
 // Errors: Subscriber Entity
 var (
-	ErrSubscriberNotFound = "subscriber name not found"
+	ErrSubscriberNotFound = errors.New("subscriber name not found")
 )

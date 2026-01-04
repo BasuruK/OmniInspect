@@ -3,6 +3,7 @@ package subscribers
 import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -47,7 +48,7 @@ func (ss *SubscriberService) NewSubscriber() (string, error) {
 func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
 	subscriber, err := ss.GetSubscriber()
 	if err != nil {
-		if err.Error() != domain.ErrSubscriberNotFound {
+		if !errors.Is(err, domain.ErrSubscriberNotFound) {
 			return domain.Subscriber{}, err // return other errors
 		}
 		// If not found, create a new subscriber

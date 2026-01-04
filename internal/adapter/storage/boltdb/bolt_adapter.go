@@ -258,7 +258,7 @@ func (ba *BoltAdapter) GetSubscriber() (*domain.Subscriber, error) {
 		// Get Subscriber Name JSON
 		data := b.Get([]byte(SubscriberNameKey))
 		if data == nil {
-			return fmt.Errorf("%s", domain.ErrSubscriberNotFound)
+			return domain.ErrSubscriberNotFound
 		}
 
 		return json.Unmarshal(data, &subscriber)

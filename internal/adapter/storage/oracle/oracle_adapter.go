@@ -339,15 +339,9 @@ func (oa *OracleAdapter) PackageExists(packageName string) (bool, error) {
 		return false, fmt.Errorf("no results returned from package existence query")
 	}
 
-	var count int
-	if results[0] == "" {
-		count = 0
-	} else {
-		var err error
-		count, err = strconv.Atoi(results[0])
-		if err != nil {
-			return false, fmt.Errorf("failed to parse count result: %v", err)
-		}
+	count, err := parseCountResult(results)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse count result: %v", err)
 	}
 
 	return count > 0, nil
@@ -483,16 +477,21 @@ func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, er
 		return false, nil
 	}
 
-	var count int
-	if results[0] == "" {
-		count = 0
-	} else {
-		var err error
-		count, err = strconv.Atoi(results[0])
-		if err != nil {
-			return false, fmt.Errorf("failed to parse count result: %v", err)
-		}
+	count, err := parseCountResult(results)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse subscriber existence count: %v", err)
 	}
-
 	return count > 0, nil
+}
+
+// parseCountResult parses the first element of a COUNT(*) query result.
+func parseCountResult(results []string) (int, error) {
+	if len(results) == 0 || results[0] == "" {
+		return 0, nil
+	}
+	count, err := strconv.Atoi(results[0])
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse count result: %v", err)
+	}
+	return count, nil
 }

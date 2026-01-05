@@ -38,6 +38,19 @@ func NewOracleAdapter(cfg *domain.DatabaseSettings) *OracleAdapter {
 	}
 }
 
+// GetRawConnection returns the underlying DPI connection handle as unsafe.Pointer.
+// WARNING: this low-level API should be only used in tracer functionality.
+func (oa *OracleAdapter) GetRawConnection() unsafe.Pointer {
+	return unsafe.Pointer(oa.Connection)
+}
+
+// GetRawContext returns the underlying DPI context handle as unsafe.Pointer.
+// WARNING: this low-level API should be only used in tracer functionality.
+func (oa *OracleAdapter) GetRawContext() unsafe.Pointer {
+	return unsafe.Pointer(oa.Context)
+}
+
+// Fetch executes a SELECT query and returns all results as a slice of strings.
 func (oa *OracleAdapter) Fetch(query string) ([]string, error) {
 	var err error
 
@@ -462,7 +475,7 @@ func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) err
 
 // subscriberExists checks if a subscriber with the given name already exists in the Oracle database.
 func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
-	query := `SELECT COUNT(*)
+	query := `SELECT COUNT(1)
 			FROM ALL_QUEUE_SUBSCRIBERS
 			WHERE QUEUE_NAME = :queueName
 			AND CONSUMER_NAME = :subscriberName`
@@ -471,7 +484,7 @@ func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, er
 		"subscriberName": subscriber.Name,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to check subscriber existence: %v", err)
+		return false, nil
 	}
 	if len(results) == 0 {
 		return false, nil

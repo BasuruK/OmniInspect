@@ -1,4 +1,6 @@
-# Detect OS - use OS environment variable on Windows
+# ============================================================================
+# OS Detection
+# ============================================================================
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
 else
@@ -23,10 +25,13 @@ ifeq ($(DETECTED_OS),Windows)
     endif
 endif
 
-# Updated paths for DDD architecture
+# ============================================================================
+# ODPI-C Library Build Configuration
+# ============================================================================
 ODPI_BASE = third_party/odpi
 ODPI_SRC = $(wildcard $(ODPI_BASE)/src/*.c)
 ODPI_OBJ = $(patsubst $(ODPI_BASE)/src/%.c,$(ODPI_BASE)/build/%.o,$(ODPI_SRC))
+
 INCLUDE = -I$(ODPI_BASE)/include
 
 ifeq ($(DETECTED_OS),Windows)
@@ -65,7 +70,32 @@ else ifeq ($(DETECTED_OS),MacOS)
     RM_CMD = rm -rf
 endif
 
-all: $(TARGET)
+# ============================================================================
+# Go Application Build Configuration
+# ============================================================================
+BINARY_NAME = omniview
+BUILD_DIR = .
+MAIN_PATH = cmd/omniview
+
+# Export CGO flags for Go build (picked up automatically by go build)
+ifeq ($(DETECTED_OS),MacOS)
+    export CGO_CFLAGS = -I$(PWD)/$(ODPI_BASE)/include
+    export CGO_LDFLAGS = -L$(PWD)/$(ODPI_BASE)/lib -lodpi -Wl,-rpath,$(PWD)/$(ODPI_BASE)/lib -Wl,-rpath,$(INSTANT_CLIENT_DIR)
+else ifeq ($(DETECTED_OS),Windows)
+    export CGO_CFLAGS = -I$(PWD)/$(ODPI_BASE)/include
+    export CGO_LDFLAGS = -L$(PWD)/$(ODPI_BASE)/lib -lodpi -L$(INSTANT_CLIENT_DIR) -loci
+endif
+
+# ============================================================================
+# Build Targets
+# ============================================================================
+
+# Default target: Build the Go application
+.DEFAULT_GOAL := build
+
+# Build ODPI-C library only
+.PHONY: odpi
+odpi: $(TARGET)
 
 $(ODPI_BASE)/build/%.o: $(ODPI_BASE)/src/%.c | $(ODPI_BASE)/build
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -102,20 +132,109 @@ ifeq ($(DETECTED_OS),Windows)
     endif
 endif
 
+# Check dependencies before building Go app
+.PHONY: deps
+deps: $(TARGET)
+	@echo "[INFO] Checking dependencies..."
+	@if [ ! -f "$(TARGET)" ]; then \
+		echo "[WARN] ODPI-C library not found. Building..."; \
+		$(MAKE) odpi; \
+	fi
+	@echo "[OK] All dependencies ready"
+
+# Build Go application (CGO will compile subscription/*.c automatically)
+.PHONY: build
+build: deps
+	@echo "[BUILD] Building $(BINARY_NAME)..."
+	@echo "   CGO_CFLAGS=$(CGO_CFLAGS)"
+	@echo "   CGO_LDFLAGS=$(CGO_LDFLAGS)"
+	go build -v -o $(BINARY_NAME) ./$(MAIN_PATH)
+	@echo "[OK] Build complete: $(BINARY_NAME)"
+
+# Run the application
+.PHONY: run
+run: build
+	@echo "[RUN] Running $(BINARY_NAME)..."
+	./$(BINARY_NAME)
+
+# Run tests
+.PHONY: test
+test:
+	@echo "[TEST] Running tests..."
+	go test -v ./...
+
+# Debug CGO compilation
+.PHONY: check-cgo
+check-cgo:
+	@echo "[DEBUG] Checking CGO compilation..."
+	@echo "CGO_CFLAGS=$(CGO_CFLAGS)"
+	@echo "CGO_LDFLAGS=$(CGO_LDFLAGS)"
+	@echo ""
+	@echo "Building subscription package with debug output:"
+	@go build -x ./internal/adapter/subscription 2>&1 | grep -E "gcc|clang|queue_callback" || true
+
+# Install Go dependencies
+.PHONY: install
+install:
+	@echo "[INSTALL] Installing Go dependencies..."
+	go mod download
+	go mod tidy
+	@echo "[OK] Dependencies installed"
+
+# Format code
+.PHONY: fmt
+fmt:
+	@echo "[FMT] Formatting code..."
+	go fmt ./...
+	@echo "[OK] Format complete"
+
+# Lint code
+.PHONY: lint
+lint:
+	@echo "[LINT] Linting code..."
+	go vet ./...
+	@echo "[OK] Lint complete"
+
+# Clean all build artifacts
+.PHONY: clean
 clean:
+	@echo "[CLEAN] Cleaning build artifacts..."
 ifeq ($(DETECTED_OS),Windows)
     ifeq ($(USE_BASH),1)
 	@$(RM_CMD) $(ODPI_BASE)/build
 	@$(RM_CMD) $(ODPI_BASE)/src
-	@rm -f odpi.dll
+	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe odpi.dll *.db
     else
 	@if exist $(subst /,\,$(ODPI_BASE)\build) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\build)
 	@if exist $(subst /,\,$(ODPI_BASE)\src) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\src)
+	@if exist $(BINARY_NAME).exe $(DEL_CMD) $(BINARY_NAME).exe
+	@if exist odpi.dll $(DEL_CMD) odpi.dll
+	@if exist *.db $(DEL_CMD) *.db
     endif
 else
 	@$(RM_CMD) $(ODPI_BASE)/build
 	@$(RM_CMD) $(ODPI_BASE)/src
+	@rm -f $(BINARY_NAME) *.db
 endif
+	@go clean -cache
+	@echo "[OK] Clean complete"
+
+# Help
+.PHONY: help
+help:
+	@echo "OmniInspect Makefile - Available targets:"
+	@echo ""
+	@echo "  make build       - Build the Go application (default)"
+	@echo "  make run         - Build and run the application"
+	@echo "  make odpi        - Build only ODPI-C library"
+	@echo "  make deps        - Check/build dependencies"
+	@echo "  make clean       - Remove all build artifacts"
+	@echo "  make test        - Run tests"
+	@echo "  make check-cgo   - Debug CGO compilation"
+	@echo "  make install     - Install Go dependencies"
+	@echo "  make fmt         - Format Go code"
+	@echo "  make lint        - Lint Go code"
+	@echo "  make help        - Show this help message"
 
 # Phony targets
-.PHONY: all clean
+.PHONY: all clean odpi deps build run test check-cgo install fmt lint help

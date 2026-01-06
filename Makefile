@@ -136,10 +136,17 @@ endif
 .PHONY: deps
 deps: $(TARGET)
 	@echo "[INFO] Checking dependencies..."
+ifeq ($(DETECTED_OS),Windows)
+	@if not exist $(subst /,\,$(TARGET)) ( \
+		echo [WARN] ODPI-C library not found. Building... && \
+		$(MAKE) odpi \
+	)
+else
 	@if [ ! -f "$(TARGET)" ]; then \
 		echo "[WARN] ODPI-C library not found. Building..."; \
 		$(MAKE) odpi; \
 	fi
+endif
 	@echo "[OK] All dependencies ready"
 
 # Build Go application (CGO will compile subscription/*.c automatically)

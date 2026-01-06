@@ -53,7 +53,11 @@ jobs:
       shell: pwsh
 
     - name: Download and setup ODPI-C
-      run: python scripts/setup_odpi.py --make
+      run: python scripts/setup_odpi.py
+
+    - name: Make ODPI (build on Windows using Make)
+      run: make odpi
+      shell: cmd
 
     - name: Set up Go
       uses: actions/setup-go@v5

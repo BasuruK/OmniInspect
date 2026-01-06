@@ -72,15 +72,27 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         WHERE name = TRACER_QUEUE_NAME;
         
         IF queue_exists_ = 0 THEN
-            DBMS_AQADM.CREATE_TRANSACTIONAL_EVENT_QUEUE (
+            -- 1. Create the Sharded Queue
+            DBMS_AQADM.CREATE_SHARDED_QUEUE (
                 queue_name => TRACER_QUEUE_NAME,
-                multiple_consumers => TRUE -- setting this value true here, cause it allows named subscribers
+                multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
+                queue_payload_type => 'SYS.AQ$_JMS_TEXT_MESSAGE'
             );
+            -- 2. Set Sharde cound
+            -- Default to 4 shards, can be adjusted based on expected load
+            -- Note: TODO: find the optimal count without slowing down the db
+            DBMS_AQADM.SET_QUEUE_PARAMETER(
+                queue_name => TRACER_QUEUE_NAME,
+                param_name => 'SHARD_NUM',
+                param_value => 4
+            );
+
+            -- 3. Start the Queue
             DBMS_AQADM.START_QUEUE (
                 queue_name => TRACER_QUEUE_NAME
             );
-            COMMIT;
 
+            COMMIT;
         END IF;  
     EXCEPTION
     WHEN OTHERS THEN

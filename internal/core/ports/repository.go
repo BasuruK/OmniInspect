@@ -15,6 +15,8 @@ type DatabaseRepository interface {
 	DeployPackages(sequences []string, packageSpecs []string, packageBodies []string) error
 	DeployFile(sqlContent string) error
 	RegisterNewSubscriber(subscriber domain.Subscriber) error
+	CheckQueueDepth(subscriberID string) (int, error)
+	BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error)
 }
 
 // BoltDB

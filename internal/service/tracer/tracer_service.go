@@ -3,8 +3,10 @@ package tracer
 import (
 	"OmniView/assets"
 	"OmniView/internal/adapter/subscription"
+	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -27,7 +29,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 	}
 }
 
-func (ts *TracerService) StartEventListener(ctx context.Context, subscriberName string) error {
+func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber) error {
 	// Get raw ODPI-C handles from the database repository
 	// TODO: see if we can avoid this type assertion by defining a more specific interface, or directly getting it from Ports.DatabaseRepository
 	oracleAdapter, ok := ts.db.(interface {
@@ -49,20 +51,21 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriberName 
 	notifyChan := make(chan struct{}, 10) // Buffered channel to avoid blocking and handle bursts
 
 	// Subscribe to the queue
-	subscriberID, err := ts.subscriptionMgr.Subscribe(subscriberName, notifyChan)
+	var err error
+	subscriber.SubscriberID, err = ts.subscriptionMgr.Subscribe(subscriber.Name, notifyChan)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to queue: %w", err)
 	}
 
-	fmt.Println("[OCI] Subscription Success")
+	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber.Name)
 
 	// Start the goroutine to listen for notifications
-	go ts.eventLoop(ctx, notifyChan, subscriberID)
+	go ts.eventLoop(ctx, notifyChan, subscriber)
 
 	return nil
 }
 
-func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct{}, subscriberID string) {
+func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct{}, subscriber *domain.Subscriber) {
 	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling
 	defer ticker.Stop()
 
@@ -70,32 +73,75 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 		select {
 		case <-ctx.Done():
 			fmt.Println("Event listener stopped.")
-			ts.cleanUp(subscriberID)
+			ts.cleanUp(subscriber)
 			return
 		case <-notifyChan:
 			// Process the notification
-			fmt.Println("Received notification for subscriber:", subscriberID)
-			ts.processBatch(subscriberID)
+			fmt.Println("Received notification for subscriber:", subscriber.SubscriberID)
+			ts.processBatch(subscriber)
 		case <-ticker.C:
 			// Periodic check (fallback polling)
-			queueDepth := ts.checkQueueDepth(subscriberID)
+			queueDepth := ts.checkQueueDepth(subscriber)
 			if queueDepth > 0 {
-				fmt.Printf("Periodic check: Processing %d messages for subscriber: %s\n", queueDepth, subscriberID)
-				ts.processBatch(subscriberID)
+				fmt.Printf("Periodic check: Processing %d messages for subscriber: %s\n", queueDepth, subscriber.SubscriberID)
+				ts.processBatch(subscriber)
 			}
 		}
 	}
 }
 
 // cleanUp handles cleanup operations when stopping the event listener
-func (ts *TracerService) cleanUp(subscriberID string) {
+func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 	if ts.subscriptionMgr != nil {
-		if err := ts.subscriptionMgr.Unsubscribe(subscriberID); err != nil {
+		if err := ts.subscriptionMgr.Unsubscribe(subscriber.SubscriberID); err != nil {
 			fmt.Printf("failed to unsubscribe: %v", err)
 		} else {
-			fmt.Println("Unsubscribed successfully for subscriber:", subscriberID)
+			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.SubscriberID)
 		}
 	}
+}
+
+// processBatch processes a batch of tracer data for the given subscriber ID
+// TODO: implement actual processing logic
+func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
+	const batchSize = 1000 // Define the batch size
+	const waitTime = 100   // Define the wait time in seconds
+
+	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
+	if err != nil {
+		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.SubscriberID, err)
+		return
+	}
+
+	if count == 0 {
+		return // return
+	}
+
+	fmt.Printf("[INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.SubscriberID)
+
+	for i := 0; i < count; i++ {
+		var msg domain.QueueMessage
+		if err := json.Unmarshal([]byte(messages[i]), &msg); err != nil {
+			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
+			continue
+		}
+
+		ts.handleTracerMessage(msg, msgIDs[i])
+	}
+}
+
+func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage, msgID []byte) {
+	fmt.Printf("[%s] [%s] %s: %s (MsgID: %x)\n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload, msgID)
+}
+
+// checkQueueDepth checks the queue depth for the given subscriber ID
+func (ts *TracerService) checkQueueDepth(subscriber *domain.Subscriber) int {
+	depth, err := ts.db.CheckQueueDepth(subscriber.SubscriberID)
+	if err != nil {
+		log.Printf("failed to check queue depth for subscriber %s: %v", subscriber.SubscriberID, err)
+		return 0
+	}
+	return depth
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized
@@ -154,17 +200,4 @@ func initializeTracerPackage(ts *TracerService) error {
 	}
 
 	return nil
-}
-
-// processBatch processes a batch of tracer data for the given subscriber ID
-// TODO: implement actual processing logic
-func (ts *TracerService) processBatch(subscriberID string) {
-	log.Println("Processing tracer batch...")
-}
-
-// checkQueueDepth checks the queue depth for the given subscriber ID
-// TODO: implement actual queue depth checking logic
-func (ts *TracerService) checkQueueDepth(subscriberID string) int {
-	// Placeholder implementation
-	return 0
 }

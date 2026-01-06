@@ -9,7 +9,19 @@ const (
 
 // Entity : Subscriber information
 type Subscriber struct {
-	Name string
+	SubscriberID string
+	Name         string
+	BatchSize    int
+	WaitTime     int
+}
+
+// Entity : Represents a message in the tracer queue
+type QueueMessage struct {
+	MessageID   string `json:"MESSAGE_ID"`
+	ProcessName string `json:"PROCESS_NAME"`
+	LogLevel    string `json:"LOG_LEVEL"`
+	Payload     string `json:"PAYLOAD"`
+	Timestamp   string `json:"TIMESTAMP"`
 }
 
 // Errors: Subscriber Entity

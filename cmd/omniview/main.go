@@ -8,6 +8,7 @@ import (
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -70,6 +71,19 @@ func main() {
 	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name)
 
 	// 4. Start Application
+	// create cancellable context and tie cancellation to signals
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-signalChan
+		cancel()
+	}()
+
+	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
+	if err := tracerService.StartEventListener(ctx, &subscriber); err != nil {
+		log.Fatalf("failed to start tracer event listener: %v", err)
+	}
+
 	omniApp := app.New(boltAdapter, dbAdapter)
 	fmt.Println(omniApp.GetVersion())
 	go omniApp.StartServer(done)

@@ -508,3 +508,179 @@ func parseCountResult(results []string) (int, error) {
 	}
 	return count, nil
 }
+
+// CheckQueueDepth checks the queue depth for the given subscriber ID
+func (oa *OracleAdapter) CheckQueueDepth(subscriberID string) (int, error) {
+	query := `SELECT COUNT(*) 
+			  FROM USER_QUEUE_SHARDS
+			  WHERE QUEUE_NAME = :queueName
+			  AND CONSUMER_NAME = :subscriberID
+			  AND MSG_STATE = 'READY'`
+
+	results, err := oa.FetchWithParams(query, map[string]interface{}{
+		"queueName":    domain.QueueName,
+		"subscriberID": subscriberID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if len(results) == 0 {
+		return 0, fmt.Errorf("no results returned from queue depth query")
+	}
+
+	count, err := parseCountResult(results)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse count result: %v", err)
+	}
+
+	return count, nil
+}
+
+func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+	if oa.Connection == nil {
+		return nil, nil, 0, fmt.Errorf("database connection is not established")
+	}
+
+	var clobTabType *C.dpiObjectType
+	var rawTabType *C.dpiObjectType
+
+	clobTabTypeName := C.CString("OMNI_TRACER_API.CLOB_TAB")
+	rawTabTypeName := C.CString("OMNI_TRACER_API.RAW_TAB")
+	defer C.free(unsafe.Pointer(clobTabTypeName))
+	defer C.free(unsafe.Pointer(rawTabTypeName))
+
+	// 1. Create collection types
+	if C.createCollectionType(oa.Connection, clobTabTypeName, &clobTabType) != C.DPI_SUCCESS {
+		return nil, nil, 0, fmt.Errorf("failed to create CLOB_TAB type")
+	}
+	defer C.dpiObjectType_release(clobTabType)
+
+	if C.createCollectionType(oa.Connection, rawTabTypeName, &rawTabType) != C.DPI_SUCCESS {
+		return nil, nil, 0, fmt.Errorf("failed to create RAW_TAB type")
+	}
+	defer C.dpiObjectType_release(rawTabType)
+
+	// 2. Create Collection Object instances
+	var messageObJ *C.dpiObject
+	var msgIdsObj *C.dpiObject
+
+	if C.createCollection(clobTabType, &messageObJ) != C.DPI_SUCCESS {
+		return nil, nil, 0, fmt.Errorf("failed to create message collection object")
+	}
+	defer C.dpiObject_release(messageObJ)
+
+	if C.createCollection(rawTabType, &msgIdsObj) != C.DPI_SUCCESS {
+		return nil, nil, 0, fmt.Errorf("failed to create message IDs collection object")
+	}
+	defer C.dpiObject_release(msgIdsObj)
+
+	query := `BEGIN
+			  OMNI_TRACER_API.Dequeue_Array_Events(
+				  subscriber_name => :subscriberName,
+				  batch_size      => :batchSize,
+				  wait_time	    => :waitTime,
+				  messages        => :messages,
+				  message_ids     => :messageIDs,
+				  msg_count  => :dequeuedCount
+			  );
+			END;`
+
+	stmt, err := oa.PrepareStatement(query)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to prepare dequeue statement: %w", err)
+	}
+	defer C.dpiStmt_release(stmt)
+
+	// 3. Bind parameters
+	if err := oa.BindParamsToQuery(stmt, map[string]interface{}{
+		"subscriberName": subscriber.Name,
+		"batchSize":      subscriber.BatchSize,
+		"waitTime":       subscriber.WaitTime}); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to bind scalar params: %w", err)
+	}
+
+	if err := oa.BindCollectionParam(stmt, "messages", messageObJ, clobTabType); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to bind messages collection param: %w", err)
+	}
+
+	if err := oa.BindCollectionParam(stmt, "messageIDs", msgIdsObj, rawTabType); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to bind message IDs collection param: %w", err)
+	}
+
+	var countData C.dpiData
+	if err := oa.BindOutParam(stmt, "dequeuedCount", C.DPI_NATIVE_TYPE_INT64, &countData); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to bind dequeued count out param: %w", err)
+	}
+
+	// 4. Execute the statement
+	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		if errInfo.code == 25228 {
+			return []string{}, [][]byte{}, 0, nil // No messages available
+		}
+		return nil, nil, 0, fmt.Errorf("failed to execute dequeue statement: %s", C.GoString(errInfo.message))
+	}
+
+	// 5. Extract results from collection objects
+	count := int(C.getAsInt64(&countData))
+	if count == 0 {
+		return []string{}, [][]byte{}, 0, nil // No messages dequeued
+	}
+
+	// Extract messages
+	messages := make([]string, 0, count)
+	msgIds := make([][]byte, 0, count)
+
+	for i := 0; i < count; i++ {
+		// Extract message CLOB
+		var msgPtr *C.char
+		var msgLen C.uint32_t
+
+		if C.getCollectionElementAsString(messageObJ, C.int32_t(i+1), &msgPtr, &msgLen) == C.DPI_SUCCESS {
+			messages[i] = C.GoStringN(msgPtr, C.int(msgLen))
+		}
+
+		// Extract message ID RAW
+		var idPtr *C.char
+		var idLen C.uint32_t
+
+		if C.getCollectionElementAsRaw(msgIdsObj, C.int32_t(i+1), &idPtr, &idLen) == C.DPI_SUCCESS {
+			msgIds[i] = C.GoBytes(unsafe.Pointer(idPtr), C.int(idLen))
+		}
+	}
+
+	return messages, msgIds, count, nil
+}
+
+// Bind collection parameters
+func (oa *OracleAdapter) BindCollectionParam(stmt *C.dpiStmt, paramName string, obj *C.dpiObject, objType *C.dpiObjectType) error {
+	cName := C.CString(paramName)
+	defer C.free(unsafe.Pointer(cName))
+
+	var dpiData C.dpiData
+	dpiData.isNull = 0
+	C.initDPIDataAsObject(&dpiData, obj)
+
+	if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(paramName)), C.DPI_NATIVE_TYPE_OBJECT, &dpiData) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to bind collection parameter %s: %s", paramName, C.GoString(errInfo.message))
+	}
+
+	return nil
+}
+
+// BindOutParam binds an OUT parameter to the prepared statement.
+func (oa *OracleAdapter) BindOutParam(stmt *C.dpiStmt, paramName string, nativeType C.dpiNativeTypeNum, dpiData *C.dpiData) error {
+	cName := C.CString(paramName)
+	defer C.free(unsafe.Pointer(cName))
+
+	if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(paramName)), nativeType, dpiData) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to bind out parameter %s: %s", paramName, C.GoString(errInfo.message))
+	}
+
+	return nil
+}

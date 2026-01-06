@@ -1,5 +1,7 @@
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h> 
 #include "dpi.h"
-#include "stddef.h"
 
 /**
  * @brief Gets byte array pointer from dpiData
@@ -116,4 +118,92 @@ void initDPIDataAsFloat(dpiData* data, float value) {
     if (data == NULL) return;
     data->isNull = 0;
     data->value.asFloat = value;
+}
+
+/**
+ * @brief Initialize dpiData as object (for PL/SQL collections and objects)
+ * @param data pointer to the dpiData structure
+ * @param obj pointer to the dpiObject
+ */
+void initDPIDataAsObject(dpiData* data, dpiObject* obj) {
+    if (data == NULL) return;
+    data->isNull = (obj == NULL) ? 1 : 0;
+    data->value.asObject = obj;
+}
+
+/**
+ * createCollectionType - Gets the object type for a PL/SQL collection
+ * 
+ * @param conn: Database connection
+ * @param schema: Schema name (usually your username)
+ * @param typeName: Fully qualified type name (e.g., "OMNI_TRACER_API.CLOB_TAB")
+ * @param objType: Output parameter for the object type
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int createCollectionType(dpiConn *conn, const char* typeName, dpiObjectType **objType) {
+    return dpiConn_getObjectType(conn, typeName, (uint32_t)strlen(typeName), objType);
+}
+
+/**
+ * createCollection - Creates a new collection object instance
+ * 
+ * @param objType: The collection type
+ * @param obj: Output parameter for the created object
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int createCollection(dpiObjectType* objType, dpiObject** obj) {
+    return dpiObjectType_createObject(objType, obj);
+}
+
+/**
+ * getCollectionSize - Gets the number of elements in a collection
+ * 
+ * @param obj: The collection object
+ * @param size: Output parameter for the size
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getCollectionSize(dpiObject* obj, int32_t* size) {
+    return dpiObject_getSize(obj, size);
+}
+
+/**
+ * getCollectionElementAsString - Gets an element from a CLOB collection as string
+ * 
+ * @param obj: The collection object
+ * @param index: Element index (1-based, like PL/SQL)
+ * @param value: Output buffer for the string
+ * @param valueLen: Output parameter for string length
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen) {
+    dpiData data;
+    
+    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
+        return DPI_FAILURE;
+    }
+    
+    *value = (char*)data.value.asBytes.ptr;
+    *valueLen = data.value.asBytes.length;
+    return DPI_SUCCESS;
+}
+
+/**
+ * getCollectionElementAsRaw - Gets an element from a RAW collection
+ * 
+ * @param obj: The collection object
+ * @param index: Element index (1-based)
+ * @param value: Output buffer for raw bytes
+ * @param valueLen: Output parameter for byte length
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value, uint32_t* valueLen) {
+    dpiData data;
+    
+    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
+        return DPI_FAILURE;
+    }
+    
+    *value = (const char*)data.value.asBytes.ptr;
+    *valueLen = data.value.asBytes.length;
+    return DPI_SUCCESS;
 }

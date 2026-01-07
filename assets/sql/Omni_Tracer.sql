@@ -28,12 +28,25 @@ END;
 
 -- @SECTION: TYPE_CREATION
 
-CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (
-    JSON_DATA BLOB
-);
-/
+DECLARE
+    type_in_use EXCEPTION;
+    PRAGMA EXCEPTION_INIT(type_in_use, -2303);
+BEGIN
+    -- Try to create/replace with NONEDITIONABLE
+    -- This ensures types are correct for AQ Sharded Queue (which requires non-editioned types)
+    -- Editioning is not needed for these types as they are only used internally by the queue, and these packages will not be shipped across editions.
+    BEGIN
+        EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_TYPE FORCE AS OBJECT (JSON_DATA BLOB)';
+    EXCEPTION
+        WHEN type_in_use THEN NULL; -- Ignore if type has dependents (e.g. Queue exists)
+    END;
 
-CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE;
+    BEGIN
+        EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_ARRAY FORCE AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE';
+    EXCEPTION
+        WHEN type_in_use THEN NULL;
+    END;
+END;
 /
 
 -- @END_SECTION: TYPE_CREATION
@@ -75,6 +88,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
     -- Internal type for RAW array fetching
     TYPE raw_payload_tab IS TABLE OF RAW(32767) INDEX BY PLS_INTEGER;
+
+    -- Forward declarations for private functions
+    FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB;
+    FUNCTION Blob_To_Clob___(input_ IN BLOB) RETURN CLOB;
 
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
@@ -225,13 +242,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         msg_count_ := count_;
 
         FOR i_ IN 1 .. count_ LOOP
-            payload_array_(i_).get_text(temp_clob_);
             messages_(i_) := Blob_To_Clob___(payload_array_(i_).JSON_DATA);
             message_ids_(i_) := msg_id_array_(i_);
-
-            IF DBMS_LOB.ISTEMPORARY(temp_clob_) = 1 THEN
-                DBMS_LOB.FREETEMPORARY(temp_clob_);
-            END IF;
         END LOOP;
     EXCEPTION
         WHEN OTHERS THEN
@@ -296,7 +308,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
         DBMS_LOB.CREATETEMPORARY(output_, TRUE);
         DBMS_LOB.CONVERTTOCLOB(
-            dest_clob    => output_,
+            dest_lob     => output_,
             src_blob     => input_,
             amount       => DBMS_LOB.LOBMAXSIZE,
             dest_offset  => dest_offset_,

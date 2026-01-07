@@ -122,10 +122,12 @@ func checkPermissions(ps *PermissionService, schema string, perStatus *domain.Da
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
 		"└───────────────────────────┴─────────┘",
 		"Permission", "Status",
 		"Create Sequence", statusMark(perStatus.Permissions.CreateSequence),
 		"Create Procedure", statusMark(perStatus.Permissions.CreateProcedure),
+		"Create Type", statusMark(perStatus.Permissions.CreateType),
 		"AQ Administrator Role", statusMark(perStatus.Permissions.AQAdministratorRole),
 		"AQ User Role", statusMark(perStatus.Permissions.AQUserRole),
 		"Execute DBMS AQADM", statusMark(perStatus.Permissions.DBMSAQADMExecute),

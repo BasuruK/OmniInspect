@@ -14,6 +14,7 @@ package subscription
 */
 import "C"
 import (
+	"OmniView/internal/core/domain"
 	"fmt"
 	"runtime/cgo"
 	"unsafe"
@@ -21,9 +22,9 @@ import (
 
 // SubscriptionHandle represents a subscription handle in ODPI-C
 type SubscriptionHandle struct {
-	subscr         *C.dpiSubscr
-	goHandle       cgo.Handle
-	subscriberName string
+	subscr     *C.dpiSubscr
+	goHandle   cgo.Handle
+	subscriber domain.Subscriber
 }
 
 // SubscriptionManager manages database subscriptions for AQ
@@ -35,28 +36,28 @@ type SubscriptionManager struct {
 
 // NewSubscriptionManager creates a new SubscriptionManager instance
 // Accepts unsafe.Pointer to allow cross-package CGO type compatibility
-func NewSubscriptionManager(ctx unsafe.Pointer, conn unsafe.Pointer) *SubscriptionManager {
+func NewSubscriptionManager(connPtr unsafe.Pointer, ctxPtr unsafe.Pointer) *SubscriptionManager {
 	return &SubscriptionManager{
-		connection:          (*C.dpiConn)(conn),
-		context:             (*C.dpiContext)(ctx),
+		connection:          (*C.dpiConn)(connPtr),
+		context:             (*C.dpiContext)(ctxPtr),
 		activeSubscriptions: make(map[string]*SubscriptionHandle),
 	}
 }
 
 // Subscribe registers a new subscription for the given subscriber name
-func (sm *SubscriptionManager) Subscribe(subscriberName string, notifyChan chan<- struct{}) (string, error) {
+func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyChan chan<- struct{}) (string, error) {
 	if sm.connection == nil || sm.context == nil {
 		return "", fmt.Errorf("invalid database connection or context")
 	}
 
 	// Check if already subscribed TODO: remove if its causing regular errors
-	if _, exists := sm.activeSubscriptions[subscriberName]; exists {
-		return "", fmt.Errorf("subscription already exists for: %s", subscriberName) // Already subscribed
+	if _, exists := sm.activeSubscriptions[subscriber.Name]; exists {
+		return "", fmt.Errorf("subscription already exists for: %s", subscriber.Name) // Already subscribed
 	}
 
 	handle := cgo.NewHandle(notifyChan)
 
-	cSubscriberName := C.CString(subscriberName)
+	cSubscriberName := C.CString(subscriber.Name)
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
 	var subscr *C.dpiSubscr
@@ -65,23 +66,23 @@ func (sm *SubscriptionManager) Subscribe(subscriberName string, notifyChan chan<
 
 	if result != C.DPI_SUCCESS {
 		handle.Delete()
-		return "", fmt.Errorf("failed to register oracle subscription for: %s", subscriberName)
+		return "", fmt.Errorf("failed to register oracle subscription for: %s", subscriber.Name)
 	}
 
-	sm.activeSubscriptions[subscriberName] = &SubscriptionHandle{
-		subscr:         subscr,
-		goHandle:       handle,
-		subscriberName: subscriberName,
+	sm.activeSubscriptions[subscriber.Name] = &SubscriptionHandle{
+		subscr:     subscr,
+		goHandle:   handle,
+		subscriber: subscriber,
 	}
 
-	return subscriberName, nil
+	return subscriber.Name, nil
 }
 
 // Unsubscribe removes an existing subscription for the given subscriber name
-func (sm *SubscriptionManager) Unsubscribe(subscriberName string) error {
-	subscription, exists := sm.activeSubscriptions[subscriberName]
+func (sm *SubscriptionManager) Unsubscribe(subscriber domain.Subscriber) error {
+	subscription, exists := sm.activeSubscriptions[subscriber.Name]
 	if !exists {
-		return fmt.Errorf("no active subscription found for: %s", subscriberName)
+		return fmt.Errorf("no active subscription found for: %s", subscriber.Name)
 	}
 
 	// Unregister the subscription in ODPI-C and release
@@ -91,15 +92,15 @@ func (sm *SubscriptionManager) Unsubscribe(subscriberName string) error {
 	subscription.goHandle.Delete()
 
 	// Remove from active subscriptions map
-	delete(sm.activeSubscriptions, subscriberName)
+	delete(sm.activeSubscriptions, subscriber.Name)
 
 	return nil
 }
 
 // UnsubscribeAll removes all active subscriptions
 func (sm *SubscriptionManager) UnsubscribeAll() {
-	for subscriberName := range sm.activeSubscriptions {
-		_ = sm.Unsubscribe(subscriberName)
+	for subscriber := range sm.activeSubscriptions {
+		_ = sm.Unsubscribe(sm.activeSubscriptions[subscriber].subscriber)
 	}
 }
 

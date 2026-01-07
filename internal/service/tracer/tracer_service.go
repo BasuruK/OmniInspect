@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"unsafe"
 )
 
 // Service: Manages package deployments
@@ -23,41 +22,35 @@ type TracerService struct {
 
 // Constructor: NewTracerService Constructor for TracerService
 func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
+	rawConn := db.GetRawConnection()
+	rawCtx := db.GetRawContext()
+	if rawConn == nil || rawCtx == nil {
+		fmt.Println("database connection or context is nil during TracerService initialization")
+		return nil
+	}
+
+	// Note: NewSubscriptionManager expects (context, connection) order
+	subscriptionMgr := subscription.NewSubscriptionManager(rawConn, rawCtx)
+
 	return &TracerService{
-		db:   db,
-		bolt: bolt,
+		db:              db,
+		bolt:            bolt,
+		subscriptionMgr: subscriptionMgr,
 	}
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber) error {
-	// Get raw ODPI-C handles from the database repository
-	// TODO: see if we can avoid this type assertion by defining a more specific interface, or directly getting it from Ports.DatabaseRepository
-	oracleAdapter, ok := ts.db.(interface {
-		GetRawConnection() unsafe.Pointer
-		GetRawContext() unsafe.Pointer
-	})
-	if !ok {
-		return fmt.Errorf("database repository does not expose raw ODPI-C handles [Context and Connection not Exposed]")
-	}
-
-	// Create the subscription manager using the raw handles (tracer-specific adapter)
-	// Note: NewSubscriptionManager expects (context, connection) order
-	ts.subscriptionMgr = subscription.NewSubscriptionManager(
-		oracleAdapter.GetRawConnection(),
-		oracleAdapter.GetRawContext(),
-	)
-
 	// Create a notification channel
 	notifyChan := make(chan struct{}, 10) // Buffered channel to avoid blocking and handle bursts
 
 	// Subscribe to the queue
 	var err error
-	subscriber.SubscriberID, err = ts.subscriptionMgr.Subscribe(subscriber.Name, notifyChan)
+	subscriber.SubscriberID, err = ts.subscriptionMgr.Subscribe(*subscriber, notifyChan)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to queue: %w", err)
 	}
 
-	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber.Name)
+	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
 
 	// Start the goroutine to listen for notifications
 	go ts.eventLoop(ctx, notifyChan, subscriber)
@@ -93,16 +86,15 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 // cleanUp handles cleanup operations when stopping the event listener
 func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 	if ts.subscriptionMgr != nil {
-		if err := ts.subscriptionMgr.Unsubscribe(subscriber.SubscriberID); err != nil {
+		if err := ts.subscriptionMgr.Unsubscribe(*subscriber); err != nil {
 			fmt.Printf("failed to unsubscribe: %v", err)
 		} else {
-			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.SubscriberID)
+			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.Name)
 		}
 	}
 }
 
 // processBatch processes a batch of tracer data for the given subscriber ID
-// TODO: implement actual processing logic
 func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 	const batchSize = 1000 // Define the batch size
 	const waitTime = 100   // Define the wait time in seconds

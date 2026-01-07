@@ -29,23 +29,55 @@ END;
 -- @SECTION: TYPE_CREATION
 
 DECLARE
+    is_editioned_ VARCHAR2(5);
     type_in_use EXCEPTION;
     PRAGMA EXCEPTION_INIT(type_in_use, -2303);
+    insufficient_privileges EXCEPTION;
+    PRAGMA EXCEPTION_INIT(insufficient_privileges, -1031);
 BEGIN
-    -- Try to create/replace with NONEDITIONABLE
-    -- This ensures types are correct for AQ Sharded Queue (which requires non-editioned types)
-    -- Editioning is not needed for these types as they are only used internally by the queue, and these packages will not be shipped across editions.
+    -- Check if the DB is running in editioned mode
     BEGIN
-        EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_TYPE FORCE AS OBJECT (JSON_DATA BLOB)';
+        SELECT CASE 
+         WHEN EXISTS (SELECT 1 FROM user_editioned_types) THEN 'TRUE' 
+         ELSE 'FALSE' 
+       END
+    INTO is_editioned_
+    FROM dual;
     EXCEPTION
-        WHEN type_in_use THEN NULL; -- Ignore if type has dependents (e.g. Queue exists)
+        WHEN OTHERS THEN
+            is_editioned_ := 'FALSE';
     END;
 
-    BEGIN
-        EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_ARRAY FORCE AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE';
-    EXCEPTION
-        WHEN type_in_use THEN NULL;
-    END;
+    IF is_editioned_ = 'TRUE' THEN
+        -- Try to create/replace with NONEDITIONABLE
+        -- This ensures types are correct for AQ Sharded Queue (which requires non-editioned types)
+        -- Editioning is not needed for these types as they are only used internally by the queue, and these packages will not be shipped across editions.
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (JSON_DATA BLOB)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL; -- Ignore if type has dependents (e.g. Queue exists)
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+    ELSE
+        -- Non-editioned DB, create normally
+         -- Non-editioned database - use regular types
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (JSON_DATA BLOB)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+    END IF;
 END;
 /
 

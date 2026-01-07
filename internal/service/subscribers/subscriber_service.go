@@ -35,12 +35,18 @@ func (ss *SubscriberService) GetSubscriber() (*domain.Subscriber, error) {
 }
 
 // NewSubscriber Generates and stores a new unique subscriber name
-func (ss *SubscriberService) NewSubscriber() (string, error) {
+func (ss *SubscriberService) NewSubscriber() (domain.Subscriber, error) {
 	subscriberName := generateSubscriberName()
-	if err := ss.SetSubscriber(domain.Subscriber{Name: subscriberName}); err != nil {
-		return "", err
+	subscriber := domain.Subscriber{
+		Name:      subscriberName,
+		BatchSize: 1000,
+		WaitTime:  100,
 	}
-	return subscriberName, nil
+	if err := ss.SetSubscriber(subscriber); err != nil {
+		return domain.Subscriber{}, err
+	}
+
+	return subscriber, nil
 }
 
 // RegisterSubscriber Retrieves existing subscriber or creates a new one if not found
@@ -52,11 +58,11 @@ func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
 			return domain.Subscriber{}, err // return other errors
 		}
 		// If not found, create a new subscriber
-		newName, err := ss.NewSubscriber()
+		newSubscriber, err := ss.NewSubscriber()
 		if err != nil {
 			return domain.Subscriber{}, err
 		}
-		subscriber = &domain.Subscriber{Name: newName}
+		subscriber = &newSubscriber
 	}
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(*subscriber); err != nil {

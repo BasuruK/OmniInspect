@@ -41,12 +41,20 @@ func NewOracleAdapter(cfg *domain.DatabaseSettings) *OracleAdapter {
 // GetRawConnection returns the underlying DPI connection handle as unsafe.Pointer.
 // WARNING: this low-level API should be only used in tracer functionality.
 func (oa *OracleAdapter) GetRawConnection() unsafe.Pointer {
+	if oa.Connection == nil {
+		return nil
+	}
+
 	return unsafe.Pointer(oa.Connection)
 }
 
 // GetRawContext returns the underlying DPI context handle as unsafe.Pointer.
 // WARNING: this low-level API should be only used in tracer functionality.
 func (oa *OracleAdapter) GetRawContext() unsafe.Pointer {
+	if oa.Context == nil {
+		return nil
+	}
+
 	return unsafe.Pointer(oa.Context)
 }
 
@@ -264,6 +272,24 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 	defer C.free(unsafe.Pointer(c_password))
 	defer C.free(unsafe.Pointer(c_connectionString))
 
+	// Ensure Thread Safety since goroutines are used
+	var commonParams C.dpiCommonCreateParams
+	if C.dpiContext_initCommonCreateParams(oa.Context, &commonParams) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to initialize common connection parameters for events: %s", C.GoString(errInfo.message))
+	}
+
+	commonParams.createMode = C.DPI_MODE_CREATE_THREADED | C.DPI_MODE_CREATE_EVENTS // Enable threaded safe mode
+
+	// For events AQ subscriptions, create connection parameters with events mode enabled
+	var connCreateParams C.dpiConnCreateParams
+	if C.dpiContext_initConnCreateParams(oa.Context, &connCreateParams) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to initialize connection create parameters for events: %s", C.GoString(errInfo.message))
+	}
+
 	// Call ODPI-C function
 	if C.dpiConn_create(oa.Context,
 		c_username,
@@ -272,8 +298,8 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 		C.uint32_t(len(password)),
 		c_connectionString,
 		C.uint32_t(len(connectionString)),
-		nil, // dpiCommonParams
-		nil, // dpiConnCreateParams
+		&commonParams,     // dpiCommonParams
+		&connCreateParams, // dpiConnCreateParams
 		&oa.Connection) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)

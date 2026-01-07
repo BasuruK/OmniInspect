@@ -5,6 +5,7 @@ type PermissionStatus struct {
 	Schema              string
 	CreateSequence      bool
 	CreateProcedure     bool
+	CreateType          bool
 	AQAdministratorRole bool
 	AQUserRole          bool
 	DBMSAQADMExecute    bool

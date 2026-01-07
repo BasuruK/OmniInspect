@@ -26,6 +26,18 @@ END;
 
 -- @END_SECTION: SEQUENCE_CREATION
 
+-- @SECTION: TYPE_CREATION
+
+CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (
+    JSON_DATA BLOB
+);
+/
+
+CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS VARRAY(1000) OF OMNI_TRACER_PAYLOAD_TYPE;
+/
+
+-- @END_SECTION: TYPE_CREATION
+
 -- @SECTION: PACKAGE_SPECIFICATION
 
 CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS 
@@ -48,10 +60,10 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     PROCEDURE Dequeue_Array_Events (
         subscriber_name_ IN VARCHAR2,
         batch_size_      IN INTEGER,
-        wait_time_      IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_       OUT clob_tab,
-        message_ids_    OUT raw_tab,
-        msg_count_      OUT INTEGER);
+        wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT clob_tab,
+        message_ids_     OUT raw_tab,
+        msg_count_       OUT INTEGER);
 END OMNI_TRACER_API;
 /
 
@@ -60,6 +72,9 @@ END OMNI_TRACER_API;
 -- @SECTION: PACKAGE_BODY
 
 CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+
+    -- Internal type for RAW array fetching
+    TYPE raw_payload_tab IS TABLE OF RAW(32767) INDEX BY PLS_INTEGER;
 
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
@@ -76,7 +91,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             DBMS_AQADM.CREATE_SHARDED_QUEUE (
                 queue_name => TRACER_QUEUE_NAME,
                 multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
-                queue_payload_type => 'SYS.AQ$_JMS_TEXT_MESSAGE'
+                queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
             );
             -- 2. Set Sharde cound
             -- Default to 4 shards, can be adjusted based on expected load
@@ -86,6 +101,9 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                 param_name => 'SHARD_NUM',
                 param_value => 4
             );
+
+            -- Set Sticky Dequeue to ensure messages from the same shard go to the same consumer
+            DBMS_AQADM.SET_QUEUE_PARAMETER(TRACER_QUEUE_NAME, 'STICKY_DEQUEUE', 1);
 
             -- 3. Start the Queue
             DBMS_AQADM.START_QUEUE (
@@ -140,7 +158,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
         message_handle_     RAW(16);
         json_payload_       CLOB;
-        jms_message_        SYS.AQ$_JMS_TEXT_MESSAGE;
+        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;        
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message is visible immediately, impervious to rollbacks, and runs an internal commit.
 
@@ -152,14 +170,13 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
 
         json_payload_ := message_.TO_CLOB();
-        jms_message_ := SYS.AQ$_JMS_TEXT_MESSAGE.CONSTRUCT();
-        jms_message_.set_text(json_payload_);
+        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(Clob_To_Blob___(json_payload_));
 
         DBMS_AQ.ENQUEUE (
             queue_name          => TRACER_QUEUE_NAME,
             enqueue_options     => enqueue_options_,
             message_properties  => message_properties_,
-            payload             => jms_message_,
+            payload             => payload_object_,
             msgid               => message_handle_
         );
     END Enqueue_Event___;
@@ -175,10 +192,9 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     IS
         dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
         message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
-        payload_array_       SYS.AQ$_JMS_TEXT_MESSAGES;
         msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
+        payload_array_       OMNI_TRACER_PAYLOAD_ARRAY;
         count_               NUMBER;
-        temp_clob_           CLOB;
     BEGIN
         IF batch_size_ IS NULL OR batch_size_ <= 0 THEN
             RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
@@ -195,7 +211,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         dequeue_options_.visibility := DBMS_AQ.IMMEDIATE;
 
         -- Initialize output collections
-        payload_array_ := SYS.AQ$_JMS_TEXT_MESSAGES();
+        payload_array_ := OMNI_TRACER_PAYLOAD_ARRAY();
 
         count_ := DBMS_AQ.DEQUEUE_ARRAY (
             queue_name                => TRACER_QUEUE_NAME,
@@ -210,7 +226,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
         FOR i_ IN 1 .. count_ LOOP
             payload_array_(i_).get_text(temp_clob_);
-            messages_(i_) := temp_clob_;
+            messages_(i_) := Blob_To_Clob___(payload_array_(i_).JSON_DATA);
             message_ids_(i_) := msg_id_array_(i_);
 
             IF DBMS_LOB.ISTEMPORARY(temp_clob_) = 1 THEN
@@ -242,6 +258,55 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             payload         => message_
         );
     END Trace_Message;
+
+
+    FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB
+    IS
+        output_ BLOB;
+        dest_offset_ INTEGER := 1;
+        src_offset_ INTEGER := 1;
+        lang_context_ INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        warning_ INTEGER;
+    BEGIN
+        DBMS_LOB.CREATETEMPORARY(output_, TRUE);
+        DBMS_LOB.CONVERTTOBLOB(
+            dest_lob     => output_,
+            src_clob     => input_,
+            amount       => DBMS_LOB.LOBMAXSIZE,
+            dest_offset  => dest_offset_,
+            src_offset   => src_offset_,
+            blob_csid    => DBMS_LOB.DEFAULT_CSID,
+            lang_context => lang_context_,
+            warning      => warning_
+        );
+        RETURN output_;
+    END Clob_To_Blob___;
+
+    FUNCTION Blob_To_Clob___(input_ IN BLOB) RETURN CLOB
+    IS
+        output_ CLOB;
+        dest_offset_ INTEGER := 1;
+        src_offset_ INTEGER := 1;
+        lang_context_ INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        warning_ INTEGER;
+    BEGIN
+        IF input_ IS NULL OR DBMS_LOB.GETLENGTH(input_) = 0 THEN
+            RETURN NULL;
+        END IF;
+
+        DBMS_LOB.CREATETEMPORARY(output_, TRUE);
+        DBMS_LOB.CONVERTTOCLOB(
+            dest_clob    => output_,
+            src_blob     => input_,
+            amount       => DBMS_LOB.LOBMAXSIZE,
+            dest_offset  => dest_offset_,
+            src_offset   => src_offset_,
+            blob_csid    => DBMS_LOB.DEFAULT_CSID,
+            lang_context => lang_context_,
+            warning      => warning_
+        );
+        RETURN output_;
+    END Blob_To_Clob___;
 
 END OMNI_TRACER_API;
 /

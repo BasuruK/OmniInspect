@@ -412,7 +412,7 @@ func (oa *OracleAdapter) ExecuteWithParams(query string, params map[string]inter
 
 // DeployPackages deploys the given SQL package to the connected Oracle database.
 // Package structure should contain Package Specification and Package Body as a single string in the correct order.
-func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
+func (oa *OracleAdapter) DeployPackages(sequences []string, types []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body
 	// The loops are nil safe, so empty slices will be skipped.
 	// Step 1: Deploy Sequences
@@ -422,14 +422,20 @@ func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string
 		}
 	}
 
-	// Step 2: Deploy Package Specifications
+	// Step 2: Deploy Types
+	for _, t := range types {
+		if err := oa.ExecuteStatement(t); err != nil {
+			return fmt.Errorf("failed to deploy type: %s", err)
+		}
+	}
+	// Step 3: Deploy Package Specifications
 	for _, spec := range packageSpec {
 		if err := oa.ExecuteStatement(spec); err != nil {
 			return fmt.Errorf("failed to deploy package specification: %s", err)
 		}
 	}
 
-	// Step 3: Deploy Package Body
+	// Step 4: Deploy Package Body
 	for _, body := range packageBody {
 		if err := oa.ExecuteStatement(body); err != nil {
 			return fmt.Errorf("failed to deploy package body: %s", err)
@@ -441,12 +447,12 @@ func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string
 
 // DeployFile deploys a SQL file content to the connected Oracle database.
 func (oa *OracleAdapter) DeployFile(sqlContent string) error {
-	sequences, packageSpecs, packageBodies, err := Extract(sqlContent)
+	sequences, types, packageSpecs, packageBodies, err := Extract(sqlContent)
 	if err != nil {
 		return fmt.Errorf("failed to extract SQL content: %s", err)
 	}
 
-	if err := oa.DeployPackages(sequences, packageSpecs, packageBodies); err != nil {
+	if err := oa.DeployPackages(sequences, types, packageSpecs, packageBodies); err != nil {
 		return fmt.Errorf("failed to deploy SQL content: %s", err)
 	}
 

@@ -12,7 +12,7 @@ type DatabaseRepository interface {
 	FetchWithParams(query string, params map[string]interface{}) ([]string, error)
 	ExecuteWithParams(query string, params map[string]interface{}) error
 	PackageExists(packageName string) (bool, error)
-	DeployPackages(sequences []string, packageSpecs []string, packageBodies []string) error
+	DeployPackages(sequences []string, types []string, packageSpecs []string, packageBodies []string) error
 	DeployFile(sqlContent string) error
 	RegisterNewSubscriber(subscriber domain.Subscriber) error
 	CheckQueueDepth(subscriberID string) (int, error)

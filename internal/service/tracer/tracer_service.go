@@ -59,7 +59,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 }
 
 func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct{}, subscriber *domain.Subscriber) {
-	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling
+	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling. TODO: Take this
 	defer ticker.Stop()
 
 	for {
@@ -128,7 +128,7 @@ func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage, msgID []by
 
 // checkQueueDepth checks the queue depth for the given subscriber ID
 func (ts *TracerService) checkQueueDepth(subscriber *domain.Subscriber) int {
-	depth, err := ts.db.CheckQueueDepth(subscriber.SubscriberID)
+	depth, err := ts.db.CheckQueueDepth(subscriber.SubscriberID, domain.QueueTableName)
 	if err != nil {
 		log.Printf("failed to check queue depth for subscriber %s: %v", subscriber.SubscriberID, err)
 		return 0

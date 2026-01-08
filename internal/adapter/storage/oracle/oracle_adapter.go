@@ -542,12 +542,12 @@ func parseCountResult(results []string) (int, error) {
 }
 
 // CheckQueueDepth checks the queue depth for the given subscriber ID
-func (oa *OracleAdapter) CheckQueueDepth(subscriberID string) (int, error) {
-	query := `SELECT COUNT(*) 
-			  FROM USER_QUEUE_SHARDS
-			  WHERE QUEUE_NAME = :queueName
+func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName string) (int, error) {
+	query := fmt.Sprintf(`SELECT COUNT(*) 
+			  FROM %s
+			  WHERE QUEUE = :queueName
 			  AND CONSUMER_NAME = :subscriberID
-			  AND MSG_STATE = 'READY'`
+			  AND MSG_STATE = 'READY'`, queueTableName)
 
 	results, err := oa.FetchWithParams(query, map[string]interface{}{
 		"queueName":    domain.QueueName,
@@ -610,10 +610,10 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 			  OMNI_TRACER_API.Dequeue_Array_Events(
 				  subscriber_name => :subscriberName,
 				  batch_size      => :batchSize,
-				  wait_time	    => :waitTime,
+				  wait_time	      => :waitTime,
 				  messages        => :messages,
 				  message_ids     => :messageIDs,
-				  msg_count  => :dequeuedCount
+				  msg_count       => :dequeuedCount
 			  );
 			END;`
 

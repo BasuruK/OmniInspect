@@ -4,7 +4,8 @@ import "errors"
 
 // Value Object : Queue Name
 const (
-	QueueName = "OMNI_TRACER_QUEUE"
+	QueueName      = "OMNI_TRACER_QUEUE"
+	QueueTableName = "AQ$OMNI_TRACER_QUEUE"
 )
 
 // Entity : Subscriber information

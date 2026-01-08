@@ -57,12 +57,15 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyCha
 
 	handle := cgo.NewHandle(notifyChan)
 
+	cQueueName := C.CString(domain.QueueName)
+	defer C.free(unsafe.Pointer(cQueueName))
+
 	cSubscriberName := C.CString(subscriber.Name)
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
 	var subscr *C.dpiSubscr
 
-	result := C.RegisterOracleSubscription(sm.connection, sm.context, cSubscriberName, C.uintptr_t(handle), &subscr)
+	result := C.RegisterOracleSubscription(sm.connection, sm.context, cQueueName, cSubscriberName, C.uintptr_t(handle), &subscr)
 
 	if result != C.DPI_SUCCESS {
 		handle.Delete()

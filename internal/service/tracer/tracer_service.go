@@ -53,7 +53,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
 
 	// Start the goroutine to listen for notifications
-	go ts.eventLoop(ctx, notifyChan, subscriber)
+	ts.eventLoop(ctx, notifyChan, subscriber)
 
 	return nil
 }

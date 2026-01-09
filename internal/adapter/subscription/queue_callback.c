@@ -1,8 +1,9 @@
-#include "queue_callback.h"
-#include "dpi.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "dpi.h"
+#include "queue_callback.h"
 
 // Function to notify Go channel with the given handle
 // This is a forward declaration; the actual implementation is in Go via cgo.Handle

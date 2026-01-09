@@ -4,7 +4,10 @@ package subscription
 #include <stdint.h>
 */
 import "C"
-import "runtime/cgo"
+import (
+	"fmt"
+	"runtime/cgo"
+)
 
 //export notifyGoChannel
 func notifyGoChannel(handle C.uintptr_t) {
@@ -19,5 +22,6 @@ func notifyGoChannel(handle C.uintptr_t) {
 		// Notification sent successfully
 	default:
 		// Channel is full, skip sending to avoid blocking
+		fmt.Println("Channel is Full, Skipping sending to avoid blocking")
 	}
 }

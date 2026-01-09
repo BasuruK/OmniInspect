@@ -44,9 +44,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	notifyChan := make(chan struct{}, 10) // Buffered channel to avoid blocking and handle bursts
 
 	// Subscribe to the queue
-	var err error
-	subscriber.SubscriberID, err = ts.subscriptionMgr.Subscribe(*subscriber, notifyChan)
-	if err != nil {
+	if err := ts.subscriptionMgr.Subscribe(*subscriber, notifyChan); err != nil {
 		return fmt.Errorf("failed to subscribe to queue: %w", err)
 	}
 
@@ -70,13 +68,13 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 			return
 		case <-notifyChan:
 			// Process the notification
-			fmt.Println("Received notification for subscriber:", subscriber.SubscriberID)
+			fmt.Println("Received notification for subscriber:", subscriber.Name)
 			ts.processBatch(subscriber)
 		case <-ticker.C:
 			// Periodic check (fallback polling)
 			queueDepth := ts.checkQueueDepth(subscriber)
 			if queueDepth > 0 {
-				fmt.Printf("Periodic check: Processing %d messages for subscriber: %s\n", queueDepth, subscriber.SubscriberID)
+				fmt.Printf("Periodic check: Processing %d messages for subscriber: %s\n", queueDepth, subscriber.Name)
 				ts.processBatch(subscriber)
 			}
 		}
@@ -101,7 +99,7 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
 	if err != nil {
-		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.SubscriberID, err)
+		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
 		return
 	}
 
@@ -109,7 +107,7 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 		return // return
 	}
 
-	fmt.Printf("[INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.SubscriberID)
+	fmt.Printf("[INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.Name)
 
 	for i := 0; i < count; i++ {
 		var msg domain.QueueMessage
@@ -128,9 +126,9 @@ func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage, msgID []by
 
 // checkQueueDepth checks the queue depth for the given subscriber ID
 func (ts *TracerService) checkQueueDepth(subscriber *domain.Subscriber) int {
-	depth, err := ts.db.CheckQueueDepth(subscriber.SubscriberID, domain.QueueTableName)
+	depth, err := ts.db.CheckQueueDepth(subscriber.Name, domain.QueueTableName)
 	if err != nil {
-		log.Printf("failed to check queue depth for subscriber %s: %v", subscriber.SubscriberID, err)
+		log.Printf("failed to check queue depth for subscriber %s: %v", subscriber.Name, err)
 		return 0
 	}
 	return depth

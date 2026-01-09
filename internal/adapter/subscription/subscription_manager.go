@@ -45,14 +45,14 @@ func NewSubscriptionManager(connPtr unsafe.Pointer, ctxPtr unsafe.Pointer) *Subs
 }
 
 // Subscribe registers a new subscription for the given subscriber name
-func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyChan chan<- struct{}) (string, error) {
+func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyChan chan<- struct{}) error {
 	if sm.connection == nil || sm.context == nil {
-		return "", fmt.Errorf("invalid database connection or context")
+		return fmt.Errorf("invalid database connection or context")
 	}
 
 	// Check if already subscribed TODO: remove if its causing regular errors
 	if _, exists := sm.activeSubscriptions[subscriber.Name]; exists {
-		return "", fmt.Errorf("subscription already exists for: %s", subscriber.Name) // Already subscribed
+		return fmt.Errorf("subscription already exists for: %s", subscriber.Name) // Already subscribed
 	}
 
 	handle := cgo.NewHandle(notifyChan)
@@ -69,7 +69,7 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyCha
 
 	if result != C.DPI_SUCCESS {
 		handle.Delete()
-		return "", fmt.Errorf("failed to register oracle subscription for: %s", subscriber.Name)
+		return fmt.Errorf("failed to register oracle subscription for: %s", subscriber.Name)
 	}
 
 	sm.activeSubscriptions[subscriber.Name] = &SubscriptionHandle{
@@ -78,7 +78,7 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyCha
 		subscriber: subscriber,
 	}
 
-	return subscriber.Name, nil
+	return nil
 }
 
 // Unsubscribe removes an existing subscription for the given subscriber name

@@ -10,10 +10,9 @@ const (
 
 // Entity : Subscriber information
 type Subscriber struct {
-	SubscriberID string
-	Name         string
-	BatchSize    int
-	WaitTime     int
+	Name      string
+	BatchSize int
+	WaitTime  int
 }
 
 // Entity : Represents a message in the tracer queue

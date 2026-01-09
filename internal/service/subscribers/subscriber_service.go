@@ -79,7 +79,7 @@ func generateSubscriberName() string {
 	// Format the UUID as a named subscriber identifier
 	// Replace - with _ to comply with Oracle naming conventions
 	// Add a prefix for clarity : SUB_
-	subscriberName := "SUB_" + strings.ReplaceAll(uuidWithHyphen.String(), "-", "_")
+	subscriberName := "SUB_" + strings.ToUpper(strings.ReplaceAll(uuidWithHyphen.String(), "-", "_"))
 
 	return subscriberName
 }

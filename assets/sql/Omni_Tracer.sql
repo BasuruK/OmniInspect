@@ -262,6 +262,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         -- Initialize output collections
         payload_array_ := OMNI_TRACER_PAYLOAD_ARRAY();
 
+        -- Clear output collections to prevent residual data
+        messages_.DELETE;
+        message_ids_.DELETE;
+
         count_ := DBMS_AQ.DEQUEUE_ARRAY (
             queue_name                => TRACER_QUEUE_NAME,
             dequeue_options           => dequeue_options_,
@@ -281,8 +285,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         WHEN OTHERS THEN
             IF SQLCODE = -25228 THEN
                 -- No message available
-                messages_.DELETE;
-                message_ids_.DELETE;
                 msg_count_ := 0;
             ELSE
                 RAISE;

@@ -608,12 +608,12 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 
 	query := `BEGIN
 			  OMNI_TRACER_API.Dequeue_Array_Events(
-				  subscriber_name => :subscriberName,
-				  batch_size      => :batchSize,
-				  wait_time	      => :waitTime,
-				  messages        => :messages,
-				  message_ids     => :messageIDs,
-				  msg_count       => :dequeuedCount
+				  subscriber_name_ => :subscriberName,
+				  batch_size_      => :batchSize,
+				  wait_time_	   => :waitTime,
+				  messages_        => :messages,
+				  message_ids_     => :messageIDs,
+				  msg_count_       => :dequeuedCount
 			  );
 			END;`
 
@@ -639,10 +639,11 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		return nil, nil, 0, fmt.Errorf("failed to bind message IDs collection param: %w", err)
 	}
 
-	var countData C.dpiData
-	if err := oa.BindOutParam(stmt, "dequeuedCount", C.DPI_NATIVE_TYPE_INT64, &countData); err != nil {
+	countOutParam, err := oa.BindOutParam(stmt, "dequeuedCount", C.DPI_NATIVE_TYPE_INT64)
+	if err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to bind dequeued count out param: %w", err)
 	}
+	defer C.dpiVar_release(countOutParam)
 
 	// 4. Execute the statement
 	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
@@ -655,8 +656,16 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	}
 
 	// 5. Extract results from collection objects
-	count := int(C.getAsInt64(&countData))
+	var countData *C.dpiData
+	var numReturnedRows C.uint32_t
+	if C.dpiVar_getReturnedData(countOutParam, 0, &numReturnedRows, &countData) != C.DPI_SUCCESS {
+		return nil, nil, 0, fmt.Errorf("failed to get dequeued count data")
+	}
+
+	count := int(C.getAsInt64(countData))
 	if count == 0 {
+		fmt.Println("DEBUG count is 0, returning")
+		fmt.Println("numReturnedRows is:", int(numReturnedRows))
 		return []string{}, [][]byte{}, 0, nil // No messages dequeued
 	}
 
@@ -704,15 +713,37 @@ func (oa *OracleAdapter) BindCollectionParam(stmt *C.dpiStmt, paramName string, 
 }
 
 // BindOutParam binds an OUT parameter to the prepared statement.
-func (oa *OracleAdapter) BindOutParam(stmt *C.dpiStmt, paramName string, nativeType C.dpiNativeTypeNum, dpiData *C.dpiData) error {
+func (oa *OracleAdapter) BindOutParam(stmt *C.dpiStmt, paramName string, nativeType C.dpiNativeTypeNum) (*C.dpiVar, error) {
 	cName := C.CString(paramName)
 	defer C.free(unsafe.Pointer(cName))
 
-	if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(paramName)), nativeType, dpiData) != C.DPI_SUCCESS {
+	var dpiVariable *C.dpiVar
+	var dpiData *C.dpiData
+
+	if C.dpiConn_newVar(
+		oa.Connection,
+		C.DPI_ORACLE_TYPE_NUMBER, // Oracle type (NUMBER maps to INT64/DOUBLE)
+		nativeType,               // Native type
+		1,                        // Max array size = 1 for scalar
+		0,                        // Size 0 for numbers
+		0,                        // Size is bytes flag (0 = not a string)
+		0,                        // Is array flag (0 = scalar)
+		nil,                      // Object type (NULL for scalars)
+		&dpiVariable,             // Output variable handle
+		&dpiData,                 // Data pointer (not needed, will use dpiVar_getReturnedData)
+	) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
-		return fmt.Errorf("failed to bind out parameter %s: %s", paramName, C.GoString(errInfo.message))
+		return nil, fmt.Errorf("failed to create variable for out parameter %s: %s", paramName, C.GoString(errInfo.message))
 	}
 
-	return nil
+	// Bind the out parameter by name
+	if C.dpiStmt_bindByName(stmt, cName, C.uint32_t(len(paramName)), dpiVariable) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		C.dpiVar_release(dpiVariable)
+		return nil, fmt.Errorf("failed to bind out parameter %s: %s", paramName, C.GoString(errInfo.message))
+	}
+
+	return dpiVariable, nil
 }

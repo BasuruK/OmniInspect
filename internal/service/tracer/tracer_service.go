@@ -50,8 +50,13 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 
 	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
 
+	go func() {
+		fmt.Println("queue rediness check!")
+		ts.processBatch(subscriber)
+	}()
+
 	// Start the goroutine to listen for notifications
-	ts.eventLoop(ctx, notifyChan, subscriber)
+	go ts.eventLoop(ctx, notifyChan, subscriber)
 
 	return nil
 }
@@ -94,9 +99,6 @@ func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 
 // processBatch processes a batch of tracer data for the given subscriber ID
 func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
-	const batchSize = 1000 // Define the batch size
-	const waitTime = 100   // Define the wait time in seconds
-
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
 	if err != nil {
 		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)

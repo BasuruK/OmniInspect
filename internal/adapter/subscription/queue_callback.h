@@ -1,9 +1,6 @@
 #ifndef QUEUE_CALLBACKS_H
 #define QUEUE_CALLBACKS_H
 
-// uncomment for dubugging
-#define DEBUG_NOTIFICATIONS
-
 #include "dpi.h"
 #include <stdint.h>
 #include <string.h>

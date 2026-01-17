@@ -4,9 +4,22 @@ import "errors"
 
 // Value Object : Queue Name
 const (
-	QueueName      = "OMNI_TRACER_QUEUE"
-	QueueTableName = "AQ$OMNI_TRACER_QUEUE"
+	QueueName        = "OMNI_TRACER_QUEUE"
+	QueueTableName   = "AQ$OMNI_TRACER_QUEUE"
+	QueuePayloadType = "OMNI_TRACER_PAYLOAD_TYPE"
 )
+
+// Value Object : Queue Configuration
+type QueueConfig struct{}
+
+func (QueueConfig) Name() string        { return QueueName }
+func (QueueConfig) TableName() string   { return QueueTableName }
+func (QueueConfig) PayloadType() string { return QueuePayloadType }
+
+// NewQueueConfig creates a new QueueConfig instance
+func NewQueueConfig() QueueConfig {
+	return QueueConfig{}
+}
 
 // Entity : Subscriber information
 type Subscriber struct {

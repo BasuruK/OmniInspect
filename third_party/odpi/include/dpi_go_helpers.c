@@ -1,6 +1,9 @@
-#include <stddef.h>
+#include <stdlib.h>
 #include <stdint.h>
-#include <string.h> 
+#include <stdio.h>
+#include <stddef.h>
+#include <string.h>
+
 #include "dpi.h"
 
 /**
@@ -61,6 +64,13 @@ double getAsDouble(dpiData* data) {
 float getAsFloat(dpiData* data) {
     if (data == NULL || data->isNull) return 0;
 	return data->value.asFloat;
+}
+
+/**
+ * getLobFromData - Extract LOB from dpiData
+ */
+dpiLob* getLobFromData(dpiData* data) {
+    return data->value.asLOB;
 }
 
 /**
@@ -170,7 +180,7 @@ int getCollectionSize(dpiObject* obj, int32_t* size) {
  * getCollectionElementAsString - Gets an element from a CLOB collection as string
  * 
  * @param obj: The collection object
- * @param index: Element index (1-based, like PL/SQL)
+ * @param index: Element index (0-based, per ODPI-C specification)
  * @param value: Output buffer for the string
  * @param valueLen: Output parameter for string length
  * @return: DPI_SUCCESS or DPI_FAILURE
@@ -188,10 +198,82 @@ int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, ui
 }
 
 /**
+ * getCollectionElementAsCLOB - Gets an element from a CLOB collection
+ * 
+ * @param obj: The collection object
+ * @param index: Element index 0-based, per ODPI-C specification
+ * @param value: Output buffer for the CLOB data
+ * @param valueLen: Output parameter for CLOB length
+ * @warning: Caller is responsible for freeing the allocated buffer using free()
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getCollectionElementAsCLOB(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen) {
+    dpiData data;
+    
+    // Get the element as a LOB
+    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_LOB, &data) != DPI_SUCCESS) {
+        return DPI_FAILURE;
+    }
+
+    if (data.isNull) {
+        *value = NULL;
+        *valueLen = 0;
+        return DPI_SUCCESS;
+    }
+
+    dpiLob* lob = data.value.asLOB;
+
+    // Get the LOB size
+    uint64_t lobSize;
+    if (dpiLob_getSize(lob, &lobSize) != DPI_SUCCESS) {
+        return DPI_FAILURE;
+    }
+
+    if (lobSize == 0) {
+        *value = NULL;
+        *valueLen = 0;
+        return DPI_SUCCESS;
+    }
+
+    // Allocate buffer for LOB data
+    char* buffer = (char*)malloc((size_t)lobSize + 1); // +1 for null terminator
+    if (buffer == NULL) {
+        return DPI_FAILURE;
+    }
+
+    // Read the LOB data (in full)
+    uint64_t totalBytesRead = 0;
+    uint64_t offset = 1; // LOB offsets are 1-based
+
+    while (totalBytesRead < lobSize) {
+        uint64_t bytesToRead = lobSize - totalBytesRead;
+        uint64_t bytesRead = 0;
+
+        if (dpiLob_readBytes(lob, offset, bytesToRead, buffer + totalBytesRead, &bytesRead) != DPI_SUCCESS) {
+            free(buffer);
+            return DPI_FAILURE;
+        }
+        if (bytesRead == 0) {
+            break; // No more data to read
+        }
+
+        totalBytesRead += bytesRead;
+        offset += bytesRead;
+    }
+
+    buffer[totalBytesRead] = '\0'; // Null-terminate the string
+
+    *value = buffer;
+    *valueLen = (uint32_t)totalBytesRead;
+
+    return DPI_SUCCESS;
+}
+
+/**
  * getCollectionElementAsRaw - Gets an element from a RAW collection
  * 
  * @param obj: The collection object
- * @param index: Element index (1-based)
+ * @param index: Element index (0-based, per ODPI-C specification)
  * @param value: Output buffer for raw bytes
  * @param valueLen: Output parameter for byte length
  * @return: DPI_SUCCESS or DPI_FAILURE
@@ -206,4 +288,81 @@ int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value,
     *value = (const char*)data.value.asBytes.ptr;
     *valueLen = data.value.asBytes.length;
     return DPI_SUCCESS;
+}
+
+/**
+ * getObjectType - Gets the object type for a given schema and type name
+ * 
+ * @param conn: Database connection
+ * @param schema: Schema name (usually your username)
+ * @param typeName: Type name (e.g., "CLOB_TAB")
+ * @param objType: Output parameter for the object type
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getObjectType(dpiConn* conn, const char* schema, const char* typeName, dpiObjectType** objType) {
+    if (conn == NULL || schema == NULL || typeName == NULL || objType == NULL) {
+        return DPI_FAILURE;
+    }
+
+    // Construct fully qualified type name
+    size_t schemaLen = strlen(schema);
+    size_t typeNameLen = strlen(typeName);
+    size_t fullTypeNameLen = schemaLen + 1 + typeNameLen; // for "."
+
+    char* fullTypeName = (char*)malloc(fullTypeNameLen + 1); // +1 for null terminator
+    if (fullTypeName == NULL) { 
+        return DPI_FAILURE; 
+    }
+
+    // Build the full type name
+    snprintf(fullTypeName, fullTypeNameLen + 1, "%s.%s", schema, typeName);
+
+    // Get the object type from oracle
+    int status = dpiConn_getObjectType(conn, fullTypeName, (uint32_t)fullTypeNameLen, objType);
+    free(fullTypeName);
+    return status;
+}
+
+/**
+ * getObjectAttributeByName - Gets the attribute type of an object by attribute name
+ * 
+ * @param objType: The object type
+ * @param attrName: The attribute name to look for
+ * @param attrType: Output parameter for the attribute type
+ * @return: DPI_SUCCESS or DPI_FAILURE
+ */
+int getObjectAttributeByName(dpiObjectType* objType, const char* attrName, dpiObjectAttr** attrType) {
+    if (objType == NULL || attrName == NULL || attrType == NULL) {
+        return DPI_FAILURE;
+    }
+
+    dpiObjectTypeInfo typeInfo;
+    if (dpiObjectType_getInfo(objType, &typeInfo) != DPI_SUCCESS) {
+        return DPI_FAILURE;
+    }
+
+    for (uint16_t i = 0; i < typeInfo.numAttributes; i++) {
+        dpiObjectAttr* currentAttr;
+        if (dpiObjectType_getAttributes(objType, i + 1, &currentAttr) != DPI_SUCCESS) {
+            continue;
+        }
+
+        dpiObjectAttrInfo attrInfo;
+        if (dpiObjectAttr_getInfo(currentAttr, &attrInfo) != DPI_SUCCESS) {
+            dpiObjectAttr_release(currentAttr);
+            continue;
+        }
+
+        // compare attribute names
+        if (strncasecmp(attrInfo.name, attrName, attrInfo.nameLength) == 0) {
+            // Found the attribute, get its type
+            *attrType = currentAttr;
+            return DPI_SUCCESS;
+        }
+
+        dpiObjectAttr_release(currentAttr);
+    }
+
+    // return failure if attribute not found
+    return DPI_FAILURE; 
 }

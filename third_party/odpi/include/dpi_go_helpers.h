@@ -18,10 +18,14 @@ void initDPIDataAsInt64(dpiData* data, int64_t value); // initializes dpiData as
 void initDPIDataAsDouble(dpiData* data, double value);  // initializes dpiData as double
 void initDPIDataAsObject(dpiData* data, dpiObject* obj); // initializes dpiData as object (for collections/objects)
 
+int getObjectType(dpiConn* conn, const char* schema, const char* typeName, dpiObjectType** objType); // gets the object type for a given schema and type name
+int getObjectAttributeByName(dpiObjectType* objType, const char* attrName, dpiObjectAttr** attrType); // gets the attribute type of an object by attribute name
 int createCollectionType(dpiConn* conn, const char* typeName, dpiObjectType** objType); // creates a collection type
 int createCollection(dpiObjectType* objType, dpiObject** obj); // creates a collection object
 int getCollectionSize(dpiObject* obj, int32_t* size); // gets the size of the collection
 int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen); // gets an element from a string collection
+int getCollectionElementAsCLOB(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen); // gets an element from a CLOB collection
 int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value, uint32_t* valueLen); // gets an element from a RAW collection
+dpiLob* getLobFromData(dpiData* data); // Extract LOB from dpiData
 
 #endif

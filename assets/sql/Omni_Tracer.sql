@@ -89,8 +89,8 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'OMNI_TRACER_QUEUE';
 
     -- Collection types for bulk operations
-    TYPE clob_tab IS TABLE OF CLOB INDEX BY PLS_INTEGER;
-    TYPE raw_tab IS TABLE OF RAW(16) INDEX BY PLS_INTEGER;
+    TYPE clob_tab IS TABLE OF CLOB;
+    TYPE raw_tab IS TABLE OF RAW(16);
 
     -- Core Methods
     PROCEDURE Initialize;
@@ -229,67 +229,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             msgid               => message_handle_
         );
     END Enqueue_Event___;
-
-
-    PROCEDURE Dequeue_Array_Events (
-        subscriber_name_ IN VARCHAR2,
-        batch_size_      IN INTEGER,
-        wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_        OUT clob_tab,
-        message_ids_     OUT raw_tab,
-        msg_count_       OUT INTEGER)
-    IS
-        dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
-        message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
-        msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
-        payload_array_       OMNI_TRACER_PAYLOAD_ARRAY;
-        count_               NUMBER;
-    BEGIN
-        IF batch_size_ IS NULL OR batch_size_ <= 0 THEN
-            RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
-        END IF;
-
-        IF subscriber_name_ IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20004, 'Subscriber name cannot be NULL for multi-consumer queue');
-        END IF;
-
-        -- Async Listening
-        dequeue_options_.consumer_name := subscriber_name_;
-        dequeue_options_.wait := wait_time_;
-        dequeue_options_.navigation := DBMS_AQ.FIRST_MESSAGE;
-        dequeue_options_.visibility := DBMS_AQ.IMMEDIATE;
-
-        -- Initialize output collections
-        payload_array_ := OMNI_TRACER_PAYLOAD_ARRAY();
-
-        -- Clear output collections to prevent residual data
-        messages_.DELETE;
-        message_ids_.DELETE;
-
-        count_ := DBMS_AQ.DEQUEUE_ARRAY (
-            queue_name                => TRACER_QUEUE_NAME,
-            dequeue_options           => dequeue_options_,
-            array_size                => batch_size_,
-            message_properties_array  => message_props_array_,
-            payload_array             => payload_array_,
-            msgid_array               => msg_id_array_
-        );
-
-        msg_count_ := count_;
-
-        FOR i_ IN 1 .. count_ LOOP
-            messages_(i_) := Blob_To_Clob___(payload_array_(i_).JSON_DATA);
-            message_ids_(i_) := msg_id_array_(i_);
-        END LOOP;
-    EXCEPTION
-        WHEN OTHERS THEN
-            IF SQLCODE = -25228 THEN
-                -- No message available
-                msg_count_ := 0;
-            ELSE
-                RAISE;
-            END IF;
-    END Dequeue_Array_Events;
+    
 
     PROCEDURE Trace_Message (
         message_    IN VARCHAR2,
@@ -297,7 +237,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     IS
         calling_process_ VARCHAR2(100);
     BEGIN
-        calling_process_ := SUBSTR(DBMS_UTILITY.FORMAT_CALL_STACK, 1, 100);
+        calling_process_ := 'OMNI_TRACER_API';
         Enqueue_Event___(
             process_name_   => calling_process_,
             log_level_      => log_level_,

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type TracerService struct {
 	db              ports.DatabaseRepository
 	bolt            ports.ConfigRepository
 	subscriptionMgr *subscription.SubscriptionManager
+	processMu       sync.Mutex
 }
 
 // Constructor: NewTracerService Constructor for TracerService
@@ -29,7 +31,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 		return nil
 	}
 
-	// Note: NewSubscriptionManager expects (context, connection) order
+	// Note: NewSubscriptionManager expects (connection, context) order
 	subscriptionMgr := subscription.NewSubscriptionManager(rawConn, rawCtx)
 
 	return &TracerService{
@@ -51,7 +53,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
 
 	go func() {
-		fmt.Println("queue rediness check!")
+		fmt.Println("queue readiness check!")
 		ts.processBatch(subscriber)
 	}()
 
@@ -90,7 +92,7 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 	if ts.subscriptionMgr != nil {
 		if err := ts.subscriptionMgr.Unsubscribe(*subscriber); err != nil {
-			fmt.Printf("failed to unsubscribe: %v", err)
+			fmt.Printf("failed to unsubscribe: %v\n", err)
 		} else {
 			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.Name)
 		}
@@ -99,6 +101,10 @@ func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 
 // processBatch processes a batch of tracer data for the given subscriber ID
 func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
+	// Lock for processing to avoid concurrent dequeues
+	ts.processMu.Lock()
+	defer ts.processMu.Unlock()
+
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
 	if err != nil {
 		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)

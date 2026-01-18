@@ -74,10 +74,6 @@ func main() {
 	// create cancellable context and tie cancellation to signals
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
-		<-signalChan
-		cancel()
-	}()
 
 	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
 	if err := tracerService.StartEventListener(ctx, &subscriber, appConfig.Username); err != nil {
@@ -90,6 +86,9 @@ func main() {
 
 	select {
 	case <-done:
+		cancel()
 	case <-signalChan:
+		cancel()
+	case <-ctx.Done():
 	}
 }

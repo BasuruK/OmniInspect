@@ -73,37 +73,44 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
 
     // 4. Set queue name and subscriber name
     // For Multi-Consumer queues, OCI expects consumer name. 
-    // While recipientName is supported, some OCI configurations require the name to be formatted as "QUEUE"
+    // While recipientName is supported, some OCI configurations require the name to be formatted as "QUEUE:CONSUMER"
     // We will set both for maximum compatibility.
-    
-    size_t subscriptionNameLen = strlen(queueName) + 1 + strlen(subscriberName) + 1;
-    char *subscriptionName = (char*)malloc(subscriptionNameLen);
+    char *subscriptionName = NULL;
 
     if (subscriberName != NULL && strlen(subscriberName) > 0) {
+        size_t subscriptionNameLen = strlen(queueName) + 1 + strlen(subscriberName) + 1;
+        subscriptionName = (char*)malloc(subscriptionNameLen);
+
+        if (subscriptionName == NULL) {
+            fprintf(stderr, "[C ERROR] Failed to allocate memory for subscription name\n");
+            fflush(stderr);
+            return DPI_FAILURE;
+        }
+
         // Format: "QUEUE:CONSUMER"
         snprintf(subscriptionName, subscriptionNameLen, "%s:%s", queueName, subscriberName);
 
         createParams.name = subscriptionName;
         createParams.nameLength = (uint32_t)strlen(subscriptionName);
-        
-        createParams.recipientName = NULL;
-        createParams.recipientNameLength = 0;
-    } 
-
-    // 5. Create the subscription
-    int result = dpiConn_subscribe(conn, &createParams, &subscr);
-
-    if (result != DPI_SUCCESS) {
-        dpiContext_getError(context, &errorInfo);
+    
+        int result = dpiConn_subscribe(conn, &createParams, &subscr);
+        if (result != DPI_SUCCESS) {
+            dpiContext_getError(context, &errorInfo);
+            fprintf(stderr, "[C ERROR] Failed to create subscription: %s\n", errorInfo.message);
+            fflush(stderr);
+            free(subscriptionName);
+            return DPI_FAILURE;
+        }
+        *outSubscr = subscr;
+    
+        // Clean up
         free(subscriptionName);
+        return DPI_SUCCESS;
+    } else {
+        fprintf(stderr, "[C ERROR] Subscription name or subscriber name is missing\n");
+        fflush(stderr);
         return DPI_FAILURE;
     }
-
-    *outSubscr = subscr;
-
-    // Clean up
-    free(subscriptionName);
-    return DPI_SUCCESS;
 }
 
 /**

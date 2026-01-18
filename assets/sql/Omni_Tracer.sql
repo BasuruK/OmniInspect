@@ -100,15 +100,6 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
     --PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
 
-    -- Enqueue/Dequeue Methods
-    -- High Performance bulk Array Dequeue
-    PROCEDURE Dequeue_Array_Events (
-        subscriber_name_ IN VARCHAR2,
-        batch_size_      IN INTEGER,
-        wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_        OUT clob_tab,
-        message_ids_     OUT raw_tab,
-        msg_count_       OUT INTEGER);
 END OMNI_TRACER_API;
 /
 
@@ -142,7 +133,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                 multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
                 queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
             );
-            -- 2. Set Sharde cound
+            -- 2. Set Shard count
             -- Default to 4 shards, can be adjusted based on expected load
             -- Note: TODO: find the optimal count without slowing down the db
             DBMS_AQADM.SET_QUEUE_PARAMETER(
@@ -248,12 +239,16 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
     FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB
     IS
-        output_ BLOB;
-        dest_offset_ INTEGER := 1;
-        src_offset_ INTEGER := 1;
-        lang_context_ INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
-        warning_ INTEGER;
+        output_         BLOB;
+        dest_offset_    INTEGER := 1;
+        src_offset_     INTEGER := 1;
+        lang_context_   INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        warning_        INTEGER;
     BEGIN
+        IF input_ IS NULL OR DBMS_LOB.GETLENGTH(input_) = 0 THEN
+            RETURN NULL;
+        END IF;
+        
         DBMS_LOB.CREATETEMPORARY(output_, TRUE);
         DBMS_LOB.CONVERTTOBLOB(
             dest_lob     => output_,

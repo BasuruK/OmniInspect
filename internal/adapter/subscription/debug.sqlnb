@@ -2,8 +2,8 @@ cells:
   - kind: 2
     value: |-
       BEGIN
-          OMNI_TRACER_API.Trace_Message('TEST FROM SQL2', 'INFO');
-          COMMIT;  -- Important!
+          OMNI_TRACER_API.Trace_Message('TEST FROM SQL2566', 'INFO');
+          --COMMIT;  -- Important!
       END;
       /
     languageId: oracle-sql
@@ -78,6 +78,11 @@ cells:
       END;
 
       /
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT *
+              FROM user_tab_privs
     languageId: oracle-sql
   - kind: 2
     value: ""

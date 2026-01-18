@@ -35,7 +35,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_sys_privs
-        WHERE privilege IN ('CREATE SEQUENCE', 'CREATE ANY SEQUENCE');
+        WHERE privilege IN ('CREATE SEQUENCE', 'CREATE ANY SEQUENCE')
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_Create_Sequence_Priv;
@@ -46,7 +47,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_sys_privs
-        WHERE privilege IN ('CREATE PROCEDURE', 'CREATE ANY PROCEDURE');
+        WHERE privilege IN ('CREATE PROCEDURE', 'CREATE ANY PROCEDURE')
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_Create_Procedure_Priv;
@@ -57,7 +59,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_sys_privs
-        WHERE privilege IN ('CREATE TYPE', 'CREATE ANY TYPE');
+        WHERE privilege IN ('CREATE TYPE', 'CREATE ANY TYPE')
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_Create_Type_Priv;
@@ -68,7 +71,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_role_privs
-        WHERE granted_role = 'AQ_ADMINISTRATOR_ROLE';
+        WHERE granted_role = 'AQ_ADMINISTRATOR_ROLE'
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_AQ_Admin_Role;
@@ -79,7 +83,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_role_privs
-        WHERE granted_role = 'AQ_USER_ROLE';
+        WHERE granted_role = 'AQ_USER_ROLE'
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_AQ_User_Role;
@@ -91,7 +96,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQADM'
-          AND privilege = 'EXECUTE';
+          AND privilege = 'EXECUTE'
+          AND grantee = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_DBMS_AQADM_Exec;
@@ -103,7 +109,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQ'
-          AND privilege = 'EXECUTE';
+          AND privilege = 'EXECUTE'
+          AND grantee = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_DBMS_AQ_Exec;

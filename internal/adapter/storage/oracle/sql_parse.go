@@ -53,7 +53,7 @@ func extractSequenceBlocks(plsqlContent string) ([]string, error) {
 	return sequences, nil
 }
 
-// extractSequenceBlocks extracts sequence creation blocks from the PL/SQL content.
+// extractTypeBlocks extracts type creation blocks from the PL/SQL content.
 func extractTypeBlocks(plsqlContent string) ([]string, error) {
 	var types []string
 	sections, err := extractSections(plsqlContent, typeSectionStart, typeSectionEnd)
@@ -88,7 +88,7 @@ func extractPackageSpecBlocks(plsqlContent string) ([]string, error) {
 	return packageSpecs, err
 }
 
-// extractPackageSpecBlocks extracts package specification blocks from the PL/SQL content.
+// extractPackageBodyBlocks extracts package body blocks from the PL/SQL content
 func extractPackageBodyBlocks(plsqlContent string) ([]string, error) {
 	var packageBodies []string
 	sections, err := extractSections(plsqlContent, packageBodyStart, packageBodyEnd)

@@ -73,6 +73,7 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, schema st
 	result := C.RegisterOracleSubscription(sm.connection, sm.context, cQueueName, cSubscriberName, C.uintptr_t(handle), &subscr)
 
 	if result != C.DPI_SUCCESS {
+		delete(sm.handles, subscriber.Name)
 		handle.Delete()
 		return fmt.Errorf("failed to register oracle subscription for: %s", subscriber.Name)
 	}
@@ -101,23 +102,21 @@ func (sm *SubscriptionManager) Unsubscribe(subscriber domain.Subscriber) error {
 
 	// Remove from active subscriptions map
 	delete(sm.activeSubscriptions, subscriber.Name)
+	delete(sm.handles, subscriber.Name)
 
 	return nil
 }
 
 // UnsubscribeAll removes all active subscriptions
 func (sm *SubscriptionManager) UnsubscribeAll() {
-	for subscriber := range sm.activeSubscriptions {
-		_ = sm.Unsubscribe(sm.activeSubscriptions[subscriber].subscriber)
-	}
-}
+	// Collect subscribers first to avoid modifying map during iteration
+	subscribers := make([]domain.Subscriber, 0, len(sm.activeSubscriptions))
 
-// GetActiveSubscriptions returns a list of active subscription names
-func (sm *SubscriptionManager) GetActiveSubscriptions() []string {
-	subs := make([]string, 0, len(sm.activeSubscriptions))
-	for name := range sm.activeSubscriptions {
-		subs = append(subs, name)
+	for _, handle := range sm.activeSubscriptions {
+		subscribers = append(subscribers, handle.subscriber)
 	}
 
-	return subs
+	for _, subscriber := range subscribers {
+		_ = sm.Unsubscribe(subscriber)
+	}
 }

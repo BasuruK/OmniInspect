@@ -37,7 +37,7 @@ func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, er
 		"subscriberName": subscriber.Name,
 	})
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("failed to query subscriber existence: %w", err)
 	}
 	if len(results) == 0 {
 		return false, nil

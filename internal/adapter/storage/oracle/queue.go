@@ -82,7 +82,6 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	messages := make([]string, count)
 	msgIds := make([][]byte, count)
 	var msgProps *C.dpiMsgProps
-	defer C.dpiMsgProps_release(msgProps)
 
 	for i := 0; i < count; i++ {
 		msgProps = msgPropsArray[i]
@@ -176,7 +175,7 @@ func (oa *OracleAdapter) configureDequeueOptions(queue *C.dpiQueue, subscriber d
 		return fmt.Errorf("failed to set wait time: %s", C.GoString(errInfo.message))
 	}
 
-	// set visibility (Immidiate - no transaction required)
+	// set visibility (Immediate - no transaction required)
 	if C.dpiDeqOptions_setVisibility(dequeueOptions, C.DPI_VISIBILITY_IMMEDIATE) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
@@ -205,11 +204,11 @@ func (oa *OracleAdapter) extractPayloadFromMsgProps(msgProps *C.dpiMsgProps) (st
 		C.dpiContext_getError(oa.Context, &errInfo)
 		return "", fmt.Errorf("failed to get payload from message properties: %s", C.GoString(errInfo.message))
 	}
-	defer C.dpiObject_release(payloadObj)
 
 	if payloadObj == nil {
 		return "", fmt.Errorf("payload object is nil")
 	}
+	defer C.dpiObject_release(payloadObj)
 
 	// Get the JSON_DATA attribute from the payload object
 	attrName := C.CString("JSON_DATA")

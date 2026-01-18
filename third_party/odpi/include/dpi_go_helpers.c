@@ -70,6 +70,7 @@ float getAsFloat(dpiData* data) {
  * getLobFromData - Extract LOB from dpiData
  */
 dpiLob* getLobFromData(dpiData* data) {
+    if (data == NULL || data->isNull) return NULL;
     return data->value.asLOB;
 }
 
@@ -145,12 +146,14 @@ void initDPIDataAsObject(dpiData* data, dpiObject* obj) {
  * createCollectionType - Gets the object type for a PL/SQL collection
  * 
  * @param conn: Database connection
- * @param schema: Schema name (usually your username)
  * @param typeName: Fully qualified type name (e.g., "OMNI_TRACER_API.CLOB_TAB")
  * @param objType: Output parameter for the object type
  * @return: DPI_SUCCESS or DPI_FAILURE
  */
 int createCollectionType(dpiConn *conn, const char* typeName, dpiObjectType **objType) {
+    if (conn == NULL || typeName == NULL || objType == NULL) {
+        return DPI_FAILURE;
+    }
     return dpiConn_getObjectType(conn, typeName, (uint32_t)strlen(typeName), objType);
 }
 
@@ -190,6 +193,12 @@ int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, ui
     
     if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
         return DPI_FAILURE;
+    }
+
+    if (data.isNull) {
+        *value = NULL;
+        *valueLen = 0;
+        return DPI_SUCCESS;
     }
     
     *value = (char*)data.value.asBytes.ptr;
@@ -264,7 +273,7 @@ int getCollectionElementAsCLOB(dpiObject* obj, int32_t index, char** value, uint
     buffer[totalBytesRead] = '\0'; // Null-terminate the string
 
     *value = buffer;
-    *valueLen = (uint32_t)totalBytesRead;
+    *valueLen = (uint64_t)totalBytesRead;
 
     return DPI_SUCCESS;
 }
@@ -283,6 +292,12 @@ int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value,
     
     if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
         return DPI_FAILURE;
+    }
+
+    if (data.isNull) {
+        *value = NULL;
+        *valueLen = 0;
+        return DPI_SUCCESS;
     }
     
     *value = (const char*)data.value.asBytes.ptr;
@@ -354,7 +369,8 @@ int getObjectAttributeByName(dpiObjectType* objType, const char* attrName, dpiOb
         }
 
         // compare attribute names
-        if (strncasecmp(attrInfo.name, attrName, attrInfo.nameLength) == 0) {
+        size_t attrNameLen = strlen(attrName);
+        if (attrNameLen == attrInfo.nameLength && strncasecmp(attrInfo.name, attrName, attrInfo.nameLength) == 0) {
             // Found the attribute, get its type
             *attrType = currentAttr;
             return DPI_SUCCESS;

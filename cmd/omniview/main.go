@@ -80,7 +80,7 @@ func main() {
 	}()
 
 	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
-	if err := tracerService.StartEventListener(ctx, &subscriber); err != nil {
+	if err := tracerService.StartEventListener(ctx, &subscriber, appConfig.Username); err != nil {
 		log.Fatalf("failed to start tracer event listener: %v", err)
 	}
 

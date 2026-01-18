@@ -27,16 +27,6 @@ static void onQueueNotification(void* context, dpiSubscrMessage* message) {
     // Convert context to uintptr_t to pass to Go
     uintptr_t goHandle = (uintptr_t)context;
 
-    // Debug Information
-    #ifdef DEBUG_NOTIFICATIONS
-    printf("[OCI CALLBACK] Notification received\n");
-    printf("  Event Type: %d\n", message->eventType);
-    printf("  Queue Name: %.*s\n", message->queueNameLength, message->queueName);
-    if (message->consumerName) {
-        printf("  Consumer Name: %.*s\n", message->consumerNameLength, message->consumerName);
-    }
-    #endif
-
     // Notify the Go channel
     notifyGoChannel(goHandle);
 }
@@ -60,11 +50,13 @@ static void onQueueNotification(void* context, dpiSubscrMessage* message) {
 int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* queueName, const char* subscriberName, uintptr_t goChannelHandle, dpiSubscr** outSubscr) {
     dpiSubscrCreateParams createParams;
     dpiErrorInfo errorInfo;
+    dpiSubscr *subscr;
 
     // 1. Initialize subscription parameters
     if (dpiContext_initSubscrCreateParams(context, &createParams) != DPI_SUCCESS) {
         dpiContext_getError(context, &errorInfo);
-        fprintf(stderr, "[OCI ERROR] Failed to initialize subscription parameters: %s\n", errorInfo.message);
+        fprintf(stderr, "[C ERROR] Failed to init params: %s\n", errorInfo.message);
+        fflush(stderr);
         return DPI_FAILURE;
     }
 
@@ -81,30 +73,36 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
 
     // 4. Set queue name and subscriber name
     // For Multi-Consumer queues, OCI expects consumer name. 
-    // While recipientName is supported, some OCI configurations require the name to be formatted as "QUEUE:CONSUMER"
+    // While recipientName is supported, some OCI configurations require the name to be formatted as "QUEUE"
     // We will set both for maximum compatibility.
     
-    static char subscriptionName[512]; // Static buffer to ensure validity during call (though stack usually fine for sync call)
-    memset(subscriptionName, 0, sizeof(subscriptionName));
+    size_t subscriptionNameLen = strlen(queueName) + 1 + strlen(subscriberName) + 1;
+    char *subscriptionName = (char*)malloc(subscriptionNameLen);
 
     if (subscriberName != NULL && strlen(subscriberName) > 0) {
         // Format: "QUEUE:CONSUMER"
-        snprintf(subscriptionName, sizeof(subscriptionName), "%s:%s", queueName, subscriberName);
+        snprintf(subscriptionName, subscriptionNameLen, "%s:%s", queueName, subscriberName);
+
         createParams.name = subscriptionName;
         createParams.nameLength = (uint32_t)strlen(subscriptionName);
         
-        createParams.recipientName = subscriberName;
-        createParams.recipientNameLength = (uint32_t)strlen(subscriberName);
+        createParams.recipientName = NULL;
+        createParams.recipientNameLength = 0;
     } 
 
     // 5. Create the subscription
-    if (dpiConn_subscribe(conn, &createParams, outSubscr) != DPI_SUCCESS) {
+    int result = dpiConn_subscribe(conn, &createParams, &subscr);
+
+    if (result != DPI_SUCCESS) {
         dpiContext_getError(context, &errorInfo);
-        fprintf(stderr, "[OCI ERROR] Failed to create subscription: %s\n", errorInfo.message);
+        free(subscriptionName);
         return DPI_FAILURE;
     }
 
-    printf("[OCI INFO] Subscription to queue '%s' for subscriber '%s' registered successfully.\n", queueName, subscriberName ? subscriberName : "ANY");
+    *outSubscr = subscr;
+
+    // Clean up
+    free(subscriptionName);
     return DPI_SUCCESS;
 }
 
@@ -118,6 +116,5 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
 void UnregisterOracleSubscription(dpiSubscr* subscr) {
     if (subscr != NULL) {
         dpiSubscr_release(subscr);
-        printf("[OCI INFO] Subscription unregistered successfully.\n");
     }
 }

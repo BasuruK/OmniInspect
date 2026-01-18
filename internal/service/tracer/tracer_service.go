@@ -39,12 +39,12 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 	}
 }
 
-func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber) error {
+func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
 	// Create a notification channel
 	notifyChan := make(chan struct{}, 10) // Buffered channel to avoid blocking and handle bursts
 
 	// Subscribe to the queue
-	if err := ts.subscriptionMgr.Subscribe(*subscriber, notifyChan); err != nil {
+	if err := ts.subscriptionMgr.Subscribe(*subscriber, schema, notifyChan); err != nil {
 		return fmt.Errorf("failed to subscribe to queue: %w", err)
 	}
 
@@ -73,13 +73,13 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 			return
 		case <-notifyChan:
 			// Process the notification
-			fmt.Println("Received notification for subscriber:", subscriber.Name)
+			fmt.Println("[GO] Received notification for subscriber:", subscriber.Name)
 			ts.processBatch(subscriber)
 		case <-ticker.C:
 			// Periodic check (fallback polling)
 			queueDepth := ts.checkQueueDepth(subscriber)
 			if queueDepth > 0 {
-				fmt.Printf("Periodic check: Processing %d messages for subscriber: %s\n", queueDepth, subscriber.Name)
+				fmt.Printf("[GO] [Periodic check] Processing %d messages for subscriber: %s\n", queueDepth, subscriber.Name)
 				ts.processBatch(subscriber)
 			}
 		}

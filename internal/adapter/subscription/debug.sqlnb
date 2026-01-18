@@ -1,0 +1,84 @@
+cells:
+  - kind: 2
+    value: |-
+      BEGIN
+          OMNI_TRACER_API.Trace_Message('TEST FROM SQL2', 'INFO');
+          COMMIT;  -- Important!
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >-
+      DECLARE
+          v_messages OMNI_TRACER_API.clob_tab;
+          v_msg_ids OMNI_TRACER_API.raw_tab;
+          v_count INTEGER;
+      BEGIN
+          OMNI_TRACER_API.Dequeue_Array_Events(
+              subscriber_name_ => 'SUB_E2239C8E_A155_4BE3_BCF7_09D0BC99E1B5',
+              batch_size_      => 10,
+              wait_time_       => 1,
+              messages_        => v_messages,
+              message_ids_     => v_msg_ids,
+              msg_count_       => v_count
+          );
+          
+          DBMS_OUTPUT.PUT_LINE('Dequeued: ' || v_count || ' messages');
+          
+          FOR i IN 1..v_count LOOP
+              DBMS_OUTPUT.PUT_LINE('Message ' || i || ': ' || SUBSTR(v_messages(i), 1, 1000));
+          END LOOP;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      -- After registration, check exact name
+      SELECT DUMP(name, 16) AS hex_dump, name 
+      FROM aq$omni_tracer_queue_s;
+    languageId: oracle-sql
+  - kind: 2
+    value: SELECT DUMP('SUB_E2239C8E_A155_4BE3_BCF7_09D0BC99E1B5', 16);
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      
+      -- Or verify generic subscribers
+      SELECT *
+      FROM aq$omni_tracer_queue_s;
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT *
+      FROM AQ$OMNI_TRACER_QUEUE
+      ORDER BY ENQ_TIME DESC;
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT consumer_name, msg_state, COUNT(*) 
+      FROM aq$omni_tracer_queue 
+      GROUP BY consumer_name, msg_state;
+    languageId: oracle-sql
+  - kind: 2
+    value: >-
+      BEGIN
+          FOR rec IN (
+              SELECT msg_id 
+              FROM aq$omni_tracer_queue 
+              WHERE consumer_name = 'SUB_F3903F3C_54A8_4DBD_8C7C_69FE39230992'
+              --AND msg_state = 'PROCESSED'  -- PROCESSED
+          ) LOOP
+              DBMS_AQADM.REMOVE_SUBSCRIBER(
+                  queue_name => 'OMNI_TRACER_QUEUE',
+                  subscriber => sys.aq$_agent('SUB_F3903F3C_54A8_4DBD_8C7C_69FE39230992', NULL, NULL)
+              );
+          END LOOP;
+          COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: ""
+    languageId: oracle-sql

@@ -32,6 +32,7 @@ type SubscriptionManager struct {
 	connection          *C.dpiConn
 	context             *C.dpiContext
 	activeSubscriptions map[string]*SubscriptionHandle
+	handles             map[string]cgo.Handle
 }
 
 // NewSubscriptionManager creates a new SubscriptionManager instance
@@ -41,11 +42,12 @@ func NewSubscriptionManager(connPtr unsafe.Pointer, ctxPtr unsafe.Pointer) *Subs
 		connection:          (*C.dpiConn)(connPtr),
 		context:             (*C.dpiContext)(ctxPtr),
 		activeSubscriptions: make(map[string]*SubscriptionHandle),
+		handles:             make(map[string]cgo.Handle),
 	}
 }
 
 // Subscribe registers a new subscription for the given subscriber name
-func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyChan chan<- struct{}) error {
+func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, schema string, notifyChan chan<- struct{}) error {
 	if sm.connection == nil || sm.context == nil {
 		return fmt.Errorf("invalid database connection or context")
 	}
@@ -57,13 +59,16 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, notifyCha
 
 	handle := cgo.NewHandle(notifyChan)
 
-	cQueueName := C.CString(domain.QueueName)
+	cQueueName := C.CString(fmt.Sprintf("%s.%s", schema, domain.QueueName))
+	//cQueueName := C.CString(domain.QueueName)
 	defer C.free(unsafe.Pointer(cQueueName))
 
 	cSubscriberName := C.CString(subscriber.Name)
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
 	var subscr *C.dpiSubscr
+
+	sm.handles[subscriber.Name] = handle // Store the handle to manage its lifecycle
 
 	result := C.RegisterOracleSubscription(sm.connection, sm.context, cQueueName, cSubscriberName, C.uintptr_t(handle), &subscr)
 

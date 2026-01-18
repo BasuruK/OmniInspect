@@ -17,15 +17,15 @@ import "C"
 import (
 	"OmniView/internal/core/domain"
 	"fmt"
-	"strconv"
 	"unsafe"
 )
 
 // Adapter: Implements ports.DatabaseRepository for Oracle database
 type OracleAdapter struct {
-	Connection *C.dpiConn
-	Context    *C.dpiContext
-	config     domain.DatabaseSettings
+	Connection  *C.dpiConn
+	Context     *C.dpiContext
+	config      domain.DatabaseSettings
+	payloadType *C.dpiObjectType
 }
 
 // Constructor: Creates a new OracleAdapter and injects configuratios
@@ -235,6 +235,10 @@ func (oa *OracleAdapter) Connect() error {
 
 // Close releases the database connection and context resources.
 func (oa *OracleAdapter) Close() error {
+	if oa.payloadType != nil {
+		C.dpiObjectType_release(oa.payloadType)
+		oa.payloadType = nil
+	}
 	if oa.Connection != nil {
 		C.dpiConn_release(oa.Connection)
 		oa.Connection = nil
@@ -251,11 +255,13 @@ func (oa *OracleAdapter) Close() error {
 // ODPI library version. The context must be destroyed when no longer needed.
 func (oa *OracleAdapter) InitContext() error {
 	var contextError C.dpiErrorInfo
+	var localContext *C.dpiContext
 
-	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &oa.Context, &contextError) != C.DPI_SUCCESS {
+	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &localContext, &contextError) != C.DPI_SUCCESS {
 		return fmt.Errorf("failed to create DPI Context: %s", C.GoString(contextError.message))
 	}
 
+	oa.Context = localContext
 	return nil
 }
 
@@ -291,6 +297,7 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 	}
 
 	// Call ODPI-C function
+	var localConnection *C.dpiConn
 	if C.dpiConn_create(oa.Context,
 		c_username,
 		C.uint32_t(len(username)),
@@ -300,12 +307,13 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 		C.uint32_t(len(connectionString)),
 		&commonParams,     // dpiCommonParams
 		&connCreateParams, // dpiConnCreateParams
-		&oa.Connection) != C.DPI_SUCCESS {
+		&localConnection) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 		return fmt.Errorf("failed to create database connection: %s", C.GoString(errInfo.message))
 	}
 
+	oa.Connection = localConnection
 	return nil
 }
 
@@ -483,267 +491,4 @@ func (oa *OracleAdapter) DeployFile(sqlContent string) error {
 	}
 
 	return nil
-}
-
-// RegisterNewSubscriber registers a new subscriber in the Oracle database.
-// If subscriber already exists, it returns nil.
-func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) error {
-	exists, err := subscriberExists(oa, subscriber)
-	if err != nil {
-		return fmt.Errorf("failed to check subscriber existence: %v", err)
-	}
-	if !exists {
-		// Subscriber does not exist, register it
-		err := oa.ExecuteWithParams("BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
-			"subscriberName": subscriber.Name,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to register subscriber: %v", err)
-		}
-		return nil
-	}
-	return nil
-}
-
-// subscriberExists checks if a subscriber with the given name already exists in the Oracle database.
-func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
-	query := `SELECT COUNT(1)
-			FROM ALL_QUEUE_SUBSCRIBERS
-			WHERE QUEUE_NAME = :queueName
-			AND CONSUMER_NAME = :subscriberName`
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
-		"queueName":      domain.QueueName,
-		"subscriberName": subscriber.Name,
-	})
-	if err != nil {
-		return false, nil
-	}
-	if len(results) == 0 {
-		return false, nil
-	}
-
-	count, err := parseCountResult(results)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse subscriber existence count: %v", err)
-	}
-	return count > 0, nil
-}
-
-// parseCountResult parses the first element of a COUNT(*) query result.
-func parseCountResult(results []string) (int, error) {
-	if len(results) == 0 || results[0] == "" {
-		return 0, nil
-	}
-	count, err := strconv.Atoi(results[0])
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse count result: %v", err)
-	}
-	return count, nil
-}
-
-// CheckQueueDepth checks the queue depth for the given subscriber ID
-func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName string) (int, error) {
-	query := fmt.Sprintf(`SELECT COUNT(*) 
-			  FROM %s
-			  WHERE QUEUE = :queueName
-			  AND CONSUMER_NAME = :subscriberID
-			  AND MSG_STATE = 'READY'`, queueTableName)
-
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
-		"queueName":    domain.QueueName,
-		"subscriberID": subscriberID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	if len(results) == 0 {
-		return 0, fmt.Errorf("no results returned from queue depth query")
-	}
-
-	count, err := parseCountResult(results)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse count result: %v", err)
-	}
-
-	return count, nil
-}
-
-func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
-	if oa.Connection == nil {
-		return nil, nil, 0, fmt.Errorf("database connection is not established")
-	}
-
-	var clobTabType *C.dpiObjectType
-	var rawTabType *C.dpiObjectType
-
-	clobTabTypeName := C.CString("OMNI_TRACER_API.CLOB_TAB")
-	rawTabTypeName := C.CString("OMNI_TRACER_API.RAW_TAB")
-	defer C.free(unsafe.Pointer(clobTabTypeName))
-	defer C.free(unsafe.Pointer(rawTabTypeName))
-
-	// 1. Create collection types
-	if C.createCollectionType(oa.Connection, clobTabTypeName, &clobTabType) != C.DPI_SUCCESS {
-		return nil, nil, 0, fmt.Errorf("failed to create CLOB_TAB type")
-	}
-	defer C.dpiObjectType_release(clobTabType)
-
-	if C.createCollectionType(oa.Connection, rawTabTypeName, &rawTabType) != C.DPI_SUCCESS {
-		return nil, nil, 0, fmt.Errorf("failed to create RAW_TAB type")
-	}
-	defer C.dpiObjectType_release(rawTabType)
-
-	// 2. Create Collection Object instances
-	var messageObJ *C.dpiObject
-	var msgIdsObj *C.dpiObject
-
-	if C.createCollection(clobTabType, &messageObJ) != C.DPI_SUCCESS {
-		return nil, nil, 0, fmt.Errorf("failed to create message collection object")
-	}
-	defer C.dpiObject_release(messageObJ)
-
-	if C.createCollection(rawTabType, &msgIdsObj) != C.DPI_SUCCESS {
-		return nil, nil, 0, fmt.Errorf("failed to create message IDs collection object")
-	}
-	defer C.dpiObject_release(msgIdsObj)
-
-	query := `BEGIN
-			  OMNI_TRACER_API.Dequeue_Array_Events(
-				  subscriber_name_ => :subscriberName,
-				  batch_size_      => :batchSize,
-				  wait_time_	   => :waitTime,
-				  messages_        => :messages,
-				  message_ids_     => :messageIDs,
-				  msg_count_       => :dequeuedCount
-			  );
-			END;`
-
-	stmt, err := oa.PrepareStatement(query)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to prepare dequeue statement: %w", err)
-	}
-	defer C.dpiStmt_release(stmt)
-
-	// 3. Bind parameters
-	if err := oa.BindParamsToQuery(stmt, map[string]interface{}{
-		"subscriberName": subscriber.Name,
-		"batchSize":      subscriber.BatchSize,
-		"waitTime":       subscriber.WaitTime}); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to bind scalar params: %w", err)
-	}
-
-	if err := oa.BindCollectionParam(stmt, "messages", messageObJ, clobTabType); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to bind messages collection param: %w", err)
-	}
-
-	if err := oa.BindCollectionParam(stmt, "messageIDs", msgIdsObj, rawTabType); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to bind message IDs collection param: %w", err)
-	}
-
-	countOutParam, err := oa.BindOutParam(stmt, "dequeuedCount", C.DPI_NATIVE_TYPE_INT64)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to bind dequeued count out param: %w", err)
-	}
-	defer C.dpiVar_release(countOutParam)
-
-	// 4. Execute the statement
-	if C.dpiStmt_execute(stmt, C.DPI_MODE_EXEC_DEFAULT, nil) != C.DPI_SUCCESS {
-		var errInfo C.dpiErrorInfo
-		C.dpiContext_getError(oa.Context, &errInfo)
-		if errInfo.code == 25228 {
-			return []string{}, [][]byte{}, 0, nil // No messages available
-		}
-		return nil, nil, 0, fmt.Errorf("failed to execute dequeue statement: %s", C.GoString(errInfo.message))
-	}
-
-	// 5. Extract results from collection objects
-	var countData *C.dpiData
-	var numReturnedRows C.uint32_t
-	if C.dpiVar_getReturnedData(countOutParam, 0, &numReturnedRows, &countData) != C.DPI_SUCCESS {
-		return nil, nil, 0, fmt.Errorf("failed to get dequeued count data")
-	}
-
-	count := int(C.getAsInt64(countData))
-	if count == 0 {
-		fmt.Println("DEBUG count is 0, returning")
-		fmt.Println("numReturnedRows is:", int(numReturnedRows))
-		return []string{}, [][]byte{}, 0, nil // No messages dequeued
-	}
-
-	// Extract messages
-	messages := make([]string, 0, count)
-	msgIds := make([][]byte, 0, count)
-
-	for i := 0; i < count; i++ {
-		// Extract message CLOB
-		var msgPtr *C.char
-		var msgLen C.uint32_t
-
-		if C.getCollectionElementAsString(messageObJ, C.int32_t(i+1), &msgPtr, &msgLen) == C.DPI_SUCCESS {
-			messages[i] = C.GoStringN(msgPtr, C.int(msgLen))
-		}
-
-		// Extract message ID RAW
-		var idPtr *C.char
-		var idLen C.uint32_t
-
-		if C.getCollectionElementAsRaw(msgIdsObj, C.int32_t(i+1), &idPtr, &idLen) == C.DPI_SUCCESS {
-			msgIds[i] = C.GoBytes(unsafe.Pointer(idPtr), C.int(idLen))
-		}
-	}
-
-	return messages, msgIds, count, nil
-}
-
-// Bind collection parameters
-func (oa *OracleAdapter) BindCollectionParam(stmt *C.dpiStmt, paramName string, obj *C.dpiObject, objType *C.dpiObjectType) error {
-	cName := C.CString(paramName)
-	defer C.free(unsafe.Pointer(cName))
-
-	var dpiData C.dpiData
-	dpiData.isNull = 0
-	C.initDPIDataAsObject(&dpiData, obj)
-
-	if C.dpiStmt_bindValueByName(stmt, cName, C.uint32_t(len(paramName)), C.DPI_NATIVE_TYPE_OBJECT, &dpiData) != C.DPI_SUCCESS {
-		var errInfo C.dpiErrorInfo
-		C.dpiContext_getError(oa.Context, &errInfo)
-		return fmt.Errorf("failed to bind collection parameter %s: %s", paramName, C.GoString(errInfo.message))
-	}
-
-	return nil
-}
-
-// BindOutParam binds an OUT parameter to the prepared statement.
-func (oa *OracleAdapter) BindOutParam(stmt *C.dpiStmt, paramName string, nativeType C.dpiNativeTypeNum) (*C.dpiVar, error) {
-	cName := C.CString(paramName)
-	defer C.free(unsafe.Pointer(cName))
-
-	var dpiVariable *C.dpiVar
-	var dpiData *C.dpiData
-
-	if C.dpiConn_newVar(
-		oa.Connection,
-		C.DPI_ORACLE_TYPE_NUMBER, // Oracle type (NUMBER maps to INT64/DOUBLE)
-		nativeType,               // Native type
-		1,                        // Max array size = 1 for scalar
-		0,                        // Size 0 for numbers
-		0,                        // Size is bytes flag (0 = not a string)
-		0,                        // Is array flag (0 = scalar)
-		nil,                      // Object type (NULL for scalars)
-		&dpiVariable,             // Output variable handle
-		&dpiData,                 // Data pointer (not needed, will use dpiVar_getReturnedData)
-	) != C.DPI_SUCCESS {
-		var errInfo C.dpiErrorInfo
-		C.dpiContext_getError(oa.Context, &errInfo)
-		return nil, fmt.Errorf("failed to create variable for out parameter %s: %s", paramName, C.GoString(errInfo.message))
-	}
-
-	// Bind the out parameter by name
-	if C.dpiStmt_bindByName(stmt, cName, C.uint32_t(len(paramName)), dpiVariable) != C.DPI_SUCCESS {
-		var errInfo C.dpiErrorInfo
-		C.dpiContext_getError(oa.Context, &errInfo)
-		C.dpiVar_release(dpiVariable)
-		return nil, fmt.Errorf("failed to bind out parameter %s: %s", paramName, C.GoString(errInfo.message))
-	}
-
-	return dpiVariable, nil
 }

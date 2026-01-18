@@ -20,7 +20,7 @@ var (
 )
 
 // Extract parses the raw PL/SQL content and splits it into executable blocks.
-// It returns slices of strings for sequences, package specs, and package bodies.
+// It returns slices of strings for sequences, types, package specs, and package bodies.
 func Extract(plsqlContent string) (sequences []string, types []string, packageSpecs []string, packageBodies []string, err error) {
 	sequence, err1 := extractSequenceBlocks(plsqlContent)
 	types, err2 := extractTypeBlocks(plsqlContent)

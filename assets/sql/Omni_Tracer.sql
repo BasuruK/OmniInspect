@@ -32,8 +32,6 @@ DECLARE
     is_editioned_ VARCHAR2(5);
     type_in_use EXCEPTION;
     PRAGMA EXCEPTION_INIT(type_in_use, -2303);
-    insufficient_privileges EXCEPTION;
-    PRAGMA EXCEPTION_INIT(insufficient_privileges, -1031);
 BEGIN
     -- Check if the DB is running in editioned mode
     BEGIN
@@ -198,6 +196,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
         message_handle_     RAW(16);
         json_payload_       CLOB;
+        temp_blob_          BLOB; 
         payload_object_     OMNI_TRACER_PAYLOAD_TYPE;        
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message is visible immediately, impervious to rollbacks, and runs an internal commit.
@@ -210,7 +209,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
 
         json_payload_ := message_.TO_CLOB();
-        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(Clob_To_Blob___(json_payload_));
+        temp_blob_ := Clob_To_Blob___(json_payload_);
+        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(temp_blob_);
 
         DBMS_AQ.ENQUEUE (
             queue_name          => TRACER_QUEUE_NAME,
@@ -219,6 +219,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             payload             => payload_object_,
             msgid               => message_handle_
         );
+
+        DBMS_LOB.FREETEMPORARY(temp_blob_);  
     END Enqueue_Event___;
     
 

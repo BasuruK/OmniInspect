@@ -6,6 +6,11 @@
 
 #include "dpi.h"
 
+// Windows compatibility: Map strncasecmp to _strnicmp for MSVC
+#if defined(_WIN32) && !defined(__MINGW32__)
+#define strncasecmp _strnicmp
+#endif
+
 /**
  * @brief Gets byte array pointer from dpiData
  * @param data pointer to the dpiData structure
@@ -165,6 +170,9 @@ int createCollectionType(dpiConn *conn, const char* typeName, dpiObjectType **ob
  * @return: DPI_SUCCESS or DPI_FAILURE
  */
 int createCollection(dpiObjectType* objType, dpiObject** obj) {
+    if (objType == NULL || obj == NULL) {
+        return DPI_FAILURE;
+    }
     return dpiObjectType_createObject(objType, obj);
 }
 
@@ -177,132 +185,6 @@ int createCollection(dpiObjectType* objType, dpiObject** obj) {
  */
 int getCollectionSize(dpiObject* obj, int32_t* size) {
     return dpiObject_getSize(obj, size);
-}
-
-/**
- * getCollectionElementAsString - Gets an element from a CLOB collection as string
- * 
- * @param obj: The collection object
- * @param index: Element index (0-based, per ODPI-C specification)
- * @param value: Output buffer for the string
- * @param valueLen: Output parameter for string length
- * @return: DPI_SUCCESS or DPI_FAILURE
- */
-int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen) {
-    dpiData data;
-    
-    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
-        return DPI_FAILURE;
-    }
-
-    if (data.isNull) {
-        *value = NULL;
-        *valueLen = 0;
-        return DPI_SUCCESS;
-    }
-    
-    *value = (char*)data.value.asBytes.ptr;
-    *valueLen = data.value.asBytes.length;
-    return DPI_SUCCESS;
-}
-
-/**
- * getCollectionElementAsCLOB - Gets an element from a CLOB collection
- * 
- * @param obj: The collection object
- * @param index: Element index 0-based, per ODPI-C specification
- * @param value: Output buffer for the CLOB data
- * @param valueLen: Output parameter for CLOB length
- * @warning: Caller is responsible for freeing the allocated buffer using free()
- * @return: DPI_SUCCESS or DPI_FAILURE
- */
-int getCollectionElementAsCLOB(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen) {
-    dpiData data;
-    
-    // Get the element as a LOB
-    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_LOB, &data) != DPI_SUCCESS) {
-        return DPI_FAILURE;
-    }
-
-    if (data.isNull) {
-        *value = NULL;
-        *valueLen = 0;
-        return DPI_SUCCESS;
-    }
-
-    dpiLob* lob = data.value.asLOB;
-
-    // Get the LOB size
-    uint64_t lobSize;
-    if (dpiLob_getSize(lob, &lobSize) != DPI_SUCCESS) {
-        return DPI_FAILURE;
-    }
-
-    if (lobSize == 0) {
-        *value = NULL;
-        *valueLen = 0;
-        return DPI_SUCCESS;
-    }
-
-    // Allocate buffer for LOB data
-    char* buffer = (char*)malloc((size_t)lobSize + 1); // +1 for null terminator
-    if (buffer == NULL) {
-        return DPI_FAILURE;
-    }
-
-    // Read the LOB data (in full)
-    uint64_t totalBytesRead = 0;
-    uint64_t offset = 1; // LOB offsets are 1-based
-
-    while (totalBytesRead < lobSize) {
-        uint64_t bytesToRead = lobSize - totalBytesRead;
-        uint64_t bytesRead = 0;
-
-        if (dpiLob_readBytes(lob, offset, bytesToRead, buffer + totalBytesRead, &bytesRead) != DPI_SUCCESS) {
-            free(buffer);
-            return DPI_FAILURE;
-        }
-        if (bytesRead == 0) {
-            break; // No more data to read
-        }
-
-        totalBytesRead += bytesRead;
-        offset += bytesRead;
-    }
-
-    buffer[totalBytesRead] = '\0'; // Null-terminate the string
-
-    *value = buffer;
-    *valueLen = (uint64_t)totalBytesRead;
-
-    return DPI_SUCCESS;
-}
-
-/**
- * getCollectionElementAsRaw - Gets an element from a RAW collection
- * 
- * @param obj: The collection object
- * @param index: Element index (0-based, per ODPI-C specification)
- * @param value: Output buffer for raw bytes
- * @param valueLen: Output parameter for byte length
- * @return: DPI_SUCCESS or DPI_FAILURE
- */
-int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value, uint32_t* valueLen) {
-    dpiData data;
-    
-    if (dpiObject_getElementValueByIndex(obj, index, DPI_NATIVE_TYPE_BYTES, &data) != DPI_SUCCESS) {
-        return DPI_FAILURE;
-    }
-
-    if (data.isNull) {
-        *value = NULL;
-        *valueLen = 0;
-        return DPI_SUCCESS;
-    }
-    
-    *value = (const char*)data.value.asBytes.ptr;
-    *valueLen = data.value.asBytes.length;
-    return DPI_SUCCESS;
 }
 
 /**

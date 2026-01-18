@@ -46,6 +46,10 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		return nil, nil, 0, fmt.Errorf("database connection is not established")
 	}
 
+	if subscriber.BatchSize <= 0 {
+		return nil, nil, 0, fmt.Errorf("batch size must be > 0")
+	}
+
 	// Create queue handle
 	queueHandle, err := oa.createQueueHandle(subscriber)
 	if err != nil {
@@ -86,12 +90,14 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	for i := 0; i < count; i++ {
 		msgProps = msgPropsArray[i]
 		if msgProps == nil {
+			C.dpiMsgProps_release(msgProps)
 			return nil, nil, 0, fmt.Errorf("message properties at index %d is nil", i)
 		}
 
 		// Get message payload
 		payload, err := oa.extractPayloadFromMsgProps(msgProps)
 		if err != nil {
+			C.dpiMsgProps_release(msgProps)
 			return nil, nil, 0, fmt.Errorf("failed to extract payload from message properties: %s", err)
 		}
 		messages[i] = payload
@@ -103,10 +109,11 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		if C.dpiMsgProps_getMsgId(msgProps, &msgIdPtr, &msgIdLen) == C.DPI_SUCCESS {
 			msgIds[i] = C.GoBytes(unsafe.Pointer(msgIdPtr), C.int(msgIdLen))
 		} else {
+			C.dpiMsgProps_release(msgProps)
 			return nil, nil, 0, fmt.Errorf("failed to get message ID from message properties")
 		}
 	}
-
+	C.dpiMsgProps_release(msgProps)
 	return messages, msgIds, count, nil
 }
 

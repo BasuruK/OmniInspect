@@ -89,6 +89,5 @@ func main() {
 		cancel()
 	case <-signalChan:
 		cancel()
-	case <-ctx.Done():
 	}
 }

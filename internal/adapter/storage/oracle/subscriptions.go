@@ -31,10 +31,12 @@ func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, er
 	query := `SELECT COUNT(1)
 			FROM ALL_QUEUE_SUBSCRIBERS
 			WHERE QUEUE_NAME = :queueName
-			AND CONSUMER_NAME = :subscriberName`
+			AND CONSUMER_NAME = :subscriberName
+			AND OWNER = :queueOwner`
 	results, err := oa.FetchWithParams(query, map[string]interface{}{
 		"queueName":      domain.QueueName,
 		"subscriberName": subscriber.Name,
+		"queueOwner":     oa.config.Username,
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to query subscriber existence: %w", err)

@@ -2,7 +2,7 @@ cells:
   - kind: 2
     value: |-
       BEGIN
-          OMNI_TRACER_API.Trace_Message('TEST FROM SQL2566', 'INFO');
+          OMNI_TRACER_API.Trace_Message('TEST FROM SQL25664', 'INFO');
           --COMMIT;  -- Important!
       END;
       /

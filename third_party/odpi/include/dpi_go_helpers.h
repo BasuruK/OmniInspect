@@ -23,9 +23,6 @@ int getObjectAttributeByName(dpiObjectType* objType, const char* attrName, dpiOb
 int createCollectionType(dpiConn* conn, const char* typeName, dpiObjectType** objType); // creates a collection type
 int createCollection(dpiObjectType* objType, dpiObject** obj); // creates a collection object
 int getCollectionSize(dpiObject* obj, int32_t* size); // gets the size of the collection
-int getCollectionElementAsString(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen); // gets an element from a string collection
-int getCollectionElementAsCLOB(dpiObject* obj, int32_t index, char** value, uint32_t* valueLen); // gets an element from a CLOB collection
-int getCollectionElementAsRaw(dpiObject* obj, int32_t index, const char** value, uint32_t* valueLen); // gets an element from a RAW collection
 dpiLob* getLobFromData(dpiData* data); // Extract LOB from dpiData
 
 #endif

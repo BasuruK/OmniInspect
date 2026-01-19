@@ -265,19 +265,23 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_ids_     OUT OMNI_TRACER_RAW_ARRAY,
         msg_count_       OUT INTEGER)
     IS
-        TYPE t_payload_array IS TABLE OF OMNI_TRACER_PAYLOAD_TYPE;
         dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
         message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
-        payload_array_       t_payload_array;
+        payload_array_       OMNI_TRACER_PAYLOAD_ARRAY;
         msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
-        payload_             CLOB;
     BEGIN
+        DBMS_OUTPUT.PUT_LINE('[TRACER] Dequeue_Array_Events start: sub=' || subscriber_name_ || ', batch=' || batch_size_);
 
         dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait          := wait_time_;
         dequeue_options_.navigation    := DBMS_AQ.FIRST_MESSAGE;
         dequeue_options_.visibility    := DBMS_AQ.IMMEDIATE;
 
+        payload_array_ := OMNI_TRACER_PAYLOAD_ARRAY();
+        messages_ := OMNI_TRACER_PAYLOAD_ARRAY();
+        message_ids_ := OMNI_TRACER_RAW_ARRAY();
+
+        DBMS_OUTPUT.PUT_LINE('[TRACER] Calling DBMS_AQ.DEQUEUE_ARRAY');
         msg_count_ := DBMS_AQ.DEQUEUE_ARRAY(
             queue_name                => TRACER_QUEUE_NAME,
             dequeue_options           => dequeue_options_,
@@ -286,19 +290,28 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             payload_array             => payload_array_,
             msgid_array               => msg_id_array_
         );
+        DBMS_OUTPUT.PUT_LINE('[TRACER] Dequeue complete, msg_count=' || msg_count_);
 
-        messages_ := OMNI_TRACER_PAYLOAD_ARRAY();
-        message_ids_ := OMNI_TRACER_RAW_ARRAY();
-
-        FOR i IN 1 .. msg_count_ LOOP
-            messages_.EXTEND;
-            message_ids_.EXTEND;
-
-            messages_(i) := payload_array_(i);
-            message_ids_(i) := msg_id_array_(i);
-        END LOOP;
+        IF msg_count_ > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('[TRACER] Populating output arrays');
+            messages_.EXTEND(msg_count_);
+            message_ids_.EXTEND(msg_count_);
+            FOR i IN 1 .. msg_count_ LOOP
+                IF payload_array_ IS NULL THEN
+                    DBMS_OUTPUT.PUT_LINE('[TRACER] payload_array_ is NULL at i=' || i);
+                END IF;
+                IF payload_array_(i) IS NULL OR payload_array_(i).JSON_DATA IS NULL THEN
+                    DBMS_OUTPUT.PUT_LINE('[TRACER] NULL payload at i=' || i || ', substituting EMPTY_BLOB');
+                    messages_(i) := OMNI_TRACER_PAYLOAD_TYPE(EMPTY_BLOB());
+                ELSE
+                    messages_(i) := payload_array_(i);
+                END IF;
+                message_ids_(i) := msg_id_array_(i);
+            END LOOP;
+        END IF;
     EXCEPTION
     WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('[TRACER] Dequeue_Array_Events error: ' || SQLCODE || ' - ' || SQLERRM);
         IF SQLCODE = -25228 THEN
             msg_count_ := 0;
         ELSE

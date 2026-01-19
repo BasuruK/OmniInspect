@@ -179,6 +179,8 @@ check-cgo:
 	@echo ""
 	@echo "Building subscription package with debug output:"
 	@go build -x ./internal/adapter/subscription 2>&1 | grep -E "gcc|clang|queue_callback" || true
+	@echo "Building oracle storage package with debug output:"
+	@go build -x ./internal/adapter/storage/oracle 2>&1 | grep -E "gcc|clang|dequeue_ops" || true
 
 # Install Go dependencies
 .PHONY: install

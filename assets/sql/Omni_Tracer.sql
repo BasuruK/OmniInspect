@@ -61,6 +61,12 @@ BEGIN
         EXCEPTION
             WHEN type_in_use THEN NULL;
         END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_RAW_ARRAY AS VARRAY(1000) OF RAW(16)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
     ELSE
         -- Non-editioned DB, create normally
          -- Non-editioned database - use regular types
@@ -75,6 +81,12 @@ BEGIN
         EXCEPTION
             WHEN type_in_use THEN NULL;
         END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_RAW_ARRAY AS VARRAY(1000) OF RAW(16)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
     END IF;
 END;
 /
@@ -86,13 +98,17 @@ END;
 CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS 
     TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'OMNI_TRACER_QUEUE';
 
-    -- Collection types for bulk operations
-    TYPE clob_tab IS TABLE OF CLOB;
-    TYPE raw_tab IS TABLE OF RAW(16);
-
     -- Core Methods
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN VARCHAR2, log_level_ IN VARCHAR2 DEFAULT 'INFO');
+    PROCEDURE Dequeue_Array_Events(
+        subscriber_name_ IN  VARCHAR2,
+        batch_size_      IN  INTEGER,
+        wait_time_       IN  NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT OMNI_TRACER_PAYLOAD_ARRAY,
+        message_ids_     OUT OMNI_TRACER_RAW_ARRAY,
+        msg_count_       OUT INTEGER
+    );
     
     -- Subscriber Management
     PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
@@ -239,6 +255,56 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             payload         => message_
         );
     END Trace_Message;
+
+
+    PROCEDURE Dequeue_Array_Events(
+        subscriber_name_ IN  VARCHAR2,
+        batch_size_      IN  INTEGER,
+        wait_time_       IN  NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT OMNI_TRACER_PAYLOAD_ARRAY,
+        message_ids_     OUT OMNI_TRACER_RAW_ARRAY,
+        msg_count_       OUT INTEGER)
+    IS
+        TYPE t_payload_array IS TABLE OF OMNI_TRACER_PAYLOAD_TYPE;
+        dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
+        message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
+        payload_array_       t_payload_array;
+        msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
+        payload_             CLOB;
+    BEGIN
+
+        dequeue_options_.consumer_name := subscriber_name_;
+        dequeue_options_.wait          := wait_time_;
+        dequeue_options_.navigation    := DBMS_AQ.FIRST_MESSAGE;
+        dequeue_options_.visibility    := DBMS_AQ.IMMEDIATE;
+
+        msg_count_ := DBMS_AQ.DEQUEUE_ARRAY(
+            queue_name                => TRACER_QUEUE_NAME,
+            dequeue_options           => dequeue_options_,
+            array_size                => batch_size_,
+            message_properties_array  => message_props_array_,
+            payload_array             => payload_array_,
+            msgid_array               => msg_id_array_
+        );
+
+        messages_ := OMNI_TRACER_PAYLOAD_ARRAY();
+        message_ids_ := OMNI_TRACER_RAW_ARRAY();
+
+        FOR i IN 1 .. msg_count_ LOOP
+            messages_.EXTEND;
+            message_ids_.EXTEND;
+
+            messages_(i) := payload_array_(i);
+            message_ids_(i) := msg_id_array_(i);
+        END LOOP;
+    EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE = -25228 THEN
+            msg_count_ := 0;
+        ELSE
+            RAISE;
+        END IF;
+    END Dequeue_Array_Events;
 
 
     FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB

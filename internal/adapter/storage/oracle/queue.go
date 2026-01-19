@@ -3,6 +3,7 @@ package oracle
 /*
 #include "dpi.h"
 #include "dpi_go_helpers.h"
+#include "dequeue_ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 */
@@ -51,70 +52,51 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		return nil, nil, 0, fmt.Errorf("batch size must be > 0")
 	}
 
-	// Create queue handle
-	queueHandle, err := oa.createQueueHandle(subscriber)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to create queue handle: %s", err)
-	}
-	defer C.dpiQueue_release(queueHandle)
+	var cMessages *C.TraceMessage
+	var cIds *C.TraceId
+	var cCount C.uint32_t
 
-	// Allocate array for message properties
-	maxMessages := subscriber.BatchSize
-	msgPropsArray := make([]*C.dpiMsgProps, maxMessages)
-	numMessages := C.uint32_t(maxMessages)
+	cSubscriberName := C.CString(subscriber.Name)
+	defer C.free(unsafe.Pointer(cSubscriberName))
 
-	status := C.dpiQueue_deqMany(queueHandle, &numMessages, &msgPropsArray[0])
+	cSchemaName := C.CString(strings.ToUpper(oa.config.Username))
+	defer C.free(unsafe.Pointer(cSchemaName))
 
-	if status != C.DPI_SUCCESS {
+	if C.DequeueManyAndExtract(oa.Connection, cSchemaName, cSubscriberName, C.uint32_t(subscriber.BatchSize), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 
 		if errInfo.code == 25228 { // DPI-25228: No messages available
-			return []string{}, [][]byte{}, 0, nil // No messages available
+			return []string{}, [][]byte{}, 0, nil
 		}
 
 		return nil, nil, 0, fmt.Errorf("failed to dequeue messages: %s", C.GoString(errInfo.message))
 	}
+	defer C.FreeDequeueResults(cMessages, cIds, cCount)
 
-	count := int(numMessages)
+	count := int(cCount)
 	fmt.Printf("[DEBUG] Dequeued %d messages for subscriber: %s\n", count, subscriber.Name)
 
 	if count == 0 {
-		return []string{}, [][]byte{}, 0, nil // No messages dequeued
+		return []string{}, [][]byte{}, 0, nil
 	}
 
-	// Extract messages
 	messages := make([]string, count)
 	msgIds := make([][]byte, count)
-	var msgProps *C.dpiMsgProps
 
 	for i := 0; i < count; i++ {
-		msgProps = msgPropsArray[i]
-		if msgProps == nil {
-			return nil, nil, 0, fmt.Errorf("message properties at index %d is nil", i)
+		msg := (*C.TraceMessage)(unsafe.Pointer(uintptr(unsafe.Pointer(cMessages)) + uintptr(i)*unsafe.Sizeof(*cMessages)))
+		id := (*C.TraceId)(unsafe.Pointer(uintptr(unsafe.Pointer(cIds)) + uintptr(i)*unsafe.Sizeof(*cIds)))
+
+		if msg.data != nil && msg.length > 0 {
+			messages[i] = C.GoStringN(msg.data, C.int(msg.length))
 		}
 
-		// Get message payload
-		payload, err := oa.extractPayloadFromMsgProps(msgProps)
-		if err != nil {
-			C.dpiMsgProps_release(msgProps)
-			return nil, nil, 0, fmt.Errorf("failed to extract payload from message properties: %s", err)
+		if id.data != nil && id.length > 0 {
+			msgIds[i] = C.GoBytes(unsafe.Pointer(id.data), C.int(id.length))
 		}
-		messages[i] = payload
-
-		// Get message ID
-		var msgIdPtr *C.char
-		var msgIdLen C.uint32_t
-
-		if C.dpiMsgProps_getMsgId(msgProps, &msgIdPtr, &msgIdLen) == C.DPI_SUCCESS {
-			msgIds[i] = C.GoBytes(unsafe.Pointer(msgIdPtr), C.int(msgIdLen))
-		} else {
-			C.dpiMsgProps_release(msgProps)
-			return nil, nil, 0, fmt.Errorf("failed to get message ID from message properties")
-		}
-
-		C.dpiMsgProps_release(msgProps)
 	}
+
 	return messages, msgIds, count, nil
 }
 

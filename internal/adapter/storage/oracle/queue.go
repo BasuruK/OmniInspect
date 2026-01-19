@@ -185,21 +185,29 @@ func (oa *OracleAdapter) configureDequeueOptions(queue *C.dpiQueue, subscriber d
 	if C.dpiDeqOptions_setWait(dequeueOptions, C.uint32_t(subscriber.WaitTime)) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
-		return fmt.Errorf("failed to set wait time: %s", C.GoString(errInfo.message))
+		return fmt.Errorf("failed to set wait time: %s (code: %d)", C.GoString(errInfo.message), errInfo.code)
 	}
 
 	// set visibility (Immediate - no transaction required)
 	if C.dpiDeqOptions_setVisibility(dequeueOptions, C.DPI_VISIBILITY_IMMEDIATE) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
-		return fmt.Errorf("failed to set visibility: %s", C.GoString(errInfo.message))
+		return fmt.Errorf("failed to set visibility: %s (code: %d)", C.GoString(errInfo.message), errInfo.code)
 	}
 
-	// Set Navigation mode (First message)
-	if C.dpiDeqOptions_setNavigation(dequeueOptions, C.DPI_DEQ_NAV_FIRST_MSG) != C.DPI_SUCCESS {
+	// Set Dequeue mode to Remove once dequeued
+	if C.dpiDeqOptions_setMode(dequeueOptions, C.DPI_MODE_DEQ_REMOVE) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
-		return fmt.Errorf("failed to set navigation mode: %s", C.GoString(errInfo.message))
+		return fmt.Errorf("failed to set dequeue mode: %s (code: %d)", C.GoString(errInfo.message), errInfo.code)
+	}
+
+	// Changed from FIRST_MSG to NEXT_MSG for sharded queue compatibility on Windows
+	// FIRST_MSG has platform-specific issues with sharded queues
+	if C.dpiDeqOptions_setNavigation(dequeueOptions, C.DPI_DEQ_NAV_NEXT_MSG) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to set navigation mode: %s (code: %d)", C.GoString(errInfo.message), errInfo.code)
 	}
 
 	return nil

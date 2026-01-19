@@ -52,8 +52,8 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
     dpiErrorInfo errorInfo;
     dpiSubscr *subscr;
 
-    if (queueName == NULL || queueName[0] == '\0' || subscriberName == NULL || subscriberName[0] == '\0' || outSubscr == NULL) {
-        fprintf(stderr, "[C ERROR] Queue name, subscriber name, or output pointer is missing\n");
+     if (conn == NULL || context == NULL || queueName == NULL || queueName[0] == '\0' || subscriberName == NULL || subscriberName[0] == '\0' || outSubscr == NULL) {
+        fprintf(stderr, "[C ERROR] Queue name, subscriber name, conn, context or output pointer is missing\n");
         fflush(stderr);
         return DPI_FAILURE;
     }

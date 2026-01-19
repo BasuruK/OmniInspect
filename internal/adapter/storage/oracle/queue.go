@@ -11,6 +11,7 @@ import "C"
 import (
 	"OmniView/internal/core/domain"
 	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -58,9 +59,9 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	defer C.dpiQueue_release(queueHandle)
 
 	// Allocate array for message properties
-	maxMessages := C.uint32_t(subscriber.BatchSize)
+	maxMessages := subscriber.BatchSize
 	msgPropsArray := make([]*C.dpiMsgProps, maxMessages)
-	numMessages := maxMessages
+	numMessages := C.uint32_t(maxMessages)
 
 	status := C.dpiQueue_deqMany(queueHandle, &numMessages, &msgPropsArray[0])
 
@@ -90,7 +91,6 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	for i := 0; i < count; i++ {
 		msgProps = msgPropsArray[i]
 		if msgProps == nil {
-			C.dpiMsgProps_release(msgProps)
 			return nil, nil, 0, fmt.Errorf("message properties at index %d is nil", i)
 		}
 
@@ -112,8 +112,9 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 			C.dpiMsgProps_release(msgProps)
 			return nil, nil, 0, fmt.Errorf("failed to get message ID from message properties")
 		}
+
+		C.dpiMsgProps_release(msgProps)
 	}
-	C.dpiMsgProps_release(msgProps)
 	return messages, msgIds, count, nil
 }
 
@@ -127,7 +128,8 @@ func (oa *OracleAdapter) createQueueHandle(subscriber domain.Subscriber) (*C.dpi
 
 	// Get the payload object type if not already cached
 	if oa.payloadType == nil {
-		if err := oa.getObjectType(oa.config.Username, queueConfig.PayloadType(), &oa.payloadType); err != nil {
+		QueuePayloadType := queueConfig.PayloadType()
+		if err := oa.getObjectType(oa.config.Username, QueuePayloadType, &oa.payloadType); err != nil {
 			return nil, fmt.Errorf("failed to get payload object type: %s", err)
 		}
 	}
@@ -176,6 +178,10 @@ func (oa *OracleAdapter) configureDequeueOptions(queue *C.dpiQueue, subscriber d
 	}
 
 	// Set wait time
+	if subscriber.WaitTime < 0 {
+		return fmt.Errorf("invalid wait time, must be a positive integer: %d", subscriber.WaitTime)
+	}
+
 	if C.dpiDeqOptions_setWait(dequeueOptions, C.uint32_t(subscriber.WaitTime)) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
@@ -215,7 +221,6 @@ func (oa *OracleAdapter) extractPayloadFromMsgProps(msgProps *C.dpiMsgProps) (st
 	if payloadObj == nil {
 		return "", fmt.Errorf("payload object is nil")
 	}
-	defer C.dpiObject_release(payloadObj)
 
 	// Get the JSON_DATA attribute from the payload object
 	attrName := C.CString("JSON_DATA")
@@ -256,7 +261,13 @@ func (oa *OracleAdapter) extractPayloadFromMsgProps(msgProps *C.dpiMsgProps) (st
 		return "", nil // Empty LOB
 	}
 
-	buffer := make([]byte, lobLength)
+	// C.uint64_t(^uint(0) >> 1) is used to ensure the length fits into a Go slice (calculates the maximum value of a signed 64-bit integer)
+	if lobLength > C.uint64_t(^uint(0)>>1) {
+		return "", fmt.Errorf("LOB size %d exceeds maximum supported size", lobLength)
+	}
+
+	bufferLength := C.uint32_t(lobLength)
+	buffer := make([]byte, bufferLength)
 	bytesRead := lobLength
 
 	if C.dpiLob_readBytes(lobObject, 1, lobLength, (*C.char)(unsafe.Pointer(&buffer[0])), &bytesRead) != C.DPI_SUCCESS {
@@ -265,12 +276,12 @@ func (oa *OracleAdapter) extractPayloadFromMsgProps(msgProps *C.dpiMsgProps) (st
 		return "", fmt.Errorf("failed to read LOB data: %s", C.GoString(errInfo.message))
 	}
 
-	return string(buffer[:bytesRead]), nil
+	return string(buffer[:int(bytesRead)]), nil
 }
 
 // getObjectType retrieves the object type for a given schema and type name.
 func (oa *OracleAdapter) getObjectType(schema string, typeName string, objType **C.dpiObjectType) error {
-	cSchema := C.CString(schema)
+	cSchema := C.CString(strings.ToUpper(schema))
 	cTypeName := C.CString(typeName)
 	defer C.free(unsafe.Pointer(cSchema))
 	defer C.free(unsafe.Pointer(cTypeName))

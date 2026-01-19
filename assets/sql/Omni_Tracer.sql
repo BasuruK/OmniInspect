@@ -93,7 +93,7 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     -- Core Methods
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN VARCHAR2, log_level_ IN VARCHAR2 DEFAULT 'INFO');
- 
+    
     -- Subscriber Management
     PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
     --PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
@@ -143,9 +143,11 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             -- Set Sticky Dequeue to ensure messages from the same shard go to the same consumer
             DBMS_AQADM.SET_QUEUE_PARAMETER(TRACER_QUEUE_NAME, 'STICKY_DEQUEUE', 1);
 
-            -- 3. Start the Queue
+            -- 3. Start the Queue with explicit enqueue/dequeue enabled
             DBMS_AQADM.START_QUEUE (
-                queue_name => TRACER_QUEUE_NAME
+                queue_name => TRACER_QUEUE_NAME,
+                enqueue    => TRUE,
+                dequeue    => TRUE
             );
 
             COMMIT;

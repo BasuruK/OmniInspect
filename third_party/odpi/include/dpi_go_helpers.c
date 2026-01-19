@@ -184,6 +184,9 @@ int createCollection(dpiObjectType* objType, dpiObject** obj) {
  * @return: DPI_SUCCESS or DPI_FAILURE
  */
 int getCollectionSize(dpiObject* obj, int32_t* size) {
+    if (obj == NULL || size == NULL) {
+        return DPI_FAILURE;
+    }
     return dpiObject_getSize(obj, size);
 }
 

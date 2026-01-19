@@ -81,8 +81,24 @@ cells:
     languageId: oracle-sql
   - kind: 2
     value: |-
-      SELECT *
-              FROM user_tab_privs
+      BEGIN
+          OMNI_TRACER_API.Verify_Queue_State();
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT name, enqueue_enabled, dequeue_enabled, queue_type\r
+
+      FROM user_queues\r
+
+      WHERE name = 'OMNI_TRACER_QUEUE';"
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT *\r
+
+      FROM user_queues\r
+
+      WHERE name = 'OMNI_TRACER_QUEUE';"
     languageId: oracle-sql
   - kind: 2
     value: ""

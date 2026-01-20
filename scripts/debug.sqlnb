@@ -2,7 +2,7 @@ cells:
   - kind: 2
     value: "BEGIN\r
 
-      \    OMNI_TRACER_API.INITIALIZE\r
+      \    OMNI_TRACER_API.INITIALIZE;\r
 
       \    --COMMIT;  -- Important!\r
 
@@ -13,7 +13,7 @@ cells:
   - kind: 2
     value: |-
       BEGIN
-          OMNI_TRACER_API.Trace_Message('TEST FROM SQL29999', 'INFO');
+          OMNI_TRACER_API.Trace_Message('TEST FROM SQL99', 'INFO');
           --COMMIT;  -- Important!
       END;
       /
@@ -48,45 +48,11 @@ cells:
       /
     languageId: oracle-sql
   - kind: 2
-    value: "DECLARE\r
+    value: "SELECT owner, name, enqueue_enabled, dequeue_enabled \r
 
-      \  v_value NUMBER;\r
+      FROM dba_queues \r
 
-      BEGIN\r
-
-      \    --DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');\r
-
-      \r
-
-      \    --Temporarily disable sticky dequeue\r
-
-      \    -- DBMS_AQADM.SET_QUEUE_PARAMETER(\r
-
-      \    --     queue_name => 'OMNI_TRACER_QUEUE',\r
-
-      \    --     param_name => 'STICKY_DEQUEUE',\r
-
-      \    --     param_value => 0\r
-
-      \    -- );\r
-
-      \    -- COMMIT;\r
-
-      \    DBMS_AQADM.GET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'STICKY_DEQUEUE',
-      v_value);\r
-
-      \    DBMS_OUTPUT.PUT_LINE('Sticky Dequeue Value: ' || v_value);\r
-
-      \r
-
-      \    --DBMS_AQADM.UNSET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE',
-      'STICKY_DEQUEUE');\r
-
-      \    --DBMS_AQADM.START_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');\r
-
-      END;\r
-
-      /\r\n"
+      WHERE owner = 'IFSAPP' AND name = 'OMNI_TRACER_QUEUE';"
     languageId: oracle-sql
   - kind: 2
     value: ""
@@ -150,7 +116,7 @@ cells:
 
       FROM user_queues\r
 
-      WHERE name = 'OMNI_TRACER_QUEUE';"
+      WHERE name = 'OMNI_TRACER_QUEUE';\r\n"
     languageId: oracle-sql
   - kind: 2
     value: "SELECT *\r

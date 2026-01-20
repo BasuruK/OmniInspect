@@ -2,7 +2,7 @@ cells:
   - kind: 2
     value: "BEGIN\r
 
-      \    OMNI_TRACER_API.INITIALIZE\r
+      \    OMNI_TRACER_API.INITIALIZE;\r
 
       \    --COMMIT;  -- Important!\r
 

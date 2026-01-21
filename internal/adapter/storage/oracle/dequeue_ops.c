@@ -43,11 +43,12 @@ static char* ReadLobContent(dpiLob* lob, uint64_t* outLength) {
     return buffer;
 }
 
-static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
+static int ExecuteDequeuProc(dpiConn* conn, const char* subscriberName, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
     dpiStmt* stmt = NULL;
     dpiVar* subVar = NULL;
     dpiVar* batchVar = NULL;
     dpiVar* countVar = NULL;
+    dpiData* subData = NULL;
     dpiData* batchData = NULL;
     dpiData* countData = NULL;
 
@@ -56,11 +57,11 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_
     if (dpiConn_prepareStmt(conn, 0, sql, strlen(sql), NULL, 0, &stmt) != DPI_SUCCESS) return -1;
 
     // Subscriber name parameter
-    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_VARCHAR, DPI_NATIVE_TYPE_BYTES, 1, 0, 0, 0, NULL, &subVar, NULL) != DPI_SUCCESS) {
+    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_VARCHAR, DPI_NATIVE_TYPE_BYTES, 1, 0, 0, 0, NULL, &subVar, &subData) != DPI_SUCCESS) {
         dpiStmt_release(stmt);
         return -1;
     }
-    dpiVar_setFromBytes(subVar, 0, subscriber_name, strlen(subscriber_name));
+    dpiVar_setFromBytes(subVar, 0, subscriberName, strlen(subscriberName));
     if (dpiStmt_bindByPos(stmt, 1, subVar) != DPI_SUCCESS) return -1;
     
     // Batch size parameter

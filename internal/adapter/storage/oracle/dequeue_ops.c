@@ -48,6 +48,7 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_
     dpiVar* subVar = NULL;
     dpiVar* batchVar = NULL;
     dpiVar* countVar = NULL;
+    dpiData* batchData = NULL;
     dpiData* countData = NULL;
 
     const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, 1, :3, :4, :5); END;";
@@ -63,12 +64,13 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_
     if (dpiStmt_bindByPos(stmt, 1, subVar) != DPI_SUCCESS) return -1;
     
     // Batch size parameter
-    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &batchVar, NULL) != DPI_SUCCESS) {
+    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &batchVar, &batchData) != DPI_SUCCESS) {
         dpiStmt_release(stmt);
         dpiVar_release(subVar);
         return -1;
     }
-    dpiVar_setFromInt64(batchVar, 0, (int64_t)batchSize);
+    batchData->value.asInt64 = (int64_t)batchSize;
+    batchData->isNull = 0;
     if (dpiStmt_bindByPos(stmt, 2, batchVar) != DPI_SUCCESS) return -1;
 
     // Output payload parameter
@@ -84,6 +86,7 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_
         dpiVar_release(batchVar);
         return -1;
     }
+    if (dpiStmt_bindByPos(stmt, 5, countVar) != DPI_SUCCESS) return -1;
 
     // Execute
     if (dpiStmt_execute(stmt, 0,0) != DPI_SUCCESS) {
@@ -104,4 +107,109 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_
     dpiVar_release(batchVar);
     dpiVar_release(countVar);
     return 0;
+}
+
+int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* subscriberName, uint32_t batchSize, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount) {
+
+    dpiObjectType *payloadType = NULL, *rawType = NULL, *objType = NULL;
+    dpiObjectAttr *jsonAttr = NULL;
+    dpiVar *payloadVar = NULL, *rawVar = NULL;
+    dpiData *payloadData = NULL, *rawData = NULL;
+
+    const char* payloadArrayName = "OMNI_TRACER_PAYLOAD_ARRAY";
+    const char* rawArrayName = "OMNI_TRACER_RAW_ARRAY";
+    const char* payloadTypeName = "OMNI_TRACER_PAYLOAD_TYPE";
+
+    int result = -1;
+
+    // Load Type
+    if (dpiConn_getObjectType(conn, payloadArrayName, strlen(payloadArrayName), &payloadType) != DPI_SUCCESS) goto cleanup;
+    if (dpiConn_getObjectType(conn, rawArrayName, strlen(rawArrayName), &rawType) != DPI_SUCCESS) goto cleanup;
+
+    // Attribute handle for the element inside the collection
+    if (dpiConn_getObjectType(conn, payloadTypeName, strlen(payloadTypeName), &objType) != DPI_SUCCESS) goto cleanup;
+    if (dpiObjectType_getAttributes(objType, 1, &jsonAttr) != DPI_SUCCESS) goto cleanup;
+
+    // Create Variables for Out Collections
+    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, payloadType, &payloadVar, &payloadData) != DPI_SUCCESS) goto cleanup;
+    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, rawType, &rawVar, &rawData) != DPI_SUCCESS) goto cleanup;
+
+    // Execute Dequeue Procedure in PLSQL
+    if (ExecuteDequeuProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != 0) goto cleanup;
+
+    // Allocate Go-C structs
+    if (*actualCount == 0) {
+        result = 0;
+        goto cleanup;
+    }
+
+    *outMessages = (TraceMessage*)calloc(*actualCount, sizeof(TraceMessage));
+    *outIds = (TraceId*)calloc(*actualCount, sizeof(TraceId));
+
+    // Iterate and Extract
+    dpiObject *payloadColl = payloadData->value.asObject;
+    dpiObject *rawColl = rawData->value.asObject;
+
+    int32_t idx = 0;
+    int exists = 0;
+    uint32_t outIdx = 0;
+
+    if (dpiObject_getFirstIndex(payloadColl, &idx, &exists) != DPI_SUCCESS) goto cleanup;
+
+    while (exists && outIdx < *actualCount) {
+        dpiData element;
+        if (dpiObject_getElementValueByIndex(payloadColl, idx, DPI_NATIVE_TYPE_OBJECT, &element) != DPI_SUCCESS) goto cleanup;
+
+        if (!element.isNull) {
+            dpiData lobVal;
+            dpiObject *msgObj = element.value.asObject;
+            // Get JSON attribute
+            if (dpiObject_getAttributeValue(msgObj, jsonAttr, DPI_NATIVE_TYPE_LOB, &lobVal) == DPI_SUCCESS) {
+                if (!lobVal.isNull) {
+                    // Read LOB content, extract data from LOB.
+                    (*outMessages)[outIdx].data = ReadLobContent(lobVal.value.asLOB, &(*outMessages)[outIdx].length);
+                }
+            }
+        }
+
+        // Extract Raw ID
+        dpiData rawElement;
+        if (dpiObject_getElementValueByIndex(rawColl, idx, DPI_NATIVE_TYPE_OBJECT, &rawElement) != DPI_SUCCESS) goto cleanup;
+
+        if (!rawElement.isNull) {
+            uint32_t len = rawElement.value.asBytes.length;
+            (*outIds)[outIdx].data = (char*)malloc(len);
+            (*outIds)[outIdx].length = len;
+            memcpy((*outIds)[outIdx].data, rawElement.value.asBytes.ptr, len);
+        }
+
+        outIdx++;
+        dpiObject_getNextIndex(payloadColl, idx, &idx, &exists);
+    }
+    result = 0;
+
+cleanup:
+    if (payloadType) dpiObjectType_release(payloadType);
+    if (rawType) dpiObjectType_release(rawType);
+    if (objType) dpiObjectType_release(objType);
+    if (jsonAttr) dpiObjectAttr_release(jsonAttr);
+    if (payloadVar) dpiVar_release(payloadVar);
+    if (rawVar) dpiVar_release(rawVar);
+    
+    return result;
+}
+
+void FreeDequeueResults (TraceMessage* messages, TraceId* ids, uint32_t count) {
+    if (messages) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (messages[i].data) free(messages[i].data);
+        }
+        free(messages);
+    }
+    if (ids) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (ids[i].data) free(ids[i].data);
+        }
+        free(ids);
+    }
 }

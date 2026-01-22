@@ -238,7 +238,11 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             msgid               => message_handle_
         );
 
-        DBMS_LOB.FREETEMPORARY(temp_blob_);  
+        DBMS_LOB.FREETEMPORARY(temp_blob_);
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
+            RAISE;
     END Enqueue_Event___;
     
 

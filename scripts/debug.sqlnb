@@ -13,21 +13,36 @@ cells:
   - kind: 2
     value: |-
       BEGIN
-          OMNI_TRACER_API.Trace_Message('TEST FROM SQL29999', 'INFO');
+          OMNI_TRACER_API.Trace_Message('Hurah!!! ', 'INFO');
           --COMMIT;  -- Important!
       END;
       /
     languageId: oracle-sql
   - kind: 2
-    value: >-
+    value: >
       SET SERVEROUTPUT ON
 
       DECLARE
-          v_messages OMNI_TRACER_API.clob_tab;
-          v_msg_ids OMNI_TRACER_API.raw_tab;
-          v_count INTEGER;
+          v_messages  OMNI_TRACER_PAYLOAD_ARRAY;
+          v_msg_ids   OMNI_TRACER_RAW_ARRAY;
+          v_count     INTEGER;
       BEGIN
-         OMNI_TRACER_API.Test_Dequeue('SUB_E09C93A2_9E33_45BB_B437_E3A9AA5165AB');
+          OMNI_TRACER_API.Dequeue_Array_Events(
+              subscriber_name_ => 'SUB_75DE273A_EF38_40F7_AA1D_492ADC4B90E3',
+              batch_size_      => 50,
+              wait_time_       => DBMS_AQ.NO_WAIT,
+              messages_        => v_messages,
+              message_ids_     => v_msg_ids,
+              msg_count_       => v_count
+          );
+
+          DBMS_OUTPUT.PUT_LINE('Dequeued: ' || v_count);
+
+          FOR i IN 1 .. v_count LOOP
+              DBMS_OUTPUT.PUT_LINE(
+                  UTL_RAW.CAST_TO_VARCHAR2(DBMS_LOB.SUBSTR(v_messages(i).json_data, 32767, 1))
+              );
+          END LOOP;
       END;
 
       /

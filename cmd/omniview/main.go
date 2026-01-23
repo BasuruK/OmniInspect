@@ -75,14 +75,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	omniApp := app.New(boltAdapter, dbAdapter)
+	fmt.Println(omniApp.GetVersion())
+	go omniApp.StartServer(done)
+
 	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
 	if err := tracerService.StartEventListener(ctx, &subscriber, appConfig.Username); err != nil {
 		log.Fatalf("failed to start tracer event listener: %v", err)
 	}
-
-	omniApp := app.New(boltAdapter, dbAdapter)
-	fmt.Println(omniApp.GetVersion())
-	go omniApp.StartServer(done)
 
 	select {
 	case <-done:

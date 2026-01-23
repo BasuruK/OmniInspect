@@ -67,7 +67,7 @@ static int ExecuteDequeuProc(dpiConn* conn, const char* subscriberName, uint32_t
     dpiData* subData = NULL;
     dpiData* batchData = NULL;
     dpiData* countData = NULL;
-    u_int32_t subNameLen = (u_int32_t)strlen(subscriberName);
+    uint32_t subNameLen = (uint32_t)strlen(subscriberName);
     int result = -1;
 
     const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, 1, :3, :4, :5); END;";

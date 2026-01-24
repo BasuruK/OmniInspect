@@ -40,7 +40,7 @@ func extractSequenceBlocks(plsqlContent string) ([]string, error) {
 	sections, err := extractSections(plsqlContent, sequenceSectionStart, sequenceSectionEnd)
 
 	if err != nil && errors.Is(err, errNoSectionMarkers) {
-		// No types found, return empty slice without error
+		// No sequences found, return empty slice without error
 		return nil, nil
 	} else if err != nil {
 		return nil, err

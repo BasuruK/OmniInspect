@@ -96,6 +96,14 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, schema st
 
 // Unsubscribe removes an existing subscription for the given subscriber name
 func (sm *SubscriptionManager) Unsubscribe(subscriber domain.Subscriber) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	return sm.unsubscribeLocked(subscriber)
+}
+
+// unsubscribeLocked removes a subscription assuming the lock is held
+func (sm *SubscriptionManager) unsubscribeLocked(subscriber domain.Subscriber) error {
 	subscription, exists := sm.activeSubscriptions[subscriber.Name]
 	if !exists {
 		return fmt.Errorf("no active subscription found for: %s", subscriber.Name)
@@ -116,6 +124,9 @@ func (sm *SubscriptionManager) Unsubscribe(subscriber domain.Subscriber) error {
 
 // UnsubscribeAll removes all active subscriptions
 func (sm *SubscriptionManager) UnsubscribeAll() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	// Collect subscribers first to avoid modifying map during iteration
 	subscribers := make([]domain.Subscriber, 0, len(sm.activeSubscriptions))
 
@@ -124,7 +135,7 @@ func (sm *SubscriptionManager) UnsubscribeAll() {
 	}
 
 	for _, subscriber := range subscribers {
-		if err := sm.Unsubscribe(subscriber); err != nil {
+		if err := sm.unsubscribeLocked(subscriber); err != nil {
 			log.Printf("failed to unsubscribe %s: %v", subscriber.Name, err)
 		}
 	}

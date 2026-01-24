@@ -59,9 +59,13 @@ func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, schema st
 		return fmt.Errorf("invalid database connection or context")
 	}
 
-	// Check if already subscribed TODO: remove if its causing regular errors
+	// Check if already subscribed
 	if _, exists := sm.activeSubscriptions[subscriber.Name]; exists {
 		return fmt.Errorf("subscription already exists for: %s", subscriber.Name) // Already subscribed
+	}
+
+	if notifyChan == nil {
+		return fmt.Errorf("notify channel is nil")
 	}
 
 	handle := cgo.NewHandle(notifyChan)

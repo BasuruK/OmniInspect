@@ -16,7 +16,9 @@ import "C"
 import (
 	"OmniView/internal/core/domain"
 	"fmt"
+	"log"
 	"runtime/cgo"
+	"sync"
 	"unsafe"
 )
 
@@ -33,6 +35,7 @@ type SubscriptionManager struct {
 	context             *C.dpiContext
 	activeSubscriptions map[string]*SubscriptionHandle
 	handles             map[string]cgo.Handle
+	mu                  sync.Mutex
 }
 
 // NewSubscriptionManager creates a new SubscriptionManager instance
@@ -43,11 +46,15 @@ func NewSubscriptionManager(connPtr unsafe.Pointer, ctxPtr unsafe.Pointer) *Subs
 		context:             (*C.dpiContext)(ctxPtr),
 		activeSubscriptions: make(map[string]*SubscriptionHandle),
 		handles:             make(map[string]cgo.Handle),
+		mu:                  sync.Mutex{},
 	}
 }
 
 // Subscribe registers a new subscription for the given subscriber name
 func (sm *SubscriptionManager) Subscribe(subscriber domain.Subscriber, schema string, notifyChan chan<- struct{}) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	if sm.connection == nil || sm.context == nil {
 		return fmt.Errorf("invalid database connection or context")
 	}
@@ -117,6 +124,8 @@ func (sm *SubscriptionManager) UnsubscribeAll() {
 	}
 
 	for _, subscriber := range subscribers {
-		_ = sm.Unsubscribe(subscriber)
+		if err := sm.Unsubscribe(subscriber); err != nil {
+			log.Printf("failed to unsubscribe %s: %v", subscriber.Name, err)
+		}
 	}
 }

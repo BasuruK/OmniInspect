@@ -48,7 +48,10 @@ func main() {
 
 	// 2. Services (Inject Adapters)
 	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
-	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
+	tracerService, err := tracer.NewTracerService(dbAdapter, boltAdapter)
+	if err != nil {
+		log.Fatalf("failed to create tracer service: %v", err)
+	}
 	subscriberService := subscribers.NewSubscriberService(dbAdapter, boltAdapter)
 
 	// 3. Application Bootstrap

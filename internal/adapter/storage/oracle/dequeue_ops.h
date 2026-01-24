@@ -1,3 +1,6 @@
+#ifndef DEQUEUE_OPS_H
+#define DEQUEUE_OPS_H
+
 #include <dpi.h>
 #include <stdint.h>
 
@@ -15,6 +18,5 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
 
 void FreeDequeueResults (TraceMessage* messages, TraceId* ids, uint32_t count);
 
-static int ExecuteDequeuProc(dpiConn* conn, const char* subscriber_name, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount);
 
-static char* ReadLobContent(dpiLob* lob, uint64_t* outLength);
+#endif // DEQUEUE_OPS_H

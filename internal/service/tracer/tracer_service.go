@@ -23,12 +23,11 @@ type TracerService struct {
 }
 
 // Constructor: NewTracerService Constructor for TracerService
-func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
+func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) (*TracerService, error) {
 	rawConn := db.GetRawConnection()
 	rawCtx := db.GetRawContext()
 	if rawConn == nil || rawCtx == nil {
-		fmt.Println("database connection or context is nil during TracerService initialization")
-		return nil
+		return nil, fmt.Errorf("database connection or context is nil during TracerService initialization")
 	}
 
 	// Note: NewSubscriptionManager expects (connection, context) order
@@ -38,7 +37,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 		db:              db,
 		bolt:            bolt,
 		subscriptionMgr: subscriptionMgr,
-	}
+	}, nil
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
@@ -63,7 +62,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	return nil
 }
 
-func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct{}, subscriber *domain.Subscriber) {
+func (ts *TracerService) eventLoop(ctx context.Context, notifyChan chan struct{}, subscriber *domain.Subscriber) {
 	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling. TODO: Take this
 	defer ticker.Stop()
 
@@ -71,7 +70,7 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 		select {
 		case <-ctx.Done():
 			fmt.Println("Event listener stopped.")
-			ts.cleanUp(subscriber)
+			ts.cleanUp(subscriber, notifyChan)
 			return
 		case <-notifyChan:
 			// Process the notification
@@ -89,7 +88,7 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan <-chan struct
 }
 
 // cleanUp handles cleanup operations when stopping the event listener
-func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
+func (ts *TracerService) cleanUp(subscriber *domain.Subscriber, notifyChan chan struct{}) {
 	if ts.subscriptionMgr != nil {
 		if err := ts.subscriptionMgr.Unsubscribe(*subscriber); err != nil {
 			fmt.Printf("failed to unsubscribe: %v\n", err)
@@ -97,6 +96,7 @@ func (ts *TracerService) cleanUp(subscriber *domain.Subscriber) {
 			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.Name)
 		}
 	}
+	close(notifyChan)
 }
 
 // processBatch processes a batch of tracer data for the given subscriber ID

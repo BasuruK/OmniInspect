@@ -9,10 +9,9 @@
 // This macro checks the status of a DPI operation and prints an error message if it fails.
 #define CHECK_DPI(status, ctx, msg) \
     if (status != DPI_SUCCESS) { \
-        const char errorInfoMsg; \
-        uint32_t errorInfoMsgLength; \
-        dpiContext_getError((ctx), NULL, &errorInfoMsg, &errorInfoMsgLength); \
-        fprintf(stderr, "[C ERROR] %s: %.*s\n", errorInfoMsgLength, errorInfoMsg); \
+        dpiErrorInfo errorInfo; \
+        dpiContext_getError((ctx), &errorInfo); \
+        fprintf(stderr, "[C ERROR] %s: %.*s\n", (msg), (int)errorInfo.messageLength, errorInfo.message); \
         return -1; \
     }
 
@@ -24,8 +23,12 @@
  * @return: Pointer to the allocated buffer containing the LOB data (must be freed by caller), or NULL on failure
  */
 static char* ReadLobContent(dpiLob* lob, uint64_t* outLength) {
-    dpiContext *ctx = NULL;
     uint64_t size = 0;
+
+    if (!outLength) {
+        return NULL;
+    }
+    *outLength = 0;
 
     // 
     if(dpiLob_getSize(lob, &size) != DPI_SUCCESS) {
@@ -33,8 +36,7 @@ static char* ReadLobContent(dpiLob* lob, uint64_t* outLength) {
     }
 
     if (size == 0) {
-        *outLength = 0;
-        return NULL;
+        return NULL; // Empty LOB - outLength remains 0
     }
     char* buffer = (char*)malloc(size); // for Blobs size is in bytes
     if (!buffer) return NULL;
@@ -59,7 +61,7 @@ static char* ReadLobContent(dpiLob* lob, uint64_t* outLength) {
  * @param outCount: Output parameter to receive the actual number of dequeued messages
  * @return: 0 on success, -1 on failure
  */
-static int ExecuteDequeuProc(dpiConn* conn, const char* subscriberName, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
+static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
     dpiStmt* stmt = NULL;
     dpiVar* subVar = NULL;
     dpiVar* batchVar = NULL;
@@ -167,7 +169,7 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, rawType, &rawVar, &rawData) != DPI_SUCCESS) goto cleanup;
 
     // Execute Dequeue Procedure in PLSQL
-    if (ExecuteDequeuProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != 0) goto cleanup;
+    if (ExecuteDequeueProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != 0) goto cleanup;
 
     // Allocate Go-C structs
     if (*actualCount == 0) {
@@ -176,7 +178,13 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     }
 
     *outMessages = (TraceMessage*)calloc(*actualCount, sizeof(TraceMessage));
+    if (!*outMessages) goto cleanup;
     *outIds = (TraceId*)calloc(*actualCount, sizeof(TraceId));
+    if (!*outIds) {
+        free(*outMessages);
+        *outMessages = NULL;
+        goto cleanup;
+    }
 
     // Iterate and Extract
     dpiObject *payloadColl = payloadData->value.asObject;
@@ -214,16 +222,40 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
         if (!rawElement.isNull) {
             uint32_t len = rawElement.value.asBytes.length;
             (*outIds)[outIdx].data = (char*)malloc(len);
+            if (!(*outIds)[outIdx].data) { // malloc failed, clean up
+                (*outIds)[outIdx].length = 0; 
+                goto cleanup;
+            }
             (*outIds)[outIdx].length = len;
             memcpy((*outIds)[outIdx].data, rawElement.value.asBytes.ptr, len);
         }
 
         outIdx++;
-        dpiObject_getNextIndex(payloadColl, idx, &idx, &exists);
+        if (dpiObject_getNextIndex(payloadColl, idx, &idx, &exists) != DPI_SUCCESS) {  
+            goto cleanup;  
+        }
     }
     result = 0;
 
 cleanup:
+    if (result != 0) {
+        // Free partially allocated results on error
+        if (*outMessages) {
+            for (uint32_t i = 0; i < outIdx; i++) {
+                if ((*outMessages)[i].data) free((*outMessages)[i].data);
+            }
+            free(*outMessages);
+            *outMessages = NULL;
+        }
+        if (*outIds) {
+            for (uint32_t i = 0; i < outIdx; i++) {
+                if ((*outIds)[i].data) free((*outIds)[i].data);
+            }
+            free(*outIds);
+            *outIds = NULL;
+        }
+        *actualCount = 0;
+    }
     if (payloadType) dpiObjectType_release(payloadType);
     if (rawType) dpiObjectType_release(rawType);
     if (objType) dpiObjectType_release(objType);

@@ -241,29 +241,45 @@ int getObjectAttributeByName(dpiObjectType* objType, const char* attrName, dpiOb
         return DPI_FAILURE;
     }
 
-    for (uint16_t i = 0; i < typeInfo.numAttributes; i++) {
-        dpiObjectAttr* currentAttr;
-        if (dpiObjectType_getAttributes(objType, i + 1, &currentAttr) != DPI_SUCCESS) {
-            continue;
-        }
-
-        dpiObjectAttrInfo attrInfo;
-        if (dpiObjectAttr_getInfo(currentAttr, &attrInfo) != DPI_SUCCESS) {
-            dpiObjectAttr_release(currentAttr);
-            continue;
-        }
-
-        // compare attribute names
-        size_t attrNameLen = strlen(attrName);
-        if (attrNameLen == attrInfo.nameLength && strncasecmp(attrInfo.name, attrName, attrInfo.nameLength) == 0) {
-            // Found the attribute, get its type
-            *attrType = currentAttr;
-            return DPI_SUCCESS;
-        }
-
-        dpiObjectAttr_release(currentAttr);
+    // Allocate array for all attributes
+    dpiObjectAttr** attributes = (dpiObjectAttr**)malloc(typeInfo.numAttributes * sizeof(dpiObjectAttr*));
+    if (attributes == NULL) {
+        return DPI_FAILURE;
     }
 
+    // Get all attributes at once
+    if (dpiObjectType_getAttributes(objType, typeInfo.numAttributes, attributes) != DPI_SUCCESS) {
+        free(attributes);
+        return DPI_FAILURE;
+    }
+
+    int result = DPI_FAILURE;
+    size_t attrNameLen = strlen(attrName);
+
+    for (uint16_t i = 0; i < typeInfo.numAttributes; i++) {
+        dpiObjectAttrInfo attrInfo;
+        if (dpiObjectAttr_getInfo(attributes[i], &attrInfo) != DPI_SUCCESS) {
+            continue;
+        }
+
+        // compare attribute names (case-insensitive)
+        if (attrNameLen == attrInfo.nameLength && 
+            strncasecmp(attrInfo.name, attrName, attrInfo.nameLength) == 0) {
+            // Found the attribute - add reference before returning
+            if (dpiObjectAttr_addRef(attributes[i]) == DPI_SUCCESS) {
+                *attrType = attributes[i];
+                result = DPI_SUCCESS;
+            }
+            break;
+        }
+    }
+
+    // Release all attributes obtained from getAttributes
+    for (uint16_t i = 0; i < typeInfo.numAttributes; i++) {
+        dpiObjectAttr_release(attributes[i]);
+    }
+    free(attributes);
+
     // return failure if attribute not found
-    return DPI_FAILURE; 
+    return result; 
 }

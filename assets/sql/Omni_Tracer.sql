@@ -128,7 +128,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
     -- Forward declarations for private functions
     FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB;
-    FUNCTION Blob_To_Clob___(input_ IN BLOB) RETURN CLOB;
 
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
@@ -238,10 +237,23 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             msgid               => message_handle_
         );
 
-        DBMS_LOB.FREETEMPORARY(temp_blob_);
+        IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
+        END IF;
+        
+        IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(json_payload_);
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
+            IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
             DBMS_LOB.FREETEMPORARY(temp_blob_);
+            END IF;
+
+            IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(json_payload_);
+            END IF;
+
             RAISE;
     END Enqueue_Event___;
     
@@ -338,31 +350,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         RETURN output_;
     END Clob_To_Blob___;
 
-    FUNCTION Blob_To_Clob___(input_ IN BLOB) RETURN CLOB
-    IS
-        output_ CLOB;
-        dest_offset_ INTEGER := 1;
-        src_offset_ INTEGER := 1;
-        lang_context_ INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
-        warning_ INTEGER;
-    BEGIN
-        IF input_ IS NULL OR DBMS_LOB.GETLENGTH(input_) = 0 THEN
-            RETURN NULL;
-        END IF;
-
-        DBMS_LOB.CREATETEMPORARY(output_, TRUE);
-        DBMS_LOB.CONVERTTOCLOB(
-            dest_lob     => output_,
-            src_blob     => input_,
-            amount       => DBMS_LOB.LOBMAXSIZE,
-            dest_offset  => dest_offset_,
-            src_offset   => src_offset_,
-            blob_csid    => DBMS_LOB.DEFAULT_CSID,
-            lang_context => lang_context_,
-            warning      => warning_
-        );
-        RETURN output_;
-    END Blob_To_Clob___;
 
 END OMNI_TRACER_API;
 /

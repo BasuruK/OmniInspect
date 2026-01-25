@@ -17,15 +17,15 @@ import "C"
 import (
 	"OmniView/internal/core/domain"
 	"fmt"
-	"strconv"
 	"unsafe"
 )
 
 // Adapter: Implements ports.DatabaseRepository for Oracle database
 type OracleAdapter struct {
-	Connection *C.dpiConn
-	Context    *C.dpiContext
-	config     domain.DatabaseSettings
+	Connection  *C.dpiConn
+	Context     *C.dpiContext
+	config      domain.DatabaseSettings
+	payloadType *C.dpiObjectType
 }
 
 // Constructor: Creates a new OracleAdapter and injects configuratios
@@ -38,6 +38,27 @@ func NewOracleAdapter(cfg *domain.DatabaseSettings) *OracleAdapter {
 	}
 }
 
+// GetRawConnection returns the underlying DPI connection handle as unsafe.Pointer.
+// WARNING: this low-level API should be only used in tracer functionality.
+func (oa *OracleAdapter) GetRawConnection() unsafe.Pointer {
+	if oa.Connection == nil {
+		return nil
+	}
+
+	return unsafe.Pointer(oa.Connection)
+}
+
+// GetRawContext returns the underlying DPI context handle as unsafe.Pointer.
+// WARNING: this low-level API should be only used in tracer functionality.
+func (oa *OracleAdapter) GetRawContext() unsafe.Pointer {
+	if oa.Context == nil {
+		return nil
+	}
+
+	return unsafe.Pointer(oa.Context)
+}
+
+// Fetch executes a SELECT query and returns all results as a slice of strings.
 func (oa *OracleAdapter) Fetch(query string) ([]string, error) {
 	var err error
 
@@ -214,6 +235,10 @@ func (oa *OracleAdapter) Connect() error {
 
 // Close releases the database connection and context resources.
 func (oa *OracleAdapter) Close() error {
+	if oa.payloadType != nil {
+		C.dpiObjectType_release(oa.payloadType)
+		oa.payloadType = nil
+	}
 	if oa.Connection != nil {
 		C.dpiConn_release(oa.Connection)
 		oa.Connection = nil
@@ -230,11 +255,13 @@ func (oa *OracleAdapter) Close() error {
 // ODPI library version. The context must be destroyed when no longer needed.
 func (oa *OracleAdapter) InitContext() error {
 	var contextError C.dpiErrorInfo
+	var localContext *C.dpiContext
 
-	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &oa.Context, &contextError) != C.DPI_SUCCESS {
+	if C.dpiContext_createWithParams(C.DPI_MAJOR_VERSION, C.DPI_MINOR_VERSION, nil, &localContext, &contextError) != C.DPI_SUCCESS {
 		return fmt.Errorf("failed to create DPI Context: %s", C.GoString(contextError.message))
 	}
 
+	oa.Context = localContext
 	return nil
 }
 
@@ -251,7 +278,26 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 	defer C.free(unsafe.Pointer(c_password))
 	defer C.free(unsafe.Pointer(c_connectionString))
 
+	// Ensure Thread Safety since goroutines are used
+	var commonParams C.dpiCommonCreateParams
+	if C.dpiContext_initCommonCreateParams(oa.Context, &commonParams) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to initialize common connection parameters for events: %s", C.GoString(errInfo.message))
+	}
+
+	commonParams.createMode = C.DPI_MODE_CREATE_THREADED | C.DPI_MODE_CREATE_EVENTS // Enable threaded safe mode
+
+	// For events AQ subscriptions, create connection parameters with events mode enabled
+	var connCreateParams C.dpiConnCreateParams
+	if C.dpiContext_initConnCreateParams(oa.Context, &connCreateParams) != C.DPI_SUCCESS {
+		var errInfo C.dpiErrorInfo
+		C.dpiContext_getError(oa.Context, &errInfo)
+		return fmt.Errorf("failed to initialize connection create parameters for events: %s", C.GoString(errInfo.message))
+	}
+
 	// Call ODPI-C function
+	var localConnection *C.dpiConn
 	if C.dpiConn_create(oa.Context,
 		c_username,
 		C.uint32_t(len(username)),
@@ -259,14 +305,15 @@ func (oa *OracleAdapter) CreateConnection(username string, password string, conn
 		C.uint32_t(len(password)),
 		c_connectionString,
 		C.uint32_t(len(connectionString)),
-		nil, // dpiCommonParams
-		nil, // dpiConnCreateParams
-		&oa.Connection) != C.DPI_SUCCESS {
+		&commonParams,     // dpiCommonParams
+		&connCreateParams, // dpiConnCreateParams
+		&localConnection) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 		return fmt.Errorf("failed to create database connection: %s", C.GoString(errInfo.message))
 	}
 
+	oa.Connection = localConnection
 	return nil
 }
 
@@ -399,7 +446,7 @@ func (oa *OracleAdapter) ExecuteWithParams(query string, params map[string]inter
 
 // DeployPackages deploys the given SQL package to the connected Oracle database.
 // Package structure should contain Package Specification and Package Body as a single string in the correct order.
-func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string, packageBody []string) error {
+func (oa *OracleAdapter) DeployPackages(sequences []string, types []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body
 	// The loops are nil safe, so empty slices will be skipped.
 	// Step 1: Deploy Sequences
@@ -409,14 +456,20 @@ func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string
 		}
 	}
 
-	// Step 2: Deploy Package Specifications
+	// Step 2: Deploy Types
+	for _, t := range types {
+		if err := oa.ExecuteStatement(t); err != nil {
+			return fmt.Errorf("failed to deploy type: %s", err)
+		}
+	}
+	// Step 3: Deploy Package Specifications
 	for _, spec := range packageSpec {
 		if err := oa.ExecuteStatement(spec); err != nil {
 			return fmt.Errorf("failed to deploy package specification: %s", err)
 		}
 	}
 
-	// Step 3: Deploy Package Body
+	// Step 4: Deploy Package Body
 	for _, body := range packageBody {
 		if err := oa.ExecuteStatement(body); err != nil {
 			return fmt.Errorf("failed to deploy package body: %s", err)
@@ -428,70 +481,14 @@ func (oa *OracleAdapter) DeployPackages(sequences []string, packageSpec []string
 
 // DeployFile deploys a SQL file content to the connected Oracle database.
 func (oa *OracleAdapter) DeployFile(sqlContent string) error {
-	sequences, packageSpecs, packageBodies, err := Extract(sqlContent)
+	sequences, types, packageSpecs, packageBodies, err := Extract(sqlContent)
 	if err != nil {
 		return fmt.Errorf("failed to extract SQL content: %s", err)
 	}
 
-	if err := oa.DeployPackages(sequences, packageSpecs, packageBodies); err != nil {
+	if err := oa.DeployPackages(sequences, types, packageSpecs, packageBodies); err != nil {
 		return fmt.Errorf("failed to deploy SQL content: %s", err)
 	}
 
 	return nil
-}
-
-// RegisterNewSubscriber registers a new subscriber in the Oracle database.
-// If subscriber already exists, it returns nil.
-func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) error {
-	exists, err := subscriberExists(oa, subscriber)
-	if err != nil {
-		return fmt.Errorf("failed to check subscriber existence: %v", err)
-	}
-	if !exists {
-		// Subscriber does not exist, register it
-		err := oa.ExecuteWithParams("BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
-			"subscriberName": subscriber.Name,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to register subscriber: %v", err)
-		}
-		return nil
-	}
-	return nil
-}
-
-// subscriberExists checks if a subscriber with the given name already exists in the Oracle database.
-func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
-	query := `SELECT COUNT(*)
-			FROM ALL_QUEUE_SUBSCRIBERS
-			WHERE QUEUE_NAME = :queueName
-			AND CONSUMER_NAME = :subscriberName`
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
-		"queueName":      domain.QueueName,
-		"subscriberName": subscriber.Name,
-	})
-	if err != nil {
-		return false, fmt.Errorf("failed to check subscriber existence: %v", err)
-	}
-	if len(results) == 0 {
-		return false, nil
-	}
-
-	count, err := parseCountResult(results)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse subscriber existence count: %v", err)
-	}
-	return count > 0, nil
-}
-
-// parseCountResult parses the first element of a COUNT(*) query result.
-func parseCountResult(results []string) (int, error) {
-	if len(results) == 0 || results[0] == "" {
-		return 0, nil
-	}
-	count, err := strconv.Atoi(results[0])
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse count result: %v", err)
-	}
-	return count, nil
 }

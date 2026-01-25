@@ -35,12 +35,18 @@ func (ss *SubscriberService) GetSubscriber() (*domain.Subscriber, error) {
 }
 
 // NewSubscriber Generates and stores a new unique subscriber name
-func (ss *SubscriberService) NewSubscriber() (string, error) {
+func (ss *SubscriberService) NewSubscriber() (domain.Subscriber, error) {
 	subscriberName := generateSubscriberName()
-	if err := ss.SetSubscriber(domain.Subscriber{Name: subscriberName}); err != nil {
-		return "", err
+	subscriber := domain.Subscriber{
+		Name:      subscriberName,
+		BatchSize: 1000,
+		WaitTime:  1,
 	}
-	return subscriberName, nil
+	if err := ss.SetSubscriber(subscriber); err != nil {
+		return domain.Subscriber{}, err
+	}
+
+	return subscriber, nil
 }
 
 // RegisterSubscriber Retrieves existing subscriber or creates a new one if not found
@@ -52,11 +58,11 @@ func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
 			return domain.Subscriber{}, err // return other errors
 		}
 		// If not found, create a new subscriber
-		newName, err := ss.NewSubscriber()
+		newSubscriber, err := ss.NewSubscriber()
 		if err != nil {
 			return domain.Subscriber{}, err
 		}
-		subscriber = &domain.Subscriber{Name: newName}
+		subscriber = &newSubscriber
 	}
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(*subscriber); err != nil {
@@ -73,7 +79,7 @@ func generateSubscriberName() string {
 	// Format the UUID as a named subscriber identifier
 	// Replace - with _ to comply with Oracle naming conventions
 	// Add a prefix for clarity : SUB_
-	subscriberName := "SUB_" + strings.ReplaceAll(uuidWithHyphen.String(), "-", "_")
+	subscriberName := "SUB_" + strings.ToUpper(strings.ReplaceAll(uuidWithHyphen.String(), "-", "_"))
 
 	return subscriberName
 }

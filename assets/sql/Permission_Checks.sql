@@ -35,7 +35,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_sys_privs
-        WHERE privilege IN ('CREATE SEQUENCE', 'CREATE ANY SEQUENCE');
+        WHERE privilege IN ('CREATE SEQUENCE', 'CREATE ANY SEQUENCE')
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_Create_Sequence_Priv;
@@ -46,10 +47,23 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_sys_privs
-        WHERE privilege IN ('CREATE PROCEDURE', 'CREATE ANY PROCEDURE');
+        WHERE privilege IN ('CREATE PROCEDURE', 'CREATE ANY PROCEDURE')
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_Create_Procedure_Priv;
+
+    FUNCTION Has_Create_Type_Priv(p_schema IN VARCHAR2) RETURN BOOLEAN IS
+        count_ NUMBER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO count_
+        FROM user_sys_privs
+        WHERE privilege IN ('CREATE TYPE', 'CREATE ANY TYPE')
+        AND username = UPPER(p_schema);
+
+        RETURN count_ > 0;
+    END Has_Create_Type_Priv;
 
     FUNCTION Has_AQ_Admin_Role(p_schema IN VARCHAR2) RETURN BOOLEAN IS
         count_ NUMBER;
@@ -57,7 +71,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_role_privs
-        WHERE granted_role = 'AQ_ADMINISTRATOR_ROLE';
+        WHERE granted_role = 'AQ_ADMINISTRATOR_ROLE'
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_AQ_Admin_Role;
@@ -68,7 +83,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         SELECT COUNT(*)
         INTO count_
         FROM user_role_privs
-        WHERE granted_role = 'AQ_USER_ROLE';
+        WHERE granted_role = 'AQ_USER_ROLE'
+        AND username = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_AQ_User_Role;
@@ -80,7 +96,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQADM'
-          AND privilege = 'EXECUTE';
+          AND privilege = 'EXECUTE'
+          AND grantee = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_DBMS_AQADM_Exec;
@@ -92,7 +109,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         INTO count_
         FROM user_tab_privs
         WHERE table_name = 'DBMS_AQ'
-          AND privilege = 'EXECUTE';
+          AND privilege = 'EXECUTE'
+          AND grantee = UPPER(p_schema);
 
         RETURN count_ > 0;
     END Has_DBMS_AQ_Exec;
@@ -101,6 +119,7 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
     BEGIN
         RETURN Has_Create_Sequence_Priv(p_schema)
            AND Has_Create_Procedure_Priv(p_schema)
+           AND Has_Create_Type_Priv(p_schema)
            AND Has_AQ_Admin_Role(p_schema)
            AND Has_AQ_User_Role(p_schema)
            AND Has_DBMS_AQADM_Exec(p_schema)
@@ -111,6 +130,7 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         report_         VARCHAR2(4000);
         create_seq_     BOOLEAN;
         create_proc_    BOOLEAN;
+        create_type_    BOOLEAN;
         aq_admin_       BOOLEAN;
         aq_user_        BOOLEAN;
         dbms_aqadm_     BOOLEAN;
@@ -120,11 +140,12 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         -- Call each check once
         create_seq_     := Has_Create_Sequence_Priv(p_schema);
         create_proc_    := Has_Create_Procedure_Priv(p_schema);
+        create_type_    := Has_Create_Type_Priv(p_schema);
         aq_admin_       := Has_AQ_Admin_Role(p_schema);
         aq_user_        := Has_AQ_User_Role(p_schema);
         dbms_aqadm_     := Has_DBMS_AQADM_Exec(p_schema);
         dbms_aq_        := Has_DBMS_AQ_Exec(p_schema);
-        all_valid_      := create_seq_ AND create_proc_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_;
+        all_valid_      := create_seq_ AND create_proc_ AND create_type_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_;
 
         report_ := '{';
         report_ := report_ || '"Schema":"' || p_schema || '",';
@@ -134,6 +155,9 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
 
         report_ := report_ || '"CreateProcedure":' || 
             CASE WHEN create_proc_ THEN 'true' ELSE 'false' END || ',';
+
+        report_ := report_ || '"CreateType":' || 
+            CASE WHEN create_type_ THEN 'true' ELSE 'false' END || ',';
 
         report_ := report_ || '"AQAdministratorRole":' || 
             CASE WHEN aq_admin_ THEN 'true' ELSE 'false' END || ',';

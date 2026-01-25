@@ -1,0 +1,179 @@
+cells:
+  - kind: 2
+    value: "BEGIN\r
+
+      \    OMNI_TRACER_API.INITIALIZE;\r
+
+      \    --COMMIT;  -- Important!\r
+
+      END;\r
+
+      /"
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      BEGIN
+          OMNI_TRACER_API.Trace_Message('Hurah!!! ', 'INFO');
+          --COMMIT;  -- Important!
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      SET SERVEROUTPUT ON
+
+      DECLARE
+          v_messages  OMNI_TRACER_PAYLOAD_ARRAY;
+          v_msg_ids   OMNI_TRACER_RAW_ARRAY;
+          v_count     INTEGER;
+      BEGIN
+          OMNI_TRACER_API.Dequeue_Array_Events(
+              subscriber_name_ => 'SUB_75DE273A_EF38_40F7_AA1D_492ADC4B90E3',
+              batch_size_      => 50,
+              wait_time_       => DBMS_AQ.NO_WAIT,
+              messages_        => v_messages,
+              message_ids_     => v_msg_ids,
+              msg_count_       => v_count
+          );
+
+          DBMS_OUTPUT.PUT_LINE('Dequeued: ' || v_count);
+
+          FOR i IN 1 .. v_count LOOP
+              DBMS_OUTPUT.PUT_LINE(
+                  UTL_RAW.CAST_TO_VARCHAR2(DBMS_LOB.SUBSTR(v_messages(i).json_data, 32767, 1))
+              );
+          END LOOP;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      BEGIN
+          -- Stop the queue before dropping
+          DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
+          -- Drop the queue
+          DBMS_AQADM.DROP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
+          -- Drop the queue table if needed
+          DBMS_AQADM.DROP_QUEUE_TABLE(
+              queue_table => 'OMNI_TRACER_QUEUE',
+              FORCE       => TRUE
+          );
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: "DECLARE\r
+
+      \  v_value NUMBER;\r
+
+      BEGIN\r
+
+      \    --DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');\r
+
+      \r
+
+      \    --Temporarily disable sticky dequeue\r
+
+      \    -- DBMS_AQADM.SET_QUEUE_PARAMETER(\r
+
+      \    --     queue_name => 'OMNI_TRACER_QUEUE',\r
+
+      \    --     param_name => 'STICKY_DEQUEUE',\r
+
+      \    --     param_value => 0\r
+
+      \    -- );\r
+
+      \    -- COMMIT;\r
+
+      \    DBMS_AQADM.GET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'STICKY_DEQUEUE',
+      v_value);\r
+
+      \    DBMS_OUTPUT.PUT_LINE('Sticky Dequeue Value: ' || v_value);\r
+
+      \r
+
+      \    --DBMS_AQADM.UNSET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE',
+      'STICKY_DEQUEUE');\r
+
+      \    --DBMS_AQADM.START_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');\r
+
+      END;\r
+
+      /\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: ""
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Check if the parameter view exists for the queue\r
+
+      SELECT *\r
+
+      FROM AQ$OMNI_TRACER_QUEUE\r
+
+      \r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      
+      -- Or verify generic subscribers
+      SELECT *
+      FROM aq$omni_tracer_queue_s;
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT *
+      FROM AQ$OMNI_TRACER_QUEUE
+      ORDER BY ENQ_TIME DESC;
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT consumer_name, msg_state, COUNT(*) 
+      FROM aq$omni_tracer_queue 
+      GROUP BY consumer_name, msg_state;
+    languageId: oracle-sql
+  - kind: 2
+    value: >-
+      BEGIN
+          FOR rec IN (
+              SELECT msg_id 
+              FROM aq$omni_tracer_queue 
+              WHERE consumer_name = 'SUB_F3903F3C_54A8_4DBD_8C7C_69FE39230992'
+              --AND msg_state = 'PROCESSED'  -- PROCESSED
+          ) LOOP
+              DBMS_AQADM.REMOVE_SUBSCRIBER(
+                  queue_name => 'OMNI_TRACER_QUEUE',
+                  subscriber => sys.aq$_agent('SUB_F3903F3C_54A8_4DBD_8C7C_69FE39230992', NULL, NULL)
+              );
+          END LOOP;
+          COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >-
+      SET SERVEROUTPUT ON
+
+      EXEC DBMS_AQADM.GRANT_QUEUE_PRIVILEGE('DEQUEUE', 'OMNI_TRACER_QUEUE',
+      'IFSAPP');
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT name, enqueue_enabled, dequeue_enabled, queue_type\r
+
+      FROM user_queues\r
+
+      WHERE name = 'OMNI_TRACER_QUEUE';"
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT *\r
+
+      FROM user_queues\r
+
+      WHERE name = 'OMNI_TRACER_QUEUE';"
+    languageId: oracle-sql
+  - kind: 2
+    value: ""
+    languageId: oracle-sql

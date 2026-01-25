@@ -26,32 +26,94 @@ END;
 
 -- @END_SECTION: SEQUENCE_CREATION
 
+-- @SECTION: TYPE_CREATION
+
+DECLARE
+    is_editioned_ VARCHAR2(5);
+    type_in_use EXCEPTION;
+    PRAGMA EXCEPTION_INIT(type_in_use, -2303);
+BEGIN
+    -- Check if the DB is running in editioned mode
+    BEGIN
+        SELECT CASE 
+         WHEN EXISTS (SELECT 1 FROM user_editioned_types) THEN 'TRUE' 
+         ELSE 'FALSE' 
+       END
+    INTO is_editioned_
+    FROM dual;
+    EXCEPTION
+        WHEN OTHERS THEN
+            is_editioned_ := 'FALSE';
+    END;
+
+    IF is_editioned_ = 'TRUE' THEN
+        -- Try to create/replace with NONEDITIONABLE
+        -- This ensures types are correct for AQ Sharded Queue (which requires non-editioned types)
+        -- Editioning is not needed for these types as they are only used internally by the queue, and these packages will not be shipped across editions.
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (JSON_DATA BLOB)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL; -- Ignore if type has dependents (e.g. Queue exists)
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS TABLE OF OMNI_TRACER_PAYLOAD_TYPE';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE NONEDITIONABLE TYPE OMNI_TRACER_RAW_ARRAY AS TABLE OF RAW(16)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+    ELSE
+        -- Non-editioned DB, create normally
+         -- Non-editioned database - use regular types
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_TYPE AS OBJECT (JSON_DATA BLOB)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_PAYLOAD_ARRAY AS TABLE OF OMNI_TRACER_PAYLOAD_TYPE';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE OR REPLACE TYPE OMNI_TRACER_RAW_ARRAY AS TABLE OF RAW(16)';
+        EXCEPTION
+            WHEN type_in_use THEN NULL;
+        END;
+    END IF;
+END;
+/
+
+-- @END_SECTION: TYPE_CREATION
+
 -- @SECTION: PACKAGE_SPECIFICATION
 
 CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS 
     TRACER_QUEUE_NAME CONSTANT VARCHAR2(30) := 'OMNI_TRACER_QUEUE';
 
-    -- Collection types for bulk operations
-    TYPE clob_tab IS TABLE OF CLOB INDEX BY PLS_INTEGER;
-    TYPE raw_tab IS TABLE OF RAW(16) INDEX BY PLS_INTEGER;
-
     -- Core Methods
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN VARCHAR2, log_level_ IN VARCHAR2 DEFAULT 'INFO');
- 
+    PROCEDURE Dequeue_Array_Events(
+        subscriber_name_ IN  VARCHAR2,
+        batch_size_      IN  INTEGER,
+        wait_time_       IN  NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT OMNI_TRACER_PAYLOAD_ARRAY,
+        message_ids_     OUT OMNI_TRACER_RAW_ARRAY,
+        msg_count_       OUT INTEGER
+    );
+    
     -- Subscriber Management
     PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
     --PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
 
-    -- Enqueue/Dequeue Methods
-    -- High Performance bulk Array Dequeue
-    PROCEDURE Dequeue_Array_Events (
-        subscriber_name_ IN VARCHAR2,
-        batch_size_      IN INTEGER,
-        wait_time_      IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_       OUT clob_tab,
-        message_ids_    OUT raw_tab,
-        msg_count_      OUT INTEGER);
 END OMNI_TRACER_API;
 /
 
@@ -60,6 +122,12 @@ END OMNI_TRACER_API;
 -- @SECTION: PACKAGE_BODY
 
 CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+
+    -- Internal type for RAW array fetching
+    TYPE raw_payload_tab IS TABLE OF RAW(32767) INDEX BY PLS_INTEGER;
+
+    -- Forward declarations for private functions
+    FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB;
 
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
@@ -72,15 +140,32 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         WHERE name = TRACER_QUEUE_NAME;
         
         IF queue_exists_ = 0 THEN
-            DBMS_AQADM.CREATE_TRANSACTIONAL_EVENT_QUEUE (
+            -- 1. Create the Sharded Queue
+            DBMS_AQADM.CREATE_SHARDED_QUEUE (
                 queue_name => TRACER_QUEUE_NAME,
-                multiple_consumers => TRUE -- setting this value true here, cause it allows named subscribers
+                multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
+                queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
             );
-            DBMS_AQADM.START_QUEUE (
-                queue_name => TRACER_QUEUE_NAME
+            -- 2. Set Shard count
+            -- Default to 4 shards, can be adjusted based on expected load
+            -- Note: TODO: find the optimal count without slowing down the db
+            DBMS_AQADM.SET_QUEUE_PARAMETER(
+                queue_name => TRACER_QUEUE_NAME,
+                param_name => 'SHARD_NUM',
+                param_value => 4
             );
-            COMMIT;
 
+            -- Set Sticky Dequeue to ensure messages from the same shard go to the same consumer
+            DBMS_AQADM.SET_QUEUE_PARAMETER(TRACER_QUEUE_NAME, 'STICKY_DEQUEUE', 1);
+
+            -- 3. Start the Queue with explicit enqueue/dequeue enabled
+            DBMS_AQADM.START_QUEUE (
+                queue_name => TRACER_QUEUE_NAME,
+                enqueue    => TRUE,
+                dequeue    => TRUE
+            );
+
+            COMMIT;
         END IF;  
     EXCEPTION
     WHEN OTHERS THEN
@@ -128,7 +213,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
         message_handle_     RAW(16);
         json_payload_       CLOB;
-        jms_message_        SYS.AQ$_JMS_TEXT_MESSAGE;
+        temp_blob_          BLOB; 
+        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;        
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message is visible immediately, impervious to rollbacks, and runs an internal commit.
 
@@ -140,82 +226,37 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
 
         json_payload_ := message_.TO_CLOB();
-        jms_message_ := SYS.AQ$_JMS_TEXT_MESSAGE.CONSTRUCT();
-        jms_message_.set_text(json_payload_);
+        temp_blob_ := Clob_To_Blob___(json_payload_);
+        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(temp_blob_);
 
         DBMS_AQ.ENQUEUE (
             queue_name          => TRACER_QUEUE_NAME,
             enqueue_options     => enqueue_options_,
             message_properties  => message_properties_,
-            payload             => jms_message_,
+            payload             => payload_object_,
             msgid               => message_handle_
         );
-    END Enqueue_Event___;
 
-
-    PROCEDURE Dequeue_Array_Events (
-        subscriber_name_ IN VARCHAR2,
-        batch_size_      IN INTEGER,
-        wait_time_       IN NUMBER DEFAULT DBMS_AQ.NO_WAIT,
-        messages_        OUT clob_tab,
-        message_ids_     OUT raw_tab,
-        msg_count_       OUT INTEGER)
-    IS
-        dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
-        message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
-        payload_array_       SYS.AQ$_JMS_TEXT_MESSAGES;
-        msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
-        count_               NUMBER;
-        temp_clob_           CLOB;
-    BEGIN
-        IF batch_size_ IS NULL OR batch_size_ <= 0 THEN
-            RAISE_APPLICATION_ERROR(-20003, 'Batch size must be a positive integer');
+        IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
         END IF;
-
-        IF subscriber_name_ IS NULL THEN
-            RAISE_APPLICATION_ERROR(-20004, 'Subscriber name cannot be NULL for multi-consumer queue');
+        
+        IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(json_payload_);
         END IF;
-
-        -- Async Listening
-        dequeue_options_.consumer_name := subscriber_name_;
-        dequeue_options_.wait := wait_time_;
-        dequeue_options_.navigation := DBMS_AQ.FIRST_MESSAGE;
-        dequeue_options_.visibility := DBMS_AQ.IMMEDIATE;
-
-        -- Initialize output collections
-        payload_array_ := SYS.AQ$_JMS_TEXT_MESSAGES();
-
-        count_ := DBMS_AQ.DEQUEUE_ARRAY (
-            queue_name                => TRACER_QUEUE_NAME,
-            dequeue_options           => dequeue_options_,
-            array_size                => batch_size_,
-            message_properties_array  => message_props_array_,
-            payload_array             => payload_array_,
-            msgid_array               => msg_id_array_
-        );
-
-        msg_count_ := count_;
-
-        FOR i_ IN 1 .. count_ LOOP
-            payload_array_(i_).get_text(temp_clob_);
-            messages_(i_) := temp_clob_;
-            message_ids_(i_) := msg_id_array_(i_);
-
-            IF DBMS_LOB.ISTEMPORARY(temp_clob_) = 1 THEN
-                DBMS_LOB.FREETEMPORARY(temp_clob_);
-            END IF;
-        END LOOP;
     EXCEPTION
         WHEN OTHERS THEN
-            IF SQLCODE = -25228 THEN
-                -- No message available
-                messages_.DELETE;
-                message_ids_.DELETE;
-                msg_count_ := 0;
-            ELSE
-                RAISE;
+            IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
             END IF;
-    END Dequeue_Array_Events;
+
+            IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(json_payload_);
+            END IF;
+
+            RAISE;
+    END Enqueue_Event___;
+    
 
     PROCEDURE Trace_Message (
         message_    IN VARCHAR2,
@@ -223,13 +264,92 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     IS
         calling_process_ VARCHAR2(100);
     BEGIN
-        calling_process_ := SUBSTR(DBMS_UTILITY.FORMAT_CALL_STACK, 1, 100);
+        calling_process_ := 'OMNI_TRACER_API';
         Enqueue_Event___(
             process_name_   => calling_process_,
             log_level_      => log_level_,
             payload         => message_
         );
     END Trace_Message;
+
+
+    PROCEDURE Dequeue_Array_Events(
+        subscriber_name_ IN  VARCHAR2,
+        batch_size_      IN  INTEGER,
+        wait_time_       IN  NUMBER DEFAULT DBMS_AQ.NO_WAIT,
+        messages_        OUT OMNI_TRACER_PAYLOAD_ARRAY,
+        message_ids_     OUT OMNI_TRACER_RAW_ARRAY,
+        msg_count_       OUT INTEGER)
+    IS
+        dequeue_options_     DBMS_AQ.DEQUEUE_OPTIONS_T;
+        message_props_array_ DBMS_AQ.MESSAGE_PROPERTIES_ARRAY_T;
+        payload_array_       OMNI_TRACER_PAYLOAD_ARRAY;
+        msg_id_array_        DBMS_AQ.MSGID_ARRAY_T;
+    BEGIN
+        messages_ := OMNI_TRACER_PAYLOAD_ARRAY();
+        message_ids_ := OMNI_TRACER_RAW_ARRAY();
+        msg_count_ := 0;
+
+        dequeue_options_.consumer_name := subscriber_name_;
+        dequeue_options_.wait          := wait_time_;
+        dequeue_options_.navigation    := DBMS_AQ.FIRST_MESSAGE;
+        dequeue_options_.visibility    := DBMS_AQ.IMMEDIATE;
+
+        msg_count_ := DBMS_AQ.DEQUEUE_ARRAY(
+            queue_name                => TRACER_QUEUE_NAME,
+            dequeue_options           => dequeue_options_,
+            array_size                => batch_size_,
+            message_properties_array  => message_props_array_,
+            payload_array             => payload_array_,
+            msgid_array               => msg_id_array_
+        );
+        
+        messages_ := payload_array_;
+
+        FOR i_ IN 1 .. msg_count_ LOOP
+            message_ids_.EXTEND;
+            message_ids_(i_) := msg_id_array_(i_);
+        END LOOP;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -25228 THEN
+                -- No messages available
+                messages_ := OMNI_TRACER_PAYLOAD_ARRAY();
+                message_ids_ := OMNI_TRACER_RAW_ARRAY();
+                msg_count_ := 0;
+            ELSE
+                RAISE;
+            END IF;
+    END Dequeue_Array_Events;
+
+
+    FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB
+    IS
+        output_         BLOB;
+        dest_offset_    INTEGER := 1;
+        src_offset_     INTEGER := 1;
+        lang_context_   INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+        warning_        INTEGER;
+    BEGIN
+        IF input_ IS NULL OR DBMS_LOB.GETLENGTH(input_) = 0 THEN
+            RETURN NULL;
+        END IF;
+        
+        DBMS_LOB.CREATETEMPORARY(output_, TRUE);
+        DBMS_LOB.CONVERTTOBLOB(
+            dest_lob     => output_,
+            src_clob     => input_,
+            amount       => DBMS_LOB.LOBMAXSIZE,
+            dest_offset  => dest_offset_,
+            src_offset   => src_offset_,
+            blob_csid    => DBMS_LOB.DEFAULT_CSID,
+            lang_context => lang_context_,
+            warning      => warning_
+        );
+        RETURN output_;
+    END Clob_To_Blob___;
+
 
 END OMNI_TRACER_API;
 /

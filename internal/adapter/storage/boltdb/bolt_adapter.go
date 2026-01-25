@@ -23,6 +23,7 @@ const (
 	DatabaseConfigKeyPrefix = "db:config:"
 )
 
+// BoltAdapter implements the ports.ConfigRepository
 type BoltAdapter struct {
 	dbPath string
 	db     *bolt.DB

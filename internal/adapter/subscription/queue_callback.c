@@ -4,10 +4,7 @@
 #include <string.h>
 #include "dpi.h"
 #include "queue_callback.h"
-
-// Function to notify Go channel with the given handle
-// This is a forward declaration; the actual implementation is in Go via cgo.Handle
-extern void notifyGoChannel(uintptr_t handle);
+#include "_cgo_export.h"
 
 /**
  * onQueueNotification - ODPI-C callback invoked when queue notification arrives
@@ -19,6 +16,7 @@ extern void notifyGoChannel(uintptr_t handle);
  * @param message: Contains notification metadata (queue name, event type, etc.)
  */
 static void onQueueNotification(void* context, dpiSubscrMessage* message) {
+    fprintf(stderr, "=== [C CALLBACK] onQueueNotification CALLED ===\n");
     if (context == NULL) {
         fprintf(stderr, "[OCI CALLBACK] Error: Context is NULL in onQueueNotification\n");
         return;
@@ -78,45 +76,49 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
     createParams.callbackContext = (void*)goChannelHandle; // Pass Go channel handle
 
     // 4. Set queue name and subscriber name
-    // For Multi-Consumer queues, OCI expects consumer name. 
-    // While recipientName is supported, some OCI configurations require the name to be formatted as "QUEUE:CONSUMER"
-    // We will set both for maximum compatibility.
-    char *subscriptionName = NULL;
+    // For Multi-Consumer queues, OCI expects detailed specification.
+    // We will construct "QUEUE:CONSUMER" format which is the standard fallback when explicit fields fail.
 
-    if (subscriberName != NULL && strlen(subscriberName) > 0) {
-        size_t subscriptionNameLen = strlen(queueName) + 1 + strlen(subscriberName) + 1;
-        subscriptionName = (char*)malloc(subscriptionNameLen);
-
-        if (subscriptionName == NULL) {
-            fprintf(stderr, "[C ERROR] Failed to allocate memory for subscription name\n");
-            fflush(stderr);
-            return DPI_FAILURE;
-        }
-
-        // Format: "QUEUE:CONSUMER"
-        snprintf(subscriptionName, subscriptionNameLen, "%s:%s", queueName, subscriberName);
-
-        createParams.name = subscriptionName;
-        createParams.nameLength = (uint32_t)strlen(subscriptionName);
+    size_t len = strlen(queueName) + strlen(subscriberName) + 10;
+    char *subscriptionName = (char*)malloc(len);
+    if (subscriptionName == NULL) {
+         fprintf(stderr, "[C ERROR] Failed to allocate memory for subscription name\n");
+         return DPI_FAILURE;
+    }
     
-        int result = dpiConn_subscribe(conn, &createParams, &subscr);
-        if (result != DPI_SUCCESS) {
-            dpiContext_getError(context, &errorInfo);
-            fprintf(stderr, "[C ERROR] Failed to create subscription: %s\n", errorInfo.message);
-            fflush(stderr);
-            free(subscriptionName);
-            return DPI_FAILURE;
-        }
-        *outSubscr = subscr;
+    // Format: QUEUE_NAME:CONSUMER_NAME
+    // We try WITHOUT extra quotes first, assuming the names are correct (usually uppercase).
+    // If the user passes "SCHEMA.QUEUE", then it becomes "SCHEMA.QUEUE:CONSUMER"
+    snprintf(subscriptionName, len, "%s:%s", queueName, subscriberName);
     
-        // Clean up
+    createParams.name = subscriptionName;
+    createParams.nameLength = (uint32_t)strlen(subscriptionName);
+    
+    // Explicitly NULL out recipientName to avoid confusion
+    createParams.recipientName = NULL;
+    createParams.recipientNameLength = 0;
+
+    // Enable client-initiated connection for better firewall/NAT traversal
+    // This allows the notification to use the existing connection/channel 
+    // rather than the DB connecting back to the client.
+    createParams.clientInitiated = 1;
+
+    int result = dpiConn_subscribe(conn, &createParams, &subscr);
+    
+    // Clean up allocated memory immediately after call
+    if (subscriptionName != NULL) {
         free(subscriptionName);
-        return DPI_SUCCESS;
-    } else {
-        fprintf(stderr, "[C ERROR] Subscription name or subscriber name is missing\n");
+    }
+
+    if (result != DPI_SUCCESS) {
+        dpiContext_getError(context, &errorInfo);
+        fprintf(stderr, "[C ERROR] Failed to create subscription: %s\n", errorInfo.message);
         fflush(stderr);
         return DPI_FAILURE;
     }
+    *outSubscr = subscr;
+
+    return DPI_SUCCESS;
 }
 
 /**

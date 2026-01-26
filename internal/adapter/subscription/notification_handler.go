@@ -11,6 +11,7 @@ import (
 
 //export notifyGoChannel
 func notifyGoChannel(handle C.uintptr_t) {
+	fmt.Println("[GO] notifyGoChannel Called.")
 	h := cgo.Handle(handle)
 
 	// Retrieve the Go channel from the handle
@@ -22,6 +23,6 @@ func notifyGoChannel(handle C.uintptr_t) {
 		// Notification sent successfully
 	default:
 		// Channel is full, skip sending to avoid blocking
-		fmt.Println("Channel is Full, Skipping sending to avoid blocking")
+		fmt.Println("[GO] Channel is Full, Skipping sending to avoid blocking")
 	}
 }

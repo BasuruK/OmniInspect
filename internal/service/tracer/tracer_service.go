@@ -115,7 +115,7 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 		return // return
 	}
 
-	fmt.Printf("[INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.Name)
+	fmt.Printf("[GO][INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.Name)
 
 	for i := 0; i < count; i++ {
 		var msg domain.QueueMessage
@@ -129,7 +129,7 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 }
 
 func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage, msgID []byte) {
-	fmt.Printf("[%s] [%s] %s: %s (MsgID: %x)\n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload, msgID)
+	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
 }
 
 // checkQueueDepth checks the queue depth for the given subscriber ID

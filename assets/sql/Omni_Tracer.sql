@@ -152,7 +152,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             DBMS_AQADM.SET_QUEUE_PARAMETER(
                 queue_name => TRACER_QUEUE_NAME,
                 param_name => 'SHARD_NUM',
-                param_value => 4
+                param_value => 1
             );
 
             -- Set Sticky Dequeue to ensure messages from the same shard go to the same consumer
@@ -293,7 +293,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait          := wait_time_;
         dequeue_options_.navigation    := DBMS_AQ.FIRST_MESSAGE;
-        dequeue_options_.visibility    := DBMS_AQ.IMMEDIATE;
+        dequeue_options_.visibility    := DBMS_AQ.ON_COMMIT;
 
         msg_count_ := DBMS_AQ.DEQUEUE_ARRAY(
             queue_name                => TRACER_QUEUE_NAME,

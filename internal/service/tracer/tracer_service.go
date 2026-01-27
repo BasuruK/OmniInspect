@@ -125,11 +125,11 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 			continue
 		}
 
-		ts.handleTracerMessage(msg, msgIDs[i])
+		ts.handleTracerMessage(msg)
 	}
 }
 
-func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage, msgID []byte) {
+func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
 	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
 }
 

@@ -120,8 +120,6 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
     *outCount = (uint32_t)countData->value.asInt64;
 
     result = 0;
-
-    goto cleanup;
     
     // Cleanup
     cleanup:

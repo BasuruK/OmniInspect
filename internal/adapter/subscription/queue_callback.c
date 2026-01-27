@@ -49,7 +49,7 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
     dpiErrorInfo errorInfo;
     dpiSubscr *subscr;
 
-     if (conn == NULL || context == NULL || queueName == NULL || queueName[0] == '\0' || subscriberName == NULL || subscriberName[0] == '\0' || outSubscr == NULL) {
+    if (conn == NULL || context == NULL || queueName == NULL || queueName[0] == '\0' || subscriberName == NULL || subscriberName[0] == '\0' || outSubscr == NULL) {
         fprintf(stderr, "[C ERROR] Queue name, subscriber name, conn, context or output pointer is missing\n");
         fflush(stderr);
         return DPI_FAILURE;
@@ -63,7 +63,7 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
         return DPI_FAILURE;
     }
 
-    // 2. Configure subscribtion for AQ namespace
+    // 2. Configure subscription for AQ namespace
     createParams.subscrNamespace = DPI_SUBSCR_NAMESPACE_AQ;
     createParams.protocol = DPI_SUBSCR_PROTO_CALLBACK; // Callback protocol
 
@@ -105,9 +105,8 @@ int RegisterOracleSubscription(dpiConn* conn, dpiContext* context, const char* q
     int result = dpiConn_subscribe(conn, &createParams, &subscr);
     
     // Clean up allocated memory immediately after call
-    if (subscriptionName != NULL) {
-        free(subscriptionName);
-    }
+    free(subscriptionName);
+
 
     if (result != DPI_SUCCESS) {
         dpiContext_getError(context, &errorInfo);

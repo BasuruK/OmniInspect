@@ -67,7 +67,6 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		C.dpiContext_getError(oa.Context, &errInfo)
 
 		if errInfo.code == 25228 { // DPI-25228: No messages available
-			fmt.Println("[GO] no messages available DPI-25228")
 			return []string{}, [][]byte{}, 0, nil
 		}
 

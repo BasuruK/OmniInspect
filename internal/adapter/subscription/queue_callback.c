@@ -16,7 +16,6 @@
  * @param message: Contains notification metadata (queue name, event type, etc.)
  */
 static void onQueueNotification(void* context, dpiSubscrMessage* message) {
-    fprintf(stderr, "=== [C CALLBACK] onQueueNotification CALLED ===\n");
     if (context == NULL) {
         fprintf(stderr, "[OCI CALLBACK] Error: Context is NULL in onQueueNotification\n");
         return;

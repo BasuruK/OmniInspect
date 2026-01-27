@@ -138,7 +138,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         INTO queue_exists_
         FROM user_queues
         WHERE name = TRACER_QUEUE_NAME;
-        
+
         IF queue_exists_ = 0 THEN
             -- 1. Create the Sharded Queue
             DBMS_AQADM.CREATE_SHARDED_QUEUE (
@@ -146,17 +146,12 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                 multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
                 queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
             );
-            -- 2. Set Shard count
-            -- Default to 4 shards, can be adjusted based on expected load
-            -- Note: TODO: find the optimal count without slowing down the db
+            -- 2. Set Shard count to 4. This can be adjusted based on expected load.
             DBMS_AQADM.SET_QUEUE_PARAMETER(
                 queue_name => TRACER_QUEUE_NAME,
                 param_name => 'SHARD_NUM',
-                param_value => 1
+                param_value => 4
             );
-
-            -- Set Sticky Dequeue to ensure messages from the same shard go to the same consumer
-            DBMS_AQADM.SET_QUEUE_PARAMETER(TRACER_QUEUE_NAME, 'STICKY_DEQUEUE', 1);
 
             -- 3. Start the Queue with explicit enqueue/dequeue enabled
             DBMS_AQADM.START_QUEUE (
@@ -164,15 +159,16 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                 enqueue    => TRUE,
                 dequeue    => TRUE
             );
-
-            COMMIT;
-        END IF;  
+        END IF;
+        
+        COMMIT;
     EXCEPTION
     WHEN OTHERS THEN
         IF SQLCODE = -24001 THEN                
-        -- Queue already exists (race condition), ignore
-            NULL;
+            -- Queue already exists (race condition), ignore
+            COMMIT; -- Must commit autonomous transaction even on expected exception
         ELSE
+            ROLLBACK;
             RAISE;
         END IF;
     END Initialize;
@@ -196,8 +192,9 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     EXCEPTION
     WHEN OTHERS THEN
         IF SQLCODE = -24034 THEN -- Subscriber already exists
-            NULL;
+            COMMIT; -- Must commit autonomous transaction even on expected exception
         ELSE
+            ROLLBACK;
             RAISE;
         END IF;
     END Register_Subscriber;
@@ -216,7 +213,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         temp_blob_          BLOB; 
         payload_object_     OMNI_TRACER_PAYLOAD_TYPE;        
     BEGIN
-        enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message is visible immediately, impervious to rollbacks, and runs an internal commit.
+        enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message visible immediately without waiting for commit
 
         message_ := JSON_OBJECT_T();
         message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
@@ -247,7 +244,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     EXCEPTION
         WHEN OTHERS THEN
             IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
-            DBMS_LOB.FREETEMPORARY(temp_blob_);
+                DBMS_LOB.FREETEMPORARY(temp_blob_);
             END IF;
 
             IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
@@ -293,7 +290,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         dequeue_options_.consumer_name := subscriber_name_;
         dequeue_options_.wait          := wait_time_;
         dequeue_options_.navigation    := DBMS_AQ.FIRST_MESSAGE;
-        dequeue_options_.visibility    := DBMS_AQ.ON_COMMIT;
+        dequeue_options_.visibility    := DBMS_AQ.IMMEDIATE;
 
         msg_count_ := DBMS_AQ.DEQUEUE_ARRAY(
             queue_name                => TRACER_QUEUE_NAME,
@@ -310,7 +307,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             message_ids_.EXTEND;
             message_ids_(i_) := msg_id_array_(i_);
         END LOOP;
-
     EXCEPTION
         WHEN OTHERS THEN
             IF SQLCODE = -25228 THEN

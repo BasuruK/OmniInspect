@@ -11,7 +11,6 @@ import (
 
 //export notifyGoChannel
 func notifyGoChannel(handle C.uintptr_t) {
-	fmt.Println("[GO] notifyGoChannel Called.")
 	h := cgo.Handle(handle)
 
 	// Retrieve the Go channel from the handle

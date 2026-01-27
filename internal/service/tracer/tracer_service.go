@@ -41,8 +41,12 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
-	// Create a notification channel
-	notifyChan := make(chan struct{}, 10) // Buffered channel to avoid blocking and handle bursts
+	/* Create a notification channel
+	The channel will receive notifications from the database when new messages arrive
+	Buffer size determines how many notifications can be queued before blocking
+	i.e: make(chan struct{}, 100), means it can hold 100 notifications
+	*/
+	notifyChan := make(chan struct{}, 100) // Buffered channel to handle notification bursts
 
 	// Subscribe to the queue
 	if err := ts.subscriptionMgr.Subscribe(*subscriber, schema, notifyChan); err != nil {
@@ -51,8 +55,9 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 
 	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
 
+	// Initial processing to handle any existing messages
+	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
 	go func() {
-		fmt.Println("queue readiness check!")
 		ts.processBatch(subscriber)
 	}()
 
@@ -74,13 +79,11 @@ func (ts *TracerService) eventLoop(ctx context.Context, notifyChan chan struct{}
 			return
 		case <-notifyChan:
 			// Process the notification
-			fmt.Println("[GO] Received notification for subscriber:", subscriber.Name)
 			ts.processBatch(subscriber)
 		case <-ticker.C:
 			// Periodic check (fallback polling)
 			queueDepth := ts.checkQueueDepth(subscriber)
 			if queueDepth > 0 {
-				fmt.Printf("[GO] [Periodic check] Processing %d messages for subscriber: %s\n", queueDepth, subscriber.Name)
 				ts.processBatch(subscriber)
 			}
 		}
@@ -114,8 +117,6 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 	if count == 0 {
 		return // return
 	}
-
-	fmt.Printf("[GO][INFO] Processing batch of %d messages for subscriber: %s\n", count, subscriber.Name)
 
 	for i := 0; i < count; i++ {
 		var msg domain.QueueMessage

@@ -1,6 +1,8 @@
 cells:
   - kind: 2
-    value: "BEGIN\r
+    value: "SET SERVEROUTPUT ON;\r
+
+      BEGIN\r
 
       \    OMNI_TRACER_API.INITIALIZE;\r
 
@@ -11,15 +13,18 @@ cells:
       /"
     languageId: oracle-sql
   - kind: 2
-    value: |-
+    value: >-
       BEGIN
-          OMNI_TRACER_API.Trace_Message('Hurah!!! ', 'INFO');
+          FOR i IN 1..100 LOOP
+              OMNI_TRACER_API.Trace_Message('HI Trace Message No ' || i, 'INFO');
+          END LOOP;
           --COMMIT;  -- Important!
       END;
+
       /
     languageId: oracle-sql
   - kind: 2
-    value: >
+    value: >-
       SET SERVEROUTPUT ON
 
       DECLARE
@@ -28,9 +33,9 @@ cells:
           v_count     INTEGER;
       BEGIN
           OMNI_TRACER_API.Dequeue_Array_Events(
-              subscriber_name_ => 'SUB_75DE273A_EF38_40F7_AA1D_492ADC4B90E3',
-              batch_size_      => 50,
-              wait_time_       => DBMS_AQ.NO_WAIT,
+              subscriber_name_ => 'SUB_825418F0_B22F_4F79_A4F4_CEDDF614CB39',
+              batch_size_      => 1000,
+              wait_time_       => 0,
               messages_        => v_messages,
               message_ids_     => v_msg_ids,
               msg_count_       => v_count
@@ -50,15 +55,29 @@ cells:
   - kind: 2
     value: |-
       BEGIN
-          -- Stop the queue before dropping
-          DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
-          -- Drop the queue
-          DBMS_AQADM.DROP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
-          -- Drop the queue table if needed
+
           DBMS_AQADM.DROP_QUEUE_TABLE(
               queue_table => 'OMNI_TRACER_QUEUE',
               FORCE       => TRUE
           );
+          -- Stop the queue before dropping
+          DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
+
+          DBMS_AQADM.DROP_QUEUE_TABLE(
+              queue_table => 'OMNI_TRACER_QUEUE',
+              FORCE       => TRUE
+          );
+          -- Drop the queue
+          DBMS_AQADM.DROP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
+          -- Drop the queue table if needed
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      BEGIN
+          DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
+          DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
       END;
       /
     languageId: oracle-sql
@@ -173,6 +192,24 @@ cells:
       FROM user_queues\r
 
       WHERE name = 'OMNI_TRACER_QUEUE';"
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT CASE 
+              WHEN editions_enabled = 'Y' THEN 'TRUE' 
+              ELSE 'FALSE' 
+          END
+      FROM user_users
+      WHERE username = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT *
+      FROM user_users
+      WHERE username = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
+    languageId: oracle-sql
+  - kind: 2
+    value: SELECT name, retention FROM all_queues WHERE name = 'OMNI_TRACER_QUEUE';
     languageId: oracle-sql
   - kind: 2
     value: ""

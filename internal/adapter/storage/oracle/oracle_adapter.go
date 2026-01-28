@@ -220,7 +220,8 @@ func (oa *OracleAdapter) Connect() error {
 		return err
 	}
 	// 2. Create the connection string
-	connectionString := fmt.Sprintf("%s:%s/%s", oa.config.Host, fmt.Sprint(oa.config.Port), oa.config.Database)
+	//connectionString := fmt.Sprintf("%s:%s/%s", oa.config.Host, fmt.Sprint(oa.config.Port), oa.config.Database)
+	connectionString := fmt.Sprintf("(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=%s)(PORT=%d))(CONNECT_DATA=(SERVICE_NAME=%s))(ENABLE=BROKEN))", oa.config.Host, oa.config.Port, oa.config.Database)
 	// 3. Create the connection
 	if err := oa.CreateConnection(oa.config.Username, oa.config.Password, connectionString); err != nil {
 		// Cleanup context if connection fails

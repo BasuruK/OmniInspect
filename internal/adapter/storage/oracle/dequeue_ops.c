@@ -51,32 +51,41 @@ static char* ReadLobContent(dpiLob* lob, uint64_t* outLength) {
 }
 
 /**
- * ExecuteDequeuProc - Executes the dequeue PL/SQL procedure
+ * ExecuteDequeuProc - Executes the dequeue PL/SQL procedure with a wait time
  * 
  * @param conn: Pointer to the dpiConn representing the Oracle connection
+ * @param context: Pointer to the dpiContext for error handling
  * @param subscriberName: Name of the subscriber (queue consumer)
  * @param batchSize: Number of messages to dequeue
+ * @param waitTime: Wait time in seconds (-1 = wait indefinitely, 0 = no wait, >0 = wait time in seconds)
  * @param outPayloadVar: Output variable for the payload collection
  * @param outRawVar: Output variable for the raw ID collection
  * @param outCount: Output parameter to receive the actual number of dequeued messages
  * @return: 0 on success, -1 on failure
  */
-static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_t batchSize, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
+static int ExecuteDequeueProc(dpiConn* conn, dpiContext* context, const char* subscriberName, uint32_t batchSize, int32_t waitTime, dpiVar* outPayloadVar, dpiVar* outRawVar, uint32_t* outCount) {
     dpiStmt* stmt = NULL;
     dpiVar* subVar = NULL;
     dpiVar* batchVar = NULL;
+    dpiVar* waitVar = NULL;
     dpiVar* countVar = NULL;
     dpiData* subData = NULL;
     dpiData* batchData = NULL;
+    dpiData* waitData = NULL;
     dpiData* countData = NULL;
     uint32_t subNameLen = (uint32_t)strlen(subscriberName);
     int result = -1;
 
-    const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, 0, :3, :4, :5); END;";
+    const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, :3, :4, :5, :6); END;";
     
-    if (dpiConn_prepareStmt(conn, 0, sql, strlen(sql), NULL, 0, &stmt) != DPI_SUCCESS) goto cleanup;
+    if (dpiConn_prepareStmt(conn, 0, sql, strlen(sql), NULL, 0, &stmt) != DPI_SUCCESS) {
+        dpiErrorInfo errorInfo;
+        dpiContext_getError(context, &errorInfo);
+        fprintf(stderr, "[C ERROR] Failed to prepare statement: %s\n", errorInfo.message);
+        goto cleanup;
+    }
     
-    // Subscriber name parameter
+    // Subscriber name parameter (:1)
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_VARCHAR, DPI_NATIVE_TYPE_BYTES, 1, subNameLen, 1, 0, NULL, &subVar, &subData) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to set new subvar\n");
         goto cleanup;
@@ -88,7 +97,7 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
     }
     if (dpiStmt_bindByPos(stmt, 1, subVar) != DPI_SUCCESS) goto cleanup;
     
-    // Batch size parameter
+    // Batch size parameter (:2)
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &batchVar, &batchData) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to bind batch size parameter\n");
         goto cleanup;
@@ -97,28 +106,44 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
     batchData->isNull = 0;
     if (dpiStmt_bindByPos(stmt, 2, batchVar) != DPI_SUCCESS) goto cleanup;
     
-    // Output payload parameter
-    if (dpiStmt_bindByPos(stmt, 3, outPayloadVar) != DPI_SUCCESS) goto cleanup;
+    // Wait time parameter (:3)
+    if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &waitVar, &waitData) != DPI_SUCCESS) {
+        fprintf(stderr, "[C ERROR] Failed to bind wait time parameter\n");
+        goto cleanup;
+    }
+    waitData->value.asInt64 = (int64_t)waitTime;
+    waitData->isNull = 0;
+    if (dpiStmt_bindByPos(stmt, 3, waitVar) != DPI_SUCCESS) goto cleanup;
     
-    // Output raw parameter
-    if (dpiStmt_bindByPos(stmt, 4, outRawVar) != DPI_SUCCESS) goto cleanup;
+    // Output payload parameter (:4)
+    if (dpiStmt_bindByPos(stmt, 4, outPayloadVar) != DPI_SUCCESS) goto cleanup;
     
-    // Output count parameter
+    // Output raw parameter (:5)
+    if (dpiStmt_bindByPos(stmt, 5, outRawVar) != DPI_SUCCESS) goto cleanup;
+    
+    // Output count parameter (:6)
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &countVar, &countData) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to bind count parameter\n");
         goto cleanup;
     }
-    if (dpiStmt_bindByPos(stmt, 5, countVar) != DPI_SUCCESS) goto cleanup;
+    if (dpiStmt_bindByPos(stmt, 6, countVar) != DPI_SUCCESS) goto cleanup;
 
     // Execute
     if (dpiStmt_execute(stmt, 0,0) != DPI_SUCCESS) {
-        fprintf(stderr, "[C ERROR] Failed to execute statement\n");
+        dpiErrorInfo errorInfo;
+        dpiContext_getError(context, &errorInfo);
+        // ORA-25228: Timeout or end of fetch reached
+        if (errorInfo.code == 25228) {
+            *outCount = 0;
+            result = 0;
+            goto cleanup;
+        }
+        fprintf(stderr, "[C ERROR] Failed to execute statement %s\n", errorInfo.message);
         goto cleanup;
     }
 
     // Get count
     *outCount = (uint32_t)countData->value.asInt64;
-
     result = 0;
     
     // Cleanup
@@ -127,24 +152,27 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
         if (subVar) dpiVar_release(subVar);
         if (batchVar) dpiVar_release(batchVar);
         if (countVar) dpiVar_release(countVar);
+        if (waitVar) dpiVar_release(waitVar);
+        // TODO: check if outPayloadVar and outRawVar need to be released here or by caller
 
     return result;
 }
 
 /**
- * DequeueManyAndExtract - Dequeues messages and extracts their content and IDs
+ * DequeueManyAndExtract - Dequeues messages and extracts their content and IDs with a wait time
  * 
  * @param conn: Pointer to the dpiConn representing the Oracle connection
+ * @param context: Pointer to the dpiContext for error handling
  * @param schemaName: Schema name where the queue resides
  * @param subscriberName: Name of the subscriber (queue consumer)
  * @param batchSize: Number of messages to dequeue
+ * @param waitTime: Wait time in seconds (-1 = wait indefinitely, 0 = no wait, >0 = wait time in seconds)
  * @param outMessages: Output parameter to receive an array of TraceMessage structures
  * @param outIds: Output parameter to receive an array of TraceId structures
  * @param actualCount: Output parameter to receive the actual number of dequeued messages
  * @return: 0 on success, -1 on failure
  */
-int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* subscriberName, uint32_t batchSize, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount) {
-
+int DequeueManyAndExtract(dpiConn* conn, dpiContext* context, const char* schemaName, const char* subscriberName, uint32_t batchSize, int32_t waitTime, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount) {
     dpiObjectType *payloadType = NULL, *rawType = NULL, *objType = NULL;
     dpiObjectAttr *jsonAttr = NULL;
     dpiVar *payloadVar = NULL, *rawVar = NULL;
@@ -155,6 +183,11 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     const char* payloadTypeName = "OMNI_TRACER_PAYLOAD_TYPE";
 
     int result = -1;
+    uint32_t outIdx = 0;
+
+    *outMessages = NULL;
+    *outIds = NULL;
+    *actualCount = 0;
 
     // Load Type
     if (dpiConn_getObjectType(conn, payloadArrayName, strlen(payloadArrayName), &payloadType) != DPI_SUCCESS) goto cleanup;
@@ -168,23 +201,26 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, payloadType, &payloadVar, &payloadData) != DPI_SUCCESS) goto cleanup;
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, rawType, &rawVar, &rawData) != DPI_SUCCESS) goto cleanup;
 
-    // Execute Dequeue Procedure in PLSQL
-    if (ExecuteDequeueProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != DPI_SUCCESS) {
+    // Execute Blocking Dequeue Procedure in PLSQL
+    if (ExecuteDequeueProc(conn, context, subscriberName, batchSize, waitTime, payloadVar, rawVar, actualCount) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to execute dequeue procedure\n");
         goto cleanup;
     }
 
-    // Allocate Go-C structs
+    // If no messages dequeued, return success with zero count
     if (*actualCount == 0) {
         result = 0;
         goto cleanup;
     }
 
     *outMessages = (TraceMessage*)calloc(*actualCount, sizeof(TraceMessage));
-    if (!*outMessages) goto cleanup;
+    if (!*outMessages) {
+        fprintf(stderr, "[C ERROR] Memory allocation failed for Messages\n");
+        goto cleanup;
+    }
     *outIds = (TraceId*)calloc(*actualCount, sizeof(TraceId));
     if (!*outIds) {
-        fprintf(stderr, "[C] Memory allocation failed for outIds\n");
+        fprintf(stderr, "[C ERROR] Memory allocation failed for IDs\n");
         free(*outMessages);
         *outMessages = NULL;
         goto cleanup;
@@ -196,13 +232,13 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
 
     int32_t idx = 0;
     int exists = 0;
-    uint32_t outIdx = 0;
 
     if (dpiObject_getFirstIndex(payloadColl, &idx, &exists) != DPI_SUCCESS) goto cleanup;
 
     while (exists && outIdx < *actualCount) {
         dpiData element;
         if (dpiObject_getElementValueByIndex(payloadColl, idx, DPI_NATIVE_TYPE_OBJECT, &element) != DPI_SUCCESS) goto cleanup;
+        
         if (!element.isNull) {
             dpiData lobVal;
             dpiObject *msgObj = element.value.asObject;
@@ -260,6 +296,7 @@ cleanup:
         }
         *actualCount = 0;
     }
+
     if (payloadType) dpiObjectType_release(payloadType);
     if (rawType) dpiObjectType_release(rawType);
     if (objType) dpiObjectType_release(objType);

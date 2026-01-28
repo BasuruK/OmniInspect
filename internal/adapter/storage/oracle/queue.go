@@ -62,7 +62,7 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	cSchemaName := C.CString(strings.ToUpper(oa.config.Username))
 	defer C.free(unsafe.Pointer(cSchemaName))
 
-	if C.DequeueManyAndExtract(oa.Connection, cSchemaName, cSubscriberName, C.uint32_t(subscriber.BatchSize), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
+	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSchemaName, cSubscriberName, C.uint32_t(subscriber.BatchSize), C.int32_t(subscriber.WaitTime), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 

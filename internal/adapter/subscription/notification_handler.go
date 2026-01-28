@@ -5,7 +5,6 @@ package subscription
 */
 import "C"
 import (
-	"fmt"
 	"runtime/cgo"
 )
 
@@ -22,6 +21,5 @@ func notifyGoChannel(handle C.uintptr_t) {
 		// Notification sent successfully
 	default:
 		// Channel is full, skip sending to avoid blocking
-		fmt.Println("Channel is Full, Skipping sending to avoid blocking")
 	}
 }

@@ -72,10 +72,10 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
     uint32_t subNameLen = (uint32_t)strlen(subscriberName);
     int result = -1;
 
-    const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, 1, :3, :4, :5); END;";
-
+    const char* sql = "BEGIN OMNI_TRACER_API.Dequeue_Array_Events(:1, :2, 0, :3, :4, :5); END;";
+    
     if (dpiConn_prepareStmt(conn, 0, sql, strlen(sql), NULL, 0, &stmt) != DPI_SUCCESS) goto cleanup;
-
+    
     // Subscriber name parameter
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_VARCHAR, DPI_NATIVE_TYPE_BYTES, 1, subNameLen, 1, 0, NULL, &subVar, &subData) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to set new subvar\n");
@@ -96,13 +96,13 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
     batchData->value.asInt64 = (int64_t)batchSize;
     batchData->isNull = 0;
     if (dpiStmt_bindByPos(stmt, 2, batchVar) != DPI_SUCCESS) goto cleanup;
-
+    
     // Output payload parameter
     if (dpiStmt_bindByPos(stmt, 3, outPayloadVar) != DPI_SUCCESS) goto cleanup;
-
+    
     // Output raw parameter
     if (dpiStmt_bindByPos(stmt, 4, outRawVar) != DPI_SUCCESS) goto cleanup;
-
+    
     // Output count parameter
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_NUMBER, DPI_NATIVE_TYPE_INT64, 1, 0, 0, 0, NULL, &countVar, &countData) != DPI_SUCCESS) {
         fprintf(stderr, "[C ERROR] Failed to bind count parameter\n");
@@ -118,9 +118,9 @@ static int ExecuteDequeueProc(dpiConn* conn, const char* subscriberName, uint32_
 
     // Get count
     *outCount = (uint32_t)countData->value.asInt64;
-    result = 0;
-    goto cleanup;
 
+    result = 0;
+    
     // Cleanup
     cleanup:
         if (stmt) dpiStmt_release(stmt);
@@ -169,7 +169,10 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     if (dpiConn_newVar(conn, DPI_ORACLE_TYPE_OBJECT, DPI_NATIVE_TYPE_OBJECT, 1, 0, 0, 0, rawType, &rawVar, &rawData) != DPI_SUCCESS) goto cleanup;
 
     // Execute Dequeue Procedure in PLSQL
-    if (ExecuteDequeueProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != 0) goto cleanup;
+    if (ExecuteDequeueProc(conn, subscriberName, batchSize, payloadVar, rawVar, actualCount) != DPI_SUCCESS) {
+        fprintf(stderr, "[C ERROR] Failed to execute dequeue procedure\n");
+        goto cleanup;
+    }
 
     // Allocate Go-C structs
     if (*actualCount == 0) {
@@ -181,6 +184,7 @@ int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* sub
     if (!*outMessages) goto cleanup;
     *outIds = (TraceId*)calloc(*actualCount, sizeof(TraceId));
     if (!*outIds) {
+        fprintf(stderr, "[C] Memory allocation failed for outIds\n");
         free(*outMessages);
         *outMessages = NULL;
         goto cleanup;

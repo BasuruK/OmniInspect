@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 )
 
 // Service: Manages package deployments
@@ -62,32 +61,68 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	}()
 
 	// Start the goroutine to listen for notifications
-	go ts.eventLoop(ctx, notifyChan, subscriber)
+	go ts.blockingConsumerLoop(ctx, subscriber)
 
 	return nil
 }
 
-func (ts *TracerService) eventLoop(ctx context.Context, notifyChan chan struct{}, subscriber *domain.Subscriber) {
-	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling. TODO: Take this
-	defer ticker.Stop()
-
+func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
 	for {
+		// Check if context is cancelled before blocking
 		select {
 		case <-ctx.Done():
-			fmt.Println("Event listener stopped.")
-			ts.cleanUp(subscriber, notifyChan)
+			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name)
 			return
-		case <-notifyChan:
-			// Process the notification
-			ts.processBatch(subscriber)
-		case <-ticker.C:
-			// Periodic check (fallback polling)
-			queueDepth := ts.checkQueueDepth(subscriber)
-			if queueDepth > 0 {
-				ts.processBatch(subscriber)
+		default:
+			// Continue to blocking wait
+		}
+
+		// Blocking wait for notificaiton or context cancellation
+		// Oracle will hold this goroutine here until a message is enqueued, and immidiately return
+		err := ts.processBatch(subscriber)
+		if err != nil {
+			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				continue
 			}
 		}
 	}
+}
+
+// processBatch processes a batch of tracer data for the given subscriber ID
+func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
+	// Lock for processing to avoid concurrent dequeues
+	ts.processMu.Lock()
+	defer ts.processMu.Unlock()
+
+	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
+	if err != nil {
+		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
+		return err
+	}
+
+	if count == 0 {
+		return nil // return
+	}
+
+	for i := 0; i < count; i++ {
+		var msg domain.QueueMessage
+		if err := json.Unmarshal([]byte(messages[i]), &msg); err != nil {
+			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
+			continue
+		}
+
+		ts.handleTracerMessage(msg)
+	}
+	return nil
+}
+
+// handleTracerMessage processes a single tracer message
+func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
+	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
 }
 
 // cleanUp handles cleanup operations when stopping the event listener
@@ -100,37 +135,6 @@ func (ts *TracerService) cleanUp(subscriber *domain.Subscriber, notifyChan chan 
 		}
 	}
 	close(notifyChan)
-}
-
-// processBatch processes a batch of tracer data for the given subscriber ID
-func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
-	// Lock for processing to avoid concurrent dequeues
-	ts.processMu.Lock()
-	defer ts.processMu.Unlock()
-
-	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
-	if err != nil {
-		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
-		return
-	}
-
-	if count == 0 {
-		return // return
-	}
-
-	for i := 0; i < count; i++ {
-		var msg domain.QueueMessage
-		if err := json.Unmarshal([]byte(messages[i]), &msg); err != nil {
-			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
-			continue
-		}
-
-		ts.handleTracerMessage(msg)
-	}
-}
-
-func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
-	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
 }
 
 // checkQueueDepth checks the queue depth for the given subscriber ID

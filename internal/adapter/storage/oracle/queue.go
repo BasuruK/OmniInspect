@@ -12,7 +12,6 @@ import "C"
 import (
 	"OmniView/internal/core/domain"
 	"fmt"
-	"strings"
 	"unsafe"
 )
 
@@ -59,10 +58,7 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	cSubscriberName := C.CString(subscriber.Name)
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
-	cSchemaName := C.CString(strings.ToUpper(oa.config.Username))
-	defer C.free(unsafe.Pointer(cSchemaName))
-
-	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSchemaName, cSubscriberName, C.uint32_t(subscriber.BatchSize), C.int32_t(subscriber.WaitTime), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
+	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSubscriberName, C.uint32_t(subscriber.BatchSize), C.int32_t(subscriber.WaitTime), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 
@@ -70,15 +66,15 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 			return []string{}, [][]byte{}, 0, nil
 		}
 
-		return nil, nil, 0, fmt.Errorf("failed to dequeue messages: %s", C.GoString(errInfo.message))
+		return nil, nil, 0, fmt.Errorf("failed to dequeue messages: %s (code: %d)", C.GoString(errInfo.message), errInfo.code)
 	}
-	defer C.FreeDequeueResults(cMessages, cIds, cCount)
-
 	count := int(cCount)
 
 	if count == 0 {
 		return []string{}, [][]byte{}, 0, nil
 	}
+
+	defer C.FreeDequeueResults(cMessages, cIds, cCount)
 
 	messages := make([]string, count)
 	msgIds := make([][]byte, count)

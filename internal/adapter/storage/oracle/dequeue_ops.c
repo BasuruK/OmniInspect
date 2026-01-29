@@ -172,7 +172,7 @@ static int ExecuteDequeueProc(dpiConn* conn, dpiContext* context, const char* su
  * @param actualCount: Output parameter to receive the actual number of dequeued messages
  * @return: 0 on success, -1 on failure
  */
-int DequeueManyAndExtract(dpiConn* conn, dpiContext* context, const char* schemaName, const char* subscriberName, uint32_t batchSize, int32_t waitTime, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount) {
+int DequeueManyAndExtract(dpiConn* conn, dpiContext* context, const char* subscriberName, uint32_t batchSize, int32_t waitTime, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount) {
     dpiObjectType *payloadType = NULL, *rawType = NULL, *objType = NULL;
     dpiObjectAttr *jsonAttr = NULL;
     dpiVar *payloadVar = NULL, *rawVar = NULL;

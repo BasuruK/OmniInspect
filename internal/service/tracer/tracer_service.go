@@ -20,17 +20,11 @@ type TracerService struct {
 }
 
 // Constructor: NewTracerService Constructor for TracerService
-func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) (*TracerService, error) {
-	rawConn := db.GetRawConnection()
-	rawCtx := db.GetRawContext()
-	if rawConn == nil || rawCtx == nil {
-		return nil, fmt.Errorf("database connection or context is nil during TracerService initialization")
-	}
-
+func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
 	return &TracerService{
 		db:   db,
 		bolt: bolt,
-	}, nil
+	}
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {

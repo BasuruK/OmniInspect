@@ -100,7 +100,7 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
 
     -- Core Methods
     PROCEDURE Initialize;
-    PROCEDURE Trace_Message(message_ IN VARCHAR2, log_level_ IN VARCHAR2 DEFAULT 'INFO');
+    PROCEDURE Trace_Message(message_ IN CLOB, log_level_ IN VARCHAR2 DEFAULT 'INFO');
     PROCEDURE Dequeue_Array_Events(
         subscriber_name_ IN  VARCHAR2,
         batch_size_      IN  INTEGER,
@@ -256,7 +256,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     
 
     PROCEDURE Trace_Message (
-        message_    IN VARCHAR2,
+        message_    IN CLOB,
         log_level_  IN VARCHAR2 DEFAULT 'INFO') 
     IS
         calling_process_ VARCHAR2(100);

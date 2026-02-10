@@ -7,6 +7,10 @@ import (
 	"os"
 )
 
+// Version is set at build time via -ldflags "-X OmniView/internal/app.Version=vX.Y.Z"
+// When not set (e.g. during local development), it defaults to "dev".
+var Version = "dev"
+
 // App represents the main application structure
 type App struct {
 	Name    string // Name of the application
@@ -19,7 +23,7 @@ type App struct {
 // New creates a new instance of the application
 func New(config ports.ConfigRepository, db ports.DatabaseRepository) *App {
 	return &App{
-		Version: "0.1.0",
+		Version: Version,
 		Author:  "Basuru Balasuriya",
 		Name:    "OmniView",
 		db:      db,

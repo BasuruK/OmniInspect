@@ -160,7 +160,12 @@ func fetchLatestRelease() (*githubRelease, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", gitHubAPIBase, GitHubRepo)
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "OmniView-Updater")
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}

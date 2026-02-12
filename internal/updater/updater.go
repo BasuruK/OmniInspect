@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -96,6 +98,13 @@ func CheckAndUpdate(currentVersion string) error {
 	}
 	defer os.Remove(tmpFile) // Clean up the temp archive
 
+	// Verify checksum before extracting
+	fmt.Println("[updater] Verifying checksum...")
+	if err := verifyChecksum(tmpFile, release, assetName); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
+	}
+	fmt.Println("[updater] Checksum verified successfully.")
+
 	// Resolve our own executable path
 	selfPath, err := os.Executable()
 	if err != nil {
@@ -118,6 +127,9 @@ func CheckAndUpdate(currentVersion string) error {
 		fmt.Printf("[updater] Warning: could not write RELEASE_NOTES.md: %v\n", err)
 		// Non-fatal
 	}
+
+	// Clean up temp archive before restart (defers won't run after os.Exit)
+	os.Remove(tmpFile)
 
 	fmt.Println("[updater] Update complete. Restarting...")
 
@@ -208,8 +220,8 @@ func parseVersion(v string) [3]int {
 //
 //	omniview-{os}-{arch}-{tag}.tar.gz (macOS)
 func expectedAssetName(tag string) string {
-	osName := runtime.GOOS   // "windows" or "darwin"
-	arch := runtime.GOARCH   // "amd64" or "arm64"
+	osName := runtime.GOOS // "windows" or "darwin"
+	arch := runtime.GOARCH // "amd64" or "arm64"
 
 	if osName == "windows" {
 		return fmt.Sprintf("omniview-%s-%s-%s.zip", osName, arch, tag)
@@ -242,6 +254,159 @@ func downloadToTemp(url string) (string, error) {
 	}
 
 	return tmpFile.Name(), nil
+}
+
+// verifyChecksum verifies the SHA256 checksum of the downloaded file.
+// It looks for a checksum asset in the release (e.g., assetName+".sha256" or "checksums.txt")
+// and compares the computed hash against the expected value.
+func verifyChecksum(tmpFile string, release *githubRelease, assetName string) error {
+	// Try to find a checksum file in the release assets
+	// Common patterns: <asset>.sha256, checksums.txt, SHA256SUMS, etc.
+	var checksumURL string
+	var checksumAssetName string
+
+	// Strategy 1: Look for assetName + ".sha256"
+	expectedChecksumName := assetName + ".sha256"
+	for _, asset := range release.Assets {
+		if asset.Name == expectedChecksumName {
+			checksumURL = asset.BrowserDownloadURL
+			checksumAssetName = asset.Name
+			break
+		}
+	}
+
+	// Strategy 2: Look for common checksum file names
+	if checksumURL == "" {
+		checksumFileNames := []string{"checksums.txt", "SHA256SUMS", "checksums.sha256"}
+		for _, name := range checksumFileNames {
+			for _, asset := range release.Assets {
+				if asset.Name == name {
+					checksumURL = asset.BrowserDownloadURL
+					checksumAssetName = asset.Name
+					break
+				}
+			}
+			if checksumURL != "" {
+				break
+			}
+		}
+	}
+
+	if checksumURL == "" {
+		return fmt.Errorf("no checksum file found in release assets (expected %s or checksums.txt)", expectedChecksumName)
+	}
+
+	// Download the checksum file
+	checksumData, err := downloadChecksumFile(checksumURL)
+	if err != nil {
+		return fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
+	}
+
+	// Parse the expected checksum from the downloaded data
+	expectedChecksum, err := parseChecksum(checksumData, assetName)
+	if err != nil {
+		return fmt.Errorf("failed to parse checksum for %s: %w", assetName, err)
+	}
+
+	// Compute the SHA256 of the downloaded archive
+	computedChecksum, err := computeSHA256(tmpFile)
+	if err != nil {
+		return fmt.Errorf("failed to compute checksum of downloaded file: %w", err)
+	}
+
+	// Compare checksums (case-insensitive)
+	if !strings.EqualFold(computedChecksum, expectedChecksum) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, computedChecksum)
+	}
+
+	return nil
+}
+
+// downloadChecksumFile downloads the checksum file and returns its content as a string.
+func downloadChecksumFile(url string) (string, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download returned status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+// parseChecksum extracts the checksum for the given asset from checksum file content.
+// Supports formats like:
+//   - "abc123..."  (single checksum, raw)
+//   - "abc123... *filename" (sha256sum format)
+//   - "abc123...  filename" (sha256sum format with multiple spaces)
+func parseChecksum(checksumData, assetName string) (string, error) {
+	lines := strings.Split(checksumData, "\n")
+
+	// If there's only one line and it looks like a raw checksum, use it
+	if len(lines) == 1 || (len(lines) == 2 && strings.TrimSpace(lines[1]) == "") {
+		checksum := strings.TrimSpace(lines[0])
+		// Check if it's a valid hex string (64 chars for SHA256)
+		if len(checksum) == 64 && isValidHex(checksum) {
+			return checksum, nil
+		}
+	}
+
+	// Otherwise, parse as sha256sum format: "<checksum> <filename>"
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Split on whitespace
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		checksum := fields[0]
+		// The filename might be prefixed with * (binary mode indicator)
+		filename := strings.TrimPrefix(fields[len(fields)-1], "*")
+
+		if filename == assetName {
+			if len(checksum) == 64 && isValidHex(checksum) {
+				return checksum, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("checksum for %s not found in checksum file", assetName)
+}
+
+// isValidHex checks if a string contains only valid hexadecimal characters.
+func isValidHex(s string) bool {
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
+
+// computeSHA256 computes the SHA256 hash of the file at the given path.
+func computeSHA256(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // extractArchive extracts a .zip or .tar.gz archive into destDir.
@@ -329,7 +494,7 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 			}
 		}
 
-		mode := os.FileMode(header.Mode)
+		mode := os.FileMode(header.Mode) & os.ModePerm // strip setuid/setgid/sticky
 		if err := writeFileFromReaderDirect(tr, destPath, mode); err != nil {
 			return err
 		}

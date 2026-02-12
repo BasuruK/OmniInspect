@@ -127,7 +127,7 @@ jobs:
         run: |
           mkdir -p release
           cp omniview release/
-          cp third_party/odpi/lib/libodpi.dylib release/ 2>/dev/null || true
+          cp third_party/odpi/lib/libodpi.dylib release/
           tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
 
       - name: Upload release artifact

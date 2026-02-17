@@ -163,7 +163,6 @@ static int ExecuteDequeueProc(dpiConn* conn, dpiContext* context, const char* su
  * 
  * @param conn: Pointer to the dpiConn representing the Oracle connection
  * @param context: Pointer to the dpiContext for error handling
- * @param schemaName: Schema name where the queue resides
  * @param subscriberName: Name of the subscriber (queue consumer)
  * @param batchSize: Number of messages to dequeue
  * @param waitTime: Wait time in seconds (-1 = wait indefinitely, 0 = no wait, >0 = wait time in seconds)

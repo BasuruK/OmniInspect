@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 )
 
 // Service: Manages package deployments
@@ -28,7 +29,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
-	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
+	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name)
 
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
@@ -43,6 +44,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 }
 
 func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
+	const errorDelay = 5 * time.Second
 	for {
 		// Check if context is cancelled before blocking
 		select {
@@ -53,16 +55,15 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 			// Continue to blocking wait
 		}
 
-		// Blocking wait for notificaiton or context cancellation
-		// Oracle will hold this goroutine here until a message is enqueued, and immidiately return
+		// Blocking wait — Oracle holds this call until messages arrive or wait time expires
 		err := ts.processBatch(subscriber)
 		if err != nil {
 			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
 			select {
+			case <-time.After(errorDelay):
+				continue
 			case <-ctx.Done():
 				return
-			default:
-				continue
 			}
 		}
 	}
@@ -76,7 +77,6 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
 	if err != nil {
-		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
 		return err
 	}
 

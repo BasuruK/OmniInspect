@@ -100,10 +100,15 @@ func CheckAndUpdate(currentVersion string) error {
 
 	// Verify checksum before extracting
 	fmt.Println("[updater] Verifying checksum...")
-	if err := verifyChecksum(tmpFile, release, assetName); err != nil {
+	verified, err := verifyChecksum(tmpFile, release, assetName)
+	if err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
-	fmt.Println("[updater] Checksum verified successfully.")
+	if verified {
+		fmt.Println("[updater] Checksum verified successfully.")
+	} else {
+		fmt.Println("[updater] Warning: no checksum file found in release assets; skipping checksum verification.")
+	}
 
 	// Resolve our own executable path
 	selfPath, err := os.Executable()
@@ -264,7 +269,9 @@ func downloadToTemp(url string) (string, error) {
 // verifyChecksum verifies the SHA256 checksum of the downloaded file.
 // It looks for a checksum asset in the release (e.g., assetName+".sha256" or "checksums.txt")
 // and compares the computed hash against the expected value.
-func verifyChecksum(tmpFile string, release *githubRelease, assetName string) error {
+// Returns (true, nil) when checksum is verified, (false, nil) when no checksum file exists,
+// and (false, err) for verification failures.
+func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (bool, error) {
 	// Try to find a checksum file in the release assets
 	// Common patterns: <asset>.sha256, checksums.txt, SHA256SUMS, etc.
 	var checksumURL string
@@ -298,33 +305,33 @@ func verifyChecksum(tmpFile string, release *githubRelease, assetName string) er
 	}
 
 	if checksumURL == "" {
-		return fmt.Errorf("no checksum file found in release assets (expected %s or checksums.txt)", expectedChecksumName)
+		return false, nil
 	}
 
 	// Download the checksum file
 	checksumData, err := downloadChecksumFile(checksumURL)
 	if err != nil {
-		return fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
+		return false, fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
 	}
 
 	// Parse the expected checksum from the downloaded data
 	expectedChecksum, err := parseChecksum(checksumData, assetName)
 	if err != nil {
-		return fmt.Errorf("failed to parse checksum for %s: %w", assetName, err)
+		return false, fmt.Errorf("failed to parse checksum for %s: %w", assetName, err)
 	}
 
 	// Compute the SHA256 of the downloaded archive
 	computedChecksum, err := computeSHA256(tmpFile)
 	if err != nil {
-		return fmt.Errorf("failed to compute checksum of downloaded file: %w", err)
+		return false, fmt.Errorf("failed to compute checksum of downloaded file: %w", err)
 	}
 
 	// Compare checksums (case-insensitive)
 	if !strings.EqualFold(computedChecksum, expectedChecksum) {
-		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, computedChecksum)
+		return false, fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, computedChecksum)
 	}
 
-	return nil
+	return true, nil
 }
 
 // downloadChecksumFile downloads the checksum file and returns its content as a string.

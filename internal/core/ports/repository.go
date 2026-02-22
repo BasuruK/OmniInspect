@@ -2,7 +2,6 @@ package ports
 
 import (
 	"OmniView/internal/core/domain"
-	"unsafe"
 )
 
 // Oracle
@@ -18,8 +17,6 @@ type DatabaseRepository interface {
 	RegisterNewSubscriber(subscriber domain.Subscriber) error
 	CheckQueueDepth(subscriberID string, queueTableName string) (int, error)
 	BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error)
-	GetRawConnection() unsafe.Pointer
-	GetRawContext() unsafe.Pointer
 }
 
 // BoltDB

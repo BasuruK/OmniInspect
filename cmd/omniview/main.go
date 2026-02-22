@@ -8,6 +8,7 @@ import (
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
+	"OmniView/internal/updater"
 	"context"
 	"fmt"
 	"log"
@@ -17,6 +18,15 @@ import (
 )
 
 func main() {
+	// Clean up leftover binary from a previous update (safe no-op if nothing to clean)
+	updater.CleanupOldBinary()
+
+	// Check for updates before anything else (only runs for release builds, skips "dev")
+	if err := updater.CheckAndUpdate(app.Version); err != nil {
+		log.Printf("[updater] Update failed: %v\n", err)
+		// Non-fatal — continue starting the application
+	}
+
 	// Listen to system signals for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
 	done := make(chan struct{})
@@ -48,10 +58,7 @@ func main() {
 
 	// 2. Services (Inject Adapters)
 	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
-	tracerService, err := tracer.NewTracerService(dbAdapter, boltAdapter)
-	if err != nil {
-		log.Fatalf("failed to create tracer service: %v", err)
-	}
+	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
 	subscriberService := subscribers.NewSubscriberService(dbAdapter, boltAdapter)
 
 	// 3. Application Bootstrap

@@ -14,7 +14,9 @@ typedef struct {
 	uint32_t length;
 } TraceId;
 
-int DequeueManyAndExtract(dpiConn* conn, const char* schemaName, const char* subscriberName, uint32_t batchSize, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount);
+// Blocking dequeue with wait time
+// waitTime : -1 = wait indefinitely, 0 = no wait, >0 = wait time in seconds
+int DequeueManyAndExtract(dpiConn* conn, dpiContext* context, const char* subscriberName, uint32_t batchSize, int32_t waitTime, TraceMessage** outMessages, TraceId** outIds, uint32_t* actualCount);
 
 void FreeDequeueResults (TraceMessage* messages, TraceId* ids, uint32_t count);
 

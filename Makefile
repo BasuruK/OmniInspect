@@ -76,6 +76,8 @@ endif
 BINARY_NAME = omniview
 BUILD_DIR = .
 MAIN_PATH = cmd/omniview
+VERSION ?= dev
+GO_LDFLAGS = -ldflags "-X OmniView/internal/app.Version=$(VERSION)"
 
 # Export CGO flags for Go build (picked up automatically by go build)
 ifeq ($(DETECTED_OS),MacOS)
@@ -141,11 +143,11 @@ deps: $(TARGET)
 # Build Go application (CGO will compile subscription/*.c automatically)
 .PHONY: build
 build: deps
-	@echo "[BUILD] Building $(BINARY_NAME)..."
+	@echo "[BUILD] Building $(BINARY_NAME) (version: $(VERSION))..."
 	@echo "   CGO_CFLAGS=$(CGO_CFLAGS)"
 	@echo "   CGO_LDFLAGS=$(CGO_LDFLAGS)"
-	go build -v -o $(BINARY_NAME) ./$(MAIN_PATH)
-	@echo "[OK] Build complete: $(BINARY_NAME)"
+	go build -v $(GO_LDFLAGS) -o $(BINARY_NAME) ./$(MAIN_PATH)
+	@echo "[OK] Build complete: $(BINARY_NAME) ($(VERSION))"
 
 # Run the application
 .PHONY: run
@@ -197,6 +199,38 @@ lint:
 	go vet ./...
 	@echo "[OK] Lint complete"
 
+# ============================================================================
+# Release Packaging
+# ============================================================================
+.PHONY: release
+release: build
+	@echo "[RELEASE] Packaging release $(VERSION)..."
+ifeq ($(DETECTED_OS),Windows)
+	@echo "[RELEASE] Creating Windows amd64 archive..."
+    ifeq ($(USE_BASH),1)
+	@mkdir -p release
+	@cp $(BINARY_NAME).exe release/ 2>/dev/null || cp $(BINARY_NAME) release/
+	@cp odpi.dll release/ 2>/dev/null || true
+	@cd release && zip -r ../omniview-windows-amd64-$(VERSION).zip . && cd ..
+	@rm -rf release
+    else
+	@if not exist release $(MKDIR_CMD) release
+	@$(COPY_CMD) $(BINARY_NAME).exe release\ >nul 2>&1 || $(COPY_CMD) $(BINARY_NAME) release\ >nul
+	@$(COPY_CMD) odpi.dll release\ >nul 2>&1
+	@powershell -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(VERSION).zip' -Force"
+	@$(RM_CMD) release
+    endif
+	@echo "[OK] Created omniview-windows-amd64-$(VERSION).zip"
+else ifeq ($(DETECTED_OS),MacOS)
+	@echo "[RELEASE] Creating macOS arm64 archive..."
+	@mkdir -p release
+	@cp $(BINARY_NAME) release/
+	@cp $(ODPI_BASE)/lib/libodpi.dylib release/ 2>/dev/null || true
+	@tar -czf omniview-darwin-arm64-$(VERSION).tar.gz -C release .
+	@rm -rf release
+	@echo "[OK] Created omniview-darwin-arm64-$(VERSION).tar.gz"
+endif
+
 # Clean all build artifacts
 .PHONY: clean
 clean:
@@ -225,17 +259,19 @@ endif
 help:
 	@echo "OmniInspect Makefile - Available targets:"
 	@echo ""
-	@echo "  make build       - Build the Go application (default)"
-	@echo "  make run         - Build and run the application"
-	@echo "  make odpi        - Build only ODPI-C library"
-	@echo "  make deps        - Check/build dependencies"
-	@echo "  make clean       - Remove all build artifacts"
-	@echo "  make test        - Run tests"
-	@echo "  make check-cgo   - Debug CGO compilation"
-	@echo "  make install     - Install Go dependencies"
-	@echo "  make fmt         - Format Go code"
-	@echo "  make lint        - Lint Go code"
-	@echo "  make help        - Show this help message"
+	@echo "  make build                  - Build the Go application (default)"
+	@echo "  make build VERSION=v1.0.0   - Build with specific version"
+	@echo "  make run                    - Build and run the application"
+	@echo "  make release VERSION=v1.0.0 - Build and package for distribution"
+	@echo "  make odpi                   - Build only ODPI-C library"
+	@echo "  make deps                   - Check/build dependencies"
+	@echo "  make clean                  - Remove all build artifacts"
+	@echo "  make test                   - Run tests"
+	@echo "  make check-cgo              - Debug CGO compilation"
+	@echo "  make install                - Install Go dependencies"
+	@echo "  make fmt                    - Format Go code"
+	@echo "  make lint                   - Lint Go code"
+	@echo "  make help                   - Show this help message"
 
 # Phony targets
-.PHONY: all clean odpi deps build run test check-cgo install fmt lint help
+.PHONY: all clean odpi deps build run test check-cgo install fmt lint release help

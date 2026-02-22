@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"OmniView/assets"
-	"OmniView/internal/adapter/subscription"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"context"
@@ -16,44 +15,21 @@ import (
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db              ports.DatabaseRepository
-	bolt            ports.ConfigRepository
-	subscriptionMgr *subscription.SubscriptionManager
-	processMu       sync.Mutex
+	db        ports.DatabaseRepository
+	bolt      ports.ConfigRepository
+	processMu sync.Mutex
 }
 
 // Constructor: NewTracerService Constructor for TracerService
-func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) (*TracerService, error) {
-	rawConn := db.GetRawConnection()
-	rawCtx := db.GetRawContext()
-	if rawConn == nil || rawCtx == nil {
-		return nil, fmt.Errorf("database connection or context is nil during TracerService initialization")
-	}
-
-	// Note: NewSubscriptionManager expects (connection, context) order
-	subscriptionMgr := subscription.NewSubscriptionManager(rawConn, rawCtx)
-
+func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
 	return &TracerService{
-		db:              db,
-		bolt:            bolt,
-		subscriptionMgr: subscriptionMgr,
-	}, nil
+		db:   db,
+		bolt: bolt,
+	}
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
-	/* Create a notification channel
-	The channel will receive notifications from the database when new messages arrive
-	Buffer size determines how many notifications can be queued before blocking
-	i.e: make(chan struct{}, 100), means it can hold 100 notifications
-	*/
-	notifyChan := make(chan struct{}, 100) // Buffered channel to handle notification bursts
-
-	// Subscribe to the queue
-	if err := ts.subscriptionMgr.Subscribe(*subscriber, schema, notifyChan); err != nil {
-		return fmt.Errorf("failed to subscribe to queue: %w", err)
-	}
-
-	fmt.Println("[OCI] Subscription Success for subscriber:", subscriber)
+	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name)
 
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
@@ -62,60 +38,50 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	}()
 
 	// Start the goroutine to listen for notifications
-	go ts.eventLoop(ctx, notifyChan, subscriber)
+	go ts.blockingConsumerLoop(ctx, subscriber)
 
 	return nil
 }
 
-func (ts *TracerService) eventLoop(ctx context.Context, notifyChan chan struct{}, subscriber *domain.Subscriber) {
-	ticker := time.NewTicker(5 * time.Second) // Periodic check interval, fallback polling. TODO: Take this
-	defer ticker.Stop()
-
+func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
+	const errorDelay = 5 * time.Second
 	for {
+		// Check if context is cancelled before blocking
 		select {
 		case <-ctx.Done():
-			fmt.Println("Event listener stopped.")
-			ts.cleanUp(subscriber, notifyChan)
+			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name)
 			return
-		case <-notifyChan:
-			// Process the notification
-			ts.processBatch(subscriber)
-		case <-ticker.C:
-			// Periodic check (fallback polling)
-			queueDepth := ts.checkQueueDepth(subscriber)
-			if queueDepth > 0 {
-				ts.processBatch(subscriber)
+		default:
+			// Continue to blocking wait
+		}
+
+		// Blocking wait — Oracle holds this call until messages arrive or wait time expires
+		err := ts.processBatch(subscriber)
+		if err != nil {
+			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
+			select {
+			case <-time.After(errorDelay):
+				continue
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
 }
 
-// cleanUp handles cleanup operations when stopping the event listener
-func (ts *TracerService) cleanUp(subscriber *domain.Subscriber, notifyChan chan struct{}) {
-	if ts.subscriptionMgr != nil {
-		if err := ts.subscriptionMgr.Unsubscribe(*subscriber); err != nil {
-			fmt.Printf("failed to unsubscribe: %v\n", err)
-		} else {
-			fmt.Println("Unsubscribed successfully for subscriber:", subscriber.Name)
-		}
-	}
-	close(notifyChan)
-}
-
 // processBatch processes a batch of tracer data for the given subscriber ID
-func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
+func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 	// Lock for processing to avoid concurrent dequeues
 	ts.processMu.Lock()
 	defer ts.processMu.Unlock()
 
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
 	if err != nil {
-		log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
-		return
+		return err
 	}
 
 	if count == 0 {
-		return // return
+		return nil // return
 	}
 
 	for i := 0; i < count; i++ {
@@ -127,20 +93,12 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) {
 
 		ts.handleTracerMessage(msg)
 	}
+	return nil
 }
 
+// handleTracerMessage processes a single tracer message
 func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
 	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
-}
-
-// checkQueueDepth checks the queue depth for the given subscriber ID
-func (ts *TracerService) checkQueueDepth(subscriber *domain.Subscriber) int {
-	depth, err := ts.db.CheckQueueDepth(subscriber.Name, domain.QueueTableName)
-	if err != nil {
-		log.Printf("failed to check queue depth for subscriber %s: %v", subscriber.Name, err)
-		return 0
-	}
-	return depth
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

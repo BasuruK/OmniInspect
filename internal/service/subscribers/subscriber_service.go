@@ -40,7 +40,7 @@ func (ss *SubscriberService) NewSubscriber() (domain.Subscriber, error) {
 	subscriber := domain.Subscriber{
 		Name:      subscriberName,
 		BatchSize: 1000,
-		WaitTime:  0,
+		WaitTime:  5,
 	}
 	if err := ss.SetSubscriber(subscriber); err != nil {
 		return domain.Subscriber{}, err

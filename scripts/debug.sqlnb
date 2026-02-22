@@ -15,11 +15,21 @@ cells:
   - kind: 2
     value: >-
       BEGIN
-          FOR i IN 1..100 LOOP
-              OMNI_TRACER_API.Trace_Message('HI Trace Message No ' || i, 'INFO');
+          FOR i IN 1..20 LOOP
+              DECLARE
+                  v_level VARCHAR2(10);
+              BEGIN
+                  CASE TRUNC(DBMS_RANDOM.VALUE(1,4))
+                      WHEN 1 THEN v_level := 'INFO';
+                      WHEN 2 THEN v_level := 'ERROR';
+                      WHEN 3 THEN v_level := 'DEBUG';
+                  END CASE;
+                  OMNI_TRACER_API.Trace_Message('HI Trace Message No ' || i, v_level);
+              END;
           END LOOP;
           --COMMIT;  -- Important!
       END;
+
 
       /
     languageId: oracle-sql

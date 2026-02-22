@@ -1,0 +1,157 @@
+# This workflow builds and publishes a GitHub Release when a version tag is pushed.
+# Triggered by: git tag v1.0.0 && git push origin v1.0.0
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # =========================================================================
+  # Windows amd64 Build
+  # =========================================================================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download Oracle Instant Client (Windows)
+        run: |
+          curl -L -o instantclient-basic.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-basic-windows.x64-23.26.0.0.0.zip
+          curl -L -o instantclient-sdk.zip https://download.oracle.com/otn_software/nt/instantclient/2326000/instantclient-sdk-windows.x64-23.26.0.0.0.zip
+          New-Item -ItemType Directory -Force -Path C:\oracle_inst
+          tar -xf instantclient-basic.zip -C C:\oracle_inst
+          tar -xf instantclient-sdk.zip -C C:\oracle_inst
+          Move-Item -Path C:\oracle_inst\instantclient_23_0 -Destination C:\oracle_inst\instantclient_23_7 -Force
+        shell: pwsh
+
+      - name: Add Oracle Instant Client to PATH
+        run: echo "C:\oracle_inst\instantclient_23_7" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Download and setup ODPI-C
+        run: python scripts/setup_odpi.py
+
+      - name: Build ODPI-C library
+        run: make odpi
+        shell: cmd
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build release binary
+        run: make build VERSION=${{ github.ref_name }}
+        shell: cmd
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
+          CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
+
+      - name: Package release archive
+        run: |
+          New-Item -ItemType Directory -Force -Path release
+          Copy-Item omniview.exe release/
+          Copy-Item odpi.dll release/
+          Compress-Archive -Path release/* -DestinationPath omniview-windows-amd64-${{ github.ref_name }}.zip -Force
+        shell: pwsh
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniview-windows-amd64
+          path: omniview-windows-amd64-${{ github.ref_name }}.zip
+
+  # =========================================================================
+  # macOS arm64 (Apple Silicon) Build
+  # =========================================================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download Oracle Instant Client (macOS arm64)
+        run: |
+          curl -L -o instantclient-basic.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-basic-macos.arm64-23.3.0.23.09.dmg
+          curl -L -o instantclient-sdk.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-sdk-macos.arm64-23.3.0.23.09.dmg
+
+          # Mount and extract basic
+          hdiutil attach instantclient-basic.dmg -mountpoint /Volumes/instantclient-basic
+          sudo mkdir -p /opt/oracle
+          sudo cp -R /Volumes/instantclient-basic/instantclient_23_3 /opt/oracle/instantclient_23_7
+          hdiutil detach /Volumes/instantclient-basic
+
+          # Mount and extract SDK
+          hdiutil attach instantclient-sdk.dmg -mountpoint /Volumes/instantclient-sdk
+          sudo cp -R /Volumes/instantclient-sdk/instantclient_23_3/sdk /opt/oracle/instantclient_23_7/sdk
+          hdiutil detach /Volumes/instantclient-sdk
+
+      - name: Download and setup ODPI-C
+        run: python scripts/setup_odpi.py
+
+      - name: Build ODPI-C library
+        run: make odpi
+        env:
+          INSTANT_CLIENT_DIR: /opt/oracle/instantclient_23_7
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build release binary
+        run: make build VERSION=${{ github.ref_name }}
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
+          CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -L/opt/oracle/instantclient_23_7 -lclntsh -Wl,-rpath,/opt/oracle/instantclient_23_7
+          INSTANT_CLIENT_DIR: /opt/oracle/instantclient_23_7
+
+      - name: Package release archive
+        run: |
+          mkdir -p release
+          cp omniview release/
+          cp third_party/odpi/lib/libodpi.dylib release/
+          tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniview-darwin-arm64
+          path: omniview-darwin-arm64-${{ github.ref_name }}.tar.gz
+
+  # =========================================================================
+  # Publish GitHub Release
+  # =========================================================================
+  publish:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/omniview-windows-amd64/*.zip
+            dist/omniview-darwin-arm64/*.tar.gz

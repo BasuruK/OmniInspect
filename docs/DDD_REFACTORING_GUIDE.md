@@ -1,252 +1,105 @@
-# Domain-Driven Design: From Anemic to Rich Domain
+# Domain-Driven Design: Practical Refactoring Guide for OmniInspect
 
 ## Document Information
 
 | Field | Value |
 |-------|-------|
-| **Document Version** | 1.0 |
-| **Created** | February 19, 2026 |
-| **Project** | OmniInspect (OmniView) |
-| **Purpose** | Learn DDD concepts and refactor guide to transform from anemic to rich domain model |
+| **Document Version** | 4.0 |
+| **Updated** | February 23, 2026 |
+| **Project** | OmniInspect |
+| **Primary Goal** | Refactor the codebase to follow DDD |
+| **Secondary Goal** | Learn DDD concepts along the way |
 
 ---
 
 ## Table of Contents
 
-1. [Introduction](#1-introduction)
-2. [Anemic Domain Model vs Rich Domain Model](#2-anemic-domain-model-vs-rich-domain-model)
-3. [Domain Entities with Behavior](#3-domain-entities-with-behavior)
-4. [Domain Events](#4-domain-events)
-5. [Aggregates and Aggregate Roots](#5-aggregates-and-aggregate-roots)
-6. [Domain Services](#6-domain-services)
-7. [Application Services vs Domain Services](#7-application-services-vs-domain-services)
-8. [Bounded Contexts](#8-bounded-contexts)
-9. [Refactoring Guide for OmniInspect](#9-refactoring-guide-for-omniinspect)
-10. [Summary and Next Steps](#10-summary-and-next-steps)
+1. [Why Refactor?](#1-why-refactor)
+2. [The Current State](#2-the-current-state)
+3. [Subscriber Entity - Complete Refactoring](#3-subscriber-entity---complete-refactoring)
+4. [QueueMessage Entity - Complete Refactoring](#4-queuemessage-entity---complete-refactoring)
+5. [DatabaseSettings Entity - Complete Refactoring](#5-databasesettings-entity---complete-refactoring)
+6. [DatabasePermissions Entity - Complete Refactoring](#6-databasepermissions-entity---complete-refactoring)
+7. [Remaining Entities](#7-remaining-entities)
+8. [Repository Pattern - Implementation](#8-repository-pattern---implementation)
+9. [Service Refactoring - Complete](#9-service-refactoring---complete)
+10. [Error Handling](#10-error-handling)
+11. [Summary of Changes](#11-summary-of-changes)
 
 ---
 
-## 1. Introduction
+## 1. Why Refactor?
 
-### What is Domain-Driven Design?
+### The Problem with Current Code
 
-Domain-Driven Design (DDD) is a software development approach that emphasizes:
-- **Modeling software based on the business domain**
-- **Collaboration with domain experts**
-- **Iterative refinement of the model**
-
-### The Core Philosophy
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DDD CORE PHILOSOPHY                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────────┐         ┌──────────────┐         ┌──────────────┐      │
-│   │   Domain     │         │    Model     │         │    Code      │      │
-│   │   Expert    │◄───────►│   (Shared    │◄───────►│  (Reflects   │      │
-│   │  Knowledge  │         │   Language)  │         │   Reality)   │      │
-│   └──────────────┘         └──────────────┘         └──────────────┘      │
-│                                                                             │
-│   The code should speak the language of the business, not technical jargon  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Why DDD Matters
-
-| Traditional Approach | DDD Approach |
-|----------------------|---------------|
-| Data-centric | Behavior-centric |
-| Tables and records | Rich models |
-| Anemic objects | Healthy, behavior-rich objects |
-| Database-driven | Domain-driven |
-
----
-
-## 2. Anemic Domain Model vs Rich Domain Model
-
-### The Anemic Domain Model (Anti-Pattern)
-
-An **anemic domain model** is a model where domain objects contain little or no business logic. They are essentially data containers (DTOs with getters/setters) while all business logic resides in services.
-
-#### Characteristics
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    ANEMIC DOMAIN MODEL STRUCTURE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                         DOMAIN LAYER                           │        │
-│   │  ┌─────────────────────┐  ┌─────────────────────┐             │        │
-│   │  │   Subscriber        │  │   QueueMessage      │             │        │
-│   │  │   ─────────────     │  │   ─────────────     │             │        │
-│   │  │   Name: string      │  │   MessageID: string │             │        │
-│   │  │   BatchSize: int    │  │   ProcessName: str  │             │        │
-│   │  │   WaitTime: int     │  │   LogLevel: string  │             │        │
-│   │  │                     │  │   Payload: string   │             │        │
-│   │  │   + Getters()       │  │   Timestamp: str   │             │        │
-│   │  │   + Setters()       │  │   + Getters()      │             │        │
-│   │  └─────────────────────┘  └─────────────────────┘             │        │
-│   │         DATA ONLY              DATA ONLY                        │        │
-│   │         (Anemic)              (Anemic)                         │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                    │                                        │
-│                                    ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                        SERVICE LAYER                             │        │
-│   │  ┌─────────────────────────────────────────────────────────┐    │        │
-│   │  │                  SubscriberService                      │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  + NewSubscriber()       // Business logic here          │    │        │
-│   │  │  + RegisterSubscriber() // Business logic here          │    │        │
-│   │  │  + ValidateSubscriber()  // Business logic here          │    │        │
-│   │  │  + GenerateUUID()       // Business logic here          │    │        │
-│   │  └─────────────────────────────────────────────────────────┘    │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-│   PROBLEM: Domain objects are passive; logic is scattered in services       │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Problems with Anemic Model
-
-1. **Encapsulation is broken** - Data and behavior are separated
-2. **Validation is inconsistent** - Each service might validate differently
-3. **Harder to understand** - Business logic is hidden in services
-4. **Duplication** - Similar logic repeated across services
-5. **Testing is harder** - Hard to test business rules in isolation
-
-### The Rich Domain Model (Goal)
-
-A **rich domain model** places business logic, validation, and behavior directly within the domain objects themselves.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    RICH DOMAIN MODEL STRUCTURE                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                         DOMAIN LAYER                           │        │
-│   │  ┌─────────────────────────────────────────────────────────┐    │        │
-│   │  │                    Subscriber                          │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  - name: string                                        │    │        │
-│   │  │  - batchSize: int                                      │    │        │
-│   │  │  - waitTime: int                                      │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  + NewSubscriber()           // Factory method         │    │        │
-│   │  │  + Validate()                // Business rule          │    │        │
-│   │  │  + CanProcess()              // Business rule          │    │        │
-│   │  │  + UpdateBatchSize(size)     // Behavior               │    │        │
-│   │  │  + IsValid() : bool          // Validation             │    │        │
-│   │  └─────────────────────────────────────────────────────────┘    │        │
-│   │                        (Rich, Behaviorful)                        │        │
-│   │                                                                    │        │
-│   │  ┌─────────────────────────────────────────────────────────┐    │        │
-│   │  │                  QueueMessage                            │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  - messageID: string                                    │    │        │
-│   │  │  - processName: string                                  │    │        │
-│   │  │  - logLevel: string                                     │    │        │
-│   │  │  - payload: string                                      │    │        │
-│   │  │  - timestamp: string                                    │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  + IsCritical()           // Business rule             │    │        │
-│   │  │  + GetFormattedMessage()  // Behavior                  │    │        │
-│   │  │  + MatchesFilter(filter) // Business rule            │    │        │
-│   │  └─────────────────────────────────────────────────────────┘    │        │
-│   │                        (Rich, Behaviorful)                        │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                    │                                        │
-│                                    ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                      APPLICATION LAYER                          │        │
-│   │              (Orchestration, use case coordination)              │        │
-│   │  ┌─────────────────────────────────────────────────────────┐    │        │
-│   │  │              RegisterSubscriberUseCase                  │    │        │
-│   │  │  ─────────────────────────────────────────────────────  │    │        │
-│   │  │  + Execute()  // Coordinates, delegates to domain        │    │        │
-│   │  └─────────────────────────────────────────────────────────┘    │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-│   BENEFIT: Business logic lives with the data it operates on               │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Domain Entities with Behavior
-
-### What Makes Something an Entity?
-
-An **Entity** is a domain object with:
-- **Unique identity** that persists over time
-- **Mutable state**
-- **Behavior** related to its identity
-
-#### Entity vs Value Object
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ENTITY VS VALUE OBJECT                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────────────────────┐      ┌──────────────────────────┐           │
-│   │        ENTITY            │      |      VALUE OBJECT        │           │
-│   ├──────────────────────────┤      ├──────────────────────────┤           │
-│   │ Has unique identity      │      │ No identity              │           │
-│   │ (Subscriber by ID)       │      │ (Money, Address)         │           │
-│   ├──────────────────────────┤      ├──────────────────────────┤           │
-│   │ Mutable                  │      │ Immutable                │           │
-│   │ (can change state)       │      │ (cannot change state)     │           │
-│   ├──────────────────────────┤      ├──────────────────────────┤           │
-│   │ Equality by ID           │      │ Equality by attributes   │           │
-│   │ (two subs with same      │      | (two $10 are equal)      │           │
-│   │  name are the same)      │      │                           │           │
-│   ├──────────────────────────┤      ├──────────────────────────┤           │
-│   │ Use factory methods      │      | Use constructors         │           │
-│   │ for creation             │      | for creation             │           │
-│   └──────────────────────────┘      └──────────────────────────┘           │
-│                                                                             │
-│   EXAMPLES:                         EXAMPLES:                               │
-│   - Subscriber (has name/ID)        - QueueConfig (no identity)            │
-│   - QueueMessage (has messageID)    - LogLevel (ERROR, INFO, DEBUG)         │
-│   - User, Order, Account             - BatchSize, WaitTime (simple values)   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Converting Your Subscriber Entity
-
-#### Before (Anemic)
+The current codebase has **anemic domain models** - entities that are just data structures with no behavior:
 
 ```go
-// internal/core/domain/subscriber.go
-
-package domain
-
-import "errors"
-
-// Entity : Subscriber information
+// CURRENT - What's in your project now
 type Subscriber struct {
     Name      string
     BatchSize int
     WaitTime  int
 }
-
-// Errors: Subscriber Entity
-var (
-    ErrSubscriberNotFound = errors.New("subscriber name not found")
-)
 ```
 
-#### After (Rich)
+**Problems:**
+1. **No validation** - Anyone can create invalid subscribers
+2. **Business logic scattered** - Validation lives in services
+3. **Duplication** - Same validation in multiple places
+4. **Hard to test** - Can't test business rules in isolation
+
+### The Goal
+
+A **rich domain model** where:
+- Entities validate themselves
+- Business logic lives in the domain
+- Services become thin orchestrators
+- Code is easier to test and understand
+
+---
+
+## 2. The Current State
+
+### Files to Modify
+
+| File | Current State | Action |
+|------|---------------|--------|
+| `internal/core/domain/subscriber.go` | Anemic | Refactor to rich entity |
+| `internal/core/domain/queue_message.go` | Anemic | Refactor to rich entity |
+| `internal/core/domain/database_settings.go` | Anemic | Refactor to rich entity |
+| `internal/core/domain/permissions.go` | Anemic | Refactor to rich entity |
+| `internal/core/domain/config.go` | Simple | Add behavior if needed |
+| `internal/core/ports/repository.go` | Interfaces | Add repository interfaces |
+| `internal/service/subscribers/subscriber_service.go` | Thick | Simplify |
+| `internal/service/tracer/tracer_service.go` | Thick | Simplify |
+| `internal/service/permissions/permissions_service.go` | Thick | Simplify |
+
+### What We're NOT Changing
+
+- The Oracle adapter (works fine)
+- The BoltDB adapter (works fine)
+- The main entry point
+- The updater
+
+---
+
+## 3. Subscriber Entity - Complete Refactoring
+
+### What This Section Covers
+
+Everything needed to refactor `subscriber.go` - self-contained:
+
+1. Value objects (BatchSize, WaitTime) - defined right here
+2. Errors specific to Subscriber
+3. The complete Subscriber entity
+4. Repository interface for Subscriber
+
+### Step 3.1: Add Value Objects
+
+Add these to the TOP of `internal/core/domain/subscriber.go`:
 
 ```go
-// internal/core/domain/subscriber.go
-
 package domain
 
 import (
@@ -260,12 +113,12 @@ import (
 
 // ==================== VALUE OBJECTS ====================
 
-// BatchSize represents the batch size for processing
+// BatchSize represents how many messages to process at once
 type BatchSize int
 
 const (
-    MinBatchSize BatchSize = 1
-    MaxBatchSize BatchSize = 10000
+    MinBatchSize     BatchSize = 1
+    MaxBatchSize     BatchSize = 10000
     DefaultBatchSize BatchSize = 1000
 )
 
@@ -279,12 +132,12 @@ func NewBatchSize(size int) (BatchSize, error) {
 
 func (b BatchSize) Int() int { return int(b) }
 
-// WaitTime represents wait time in seconds
+// WaitTime represents how long to wait between dequeues (in seconds)
 type WaitTime int
 
 const (
-    MinWaitTime WaitTime = 1
-    MaxWaitTime WaitTime = 300
+    MinWaitTime     WaitTime = 1
+    MaxWaitTime     WaitTime = 300
     DefaultWaitTime WaitTime = 5
 )
 
@@ -297,28 +150,40 @@ func NewWaitTime(seconds int) (WaitTime, error) {
 }
 
 func (w WaitTime) Int() int { return int(w) }
+```
 
-// ==================== ENTITY ERRORS ====================
+### Step 3.2: Add Errors
+
+Add these after the value objects in the same file:
+
+```go
+// ==================== ERRORS ====================
 
 var (
-    ErrSubscriberNotFound     = errors.New("subscriber not found")
-    ErrInvalidSubscriberName  = errors.New("invalid subscriber name")
-    ErrEmptySubscriber        = errors.New("subscriber cannot be empty")
+    ErrSubscriberNotFound    = errors.New("subscriber not found")
+    ErrInvalidSubscriberName = errors.New("invalid subscriber name")
 )
+```
 
+### Step 3.3: Add the Subscriber Entity
+
+Replace the entire Subscriber struct with this (append to same file):
+
+```go
 // ==================== ENTITY ====================
 
-// Subscriber represents a subscriber in the tracer queue system
-// This is a RICH ENTITY with behavior encapsulated
+// Subscriber represents a subscriber to the tracer queue
+// This is a RICH ENTITY - it validates itself and contains business logic
 type Subscriber struct {
-    name      string      // Private - enforced encapsulation
-    batchSize BatchSize
-    waitTime  WaitTime
+    name      string      // private - must use getters
+    batchSize BatchSize  // validated at creation
+    waitTime  WaitTime   // validated at creation
     createdAt time.Time
     active    bool
 }
 
-// Factory method - the ONLY way to create a valid Subscriber
+// NewSubscriber creates a new Subscriber with validation
+// This is the FACTORY - the ONLY way to create a valid Subscriber
 func NewSubscriber(name string, batchSize BatchSize, waitTime WaitTime) (*Subscriber, error) {
     if strings.TrimSpace(name) == "" {
         return nil, ErrInvalidSubscriberName
@@ -333,81 +198,31 @@ func NewSubscriber(name string, batchSize BatchSize, waitTime WaitTime) (*Subscr
     }, nil
 }
 
-// NewSubscriberWithDefaults creates a subscriber with default values
+// NewSubscriberWithDefaults creates a Subscriber with default values
 func NewSubscriberWithDefaults(name string) (*Subscriber, error) {
     return NewSubscriber(name, DefaultBatchSize, DefaultWaitTime)
 }
 
-// Factory for generating a new unique subscriber
+// NewRandomSubscriber creates a Subscriber with a generated UUID name
 func NewRandomSubscriber() (*Subscriber, error) {
-    uuidWithHyphen := uuid.New()
-    subscriberName := "SUB_" + strings.ToUpper(
-        strings.ReplaceAll(uuidWithHyphen.String(), "-", "_"),
-    )
-    return NewSubscriber(subscriberName, DefaultBatchSize, DefaultWaitTime)
+    uuidStr := strings.ReplaceAll(uuid.New().String(), "-", "_")
+    subscriberName := "SUB_" + strings.ToUpper(uuidStr)
+    return NewSubscriberWithDefaults(subscriberName)
 }
 
-// ==================== BEHAVIOR (Getters with Encapsulation) ====================
+// ==================== GETTERS ====================
 
-// Name returns the subscriber name (read-only)
-func (s *Subscriber) Name() string {
-    return s.name
-}
-
-// BatchSize returns the batch size
-func (s *Subscriber) BatchSize() BatchSize {
-    return s.batchSize
-}
-
-// WaitTime returns the wait time
-func (s *Subscriber) WaitTime() WaitTime {
-    return s.waitTime
-}
-
-// CreatedAt returns when the subscriber was created
-func (s *Subscriber) CreatedAt() time.Time {
-    return s.createdAt
-}
-
-// IsActive returns whether the subscriber is active
-func (s *Subscriber) IsActive() bool {
-    return s.active
-}
+func (s *Subscriber) Name() string       { return s.name }
+func (s *Subscriber) BatchSize() BatchSize { return s.batchSize }
+func (s *Subscriber) WaitTime() WaitTime  { return s.waitTime }
+func (s *Subscriber) CreatedAt() time.Time { return s.createdAt }
+func (s *Subscriber) IsActive() bool      { return s.active }
 
 // ==================== BUSINESS METHODS ====================
 
-// Validate checks if the subscriber is valid
-func (s *Subscriber) Validate() error {
-    if strings.TrimSpace(s.name) == "" {
-        return ErrInvalidSubscriberName
-    }
-    if !s.active {
-        return errors.New("subscriber is not active")
-    }
-    return nil
-}
-
-// CanProcess returns true if the subscriber can process messages
+// CanProcess returns true if this subscriber can process messages
 func (s *Subscriber) CanProcess() bool {
     return s.active && s.batchSize > 0
-}
-
-// UpdateBatchSize updates the batch size with validation
-func (s *Subscriber) UpdateBatchSize(newSize BatchSize) error {
-    if newSize < MinBatchSize || newSize > MaxBatchSize {
-        return fmt.Errorf("batch size must be between %d and %d", MinBatchSize, MaxBatchSize)
-    }
-    s.batchSize = newSize
-    return nil
-}
-
-// UpdateWaitTime updates the wait time with validation
-func (s *Subscriber) UpdateWaitTime(newTime WaitTime) error {
-    if newTime < MinWaitTime || newTime > MaxWaitTime {
-        return fmt.Errorf("wait time must be between %d and %d seconds", MinWaitTime, MaxWaitTime)
-    }
-    s.waitTime = newTime
-    return nil
 }
 
 // Deactivate marks the subscriber as inactive
@@ -420,298 +235,603 @@ func (s *Subscriber) Reactivate() {
     s.active = true
 }
 
-// String returns string representation
+// String returns a readable representation
 func (s *Subscriber) String() string {
     return fmt.Sprintf("Subscriber{Name: %s, BatchSize: %d, WaitTime: %ds, Active: %v}",
         s.name, s.batchSize, s.waitTime, s.active)
 }
 ```
 
-### Benefits of This Approach
+### Step 3.4: Add Repository Interface
 
+Add this to `internal/core/ports/repository.go`:
+
+```go
+// ==================== SUBSCRIBER REPOSITORY ====================
+
+// SubscriberRepository defines how to persist and retrieve Subscribers
+type SubscriberRepository interface {
+    // Save stores a subscriber
+    Save(ctx context.Context, subscriber domain.Subscriber) error
+
+    // GetByName retrieves a subscriber by name
+    GetByName(ctx context.Context, name string) (*domain.Subscriber, error)
+
+    // Exists checks if a subscriber exists
+    Exists(ctx context.Context, name string) (bool, error)
+
+    // Delete removes a subscriber
+    Delete(ctx context.Context, name string) error
+}
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    BENEFITS OF RICH ENTITIES                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   1. ENCAPSULATION                                                          │
-│      ┌────────────────────────────────────────────────────────────────┐      │
-│      │  - Fields are private (name, batchSize, waitTime)           │      │
-│      │  - Access only through methods                               │      │
-│      │  - Invariants are always maintained                          │      │
-│      └────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-│   2. VALIDATION CENTRALIZED                                                 │
-│      ┌────────────────────────────────────────────────────────────────┐      │
-│      │  - BatchSize can never be invalid (enforced at creation)    │      │
-│      │  - WaitTime can never be invalid (enforced at creation)     │      │
-│      │  - No need to validate in multiple places                    │      │
-│      └────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-│   3. TESTABILITY                                                            │
-│      ┌────────────────────────────────────────────────────────────────┐      │
-│      │  - Easy to test business rules in isolation                  │      │
-│      │  - No need to mock services for entity tests                 │      │
-│      │  - Test invariants directly                                  │      │
-│      └────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-│   4. SELF-DOCUMENTING                                                       │
-│      ┌────────────────────────────────────────────────────────────────┐      │
-│      │  - Business rules are visible in the entity                  │      │
-│      │  - Code reads like domain language                           │      │
-│      │  - No need to search for logic in services                  │      │
-│      └────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+### Summary of Changes for Subscriber
+
+| Change | Purpose |
+|--------|---------|
+| Added BatchSize value object | Type-safe batch size with validation |
+| Added WaitTime value object | Type-safe wait time with validation |
+| Made fields private | Enforce encapsulation |
+| Added NewSubscriber factory | Only way to create valid subscribers |
+| Added CanProcess method | Business logic lives in entity |
+| Added repository interface | Define persistence contract |
 
 ---
 
-## 4. Domain Events
+## 4. QueueMessage Entity - Complete Refactoring
 
-### What are Domain Events?
+### What This Section Covers
 
-**Domain Events** represent something significant that happened in the domain. They are used to:
-- Capture domain changes
-- Enable loose coupling between components
-- Support event-driven architectures
-- Maintain audit trails
+Everything for `queue_message.go` - self-contained:
 
-### Event Structure
+1. LogLevel value object
+2. QueueMessage entity
+3. Repository interface
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        DOMAIN EVENT STRUCTURE                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                     DomainEvent (Interface)                     │        │
-│   ├─────────────────────────────────────────────────────────────────┤        │
-│   │  + EventID() string        : Unique identifier for event      │        │
-│   │  + EventType() string     : Type of event                     │        │
-│   │  + OccurredAt() time.Time : When the event occurred           │        │
-│   │  + AggregateID() string   : Which aggregate caused it         │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                    │                                        │
-│                                    ▼                                        │
-│   ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │
-│   │ Subscriber       │  │ QueueMessage     │  │ TracerPackage   │         │
-│   │ Registered       │  │ Received         │  │ Deployed         │         │
-│   │                  │  │                  │  │                  │         │
-│   │ - name           │  │ - messageID      │  │ - packageName    │         │
-│   │ - batchSize      │  │ - processName    │  │ - version        │         │
-│   │ - waitTime       │  │ - payload        │  │ - schema         │         │
-│   └──────────────────┘  └──────────────────┘  └──────────────────┘         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+### Step 4.1: Add to queue_message.go
 
-### Implementing Domain Events in Your Project
-
-#### Step 1: Define the Event Interface
+Replace the entire file with:
 
 ```go
-// internal/core/domain/events.go
-
 package domain
 
 import (
+    "errors"
+    "fmt"
+    "strings"
     "time"
-
-    "github.com/google/uuid"
 )
 
-// EventID generates a unique event ID
-type EventID string
+// ==================== ERRORS ====================
 
-func NewEventID() EventID {
-    return EventID(uuid.New().String())
-}
+var (
+    ErrInvalidMessageID = errors.New("invalid message ID")
+    ErrInvalidPayload  = errors.New("payload cannot be empty")
+)
 
-// DomainEvent is the interface all domain events must implement
-type DomainEvent interface {
-    EventID() string
-    EventType() string
-    OccurredAt() time.Time
-    AggregateID() string
-}
+// ==================== VALUE OBJECT ====================
 
-// baseEvent provides common event functionality
-type baseEvent struct {
-    id          EventID
-    eventType   string
-    occurredAt  time.Time
-    aggregateID string
-}
+// LogLevel represents the severity of a log message
+type LogLevel string
 
-func (e *baseEvent) EventID() string       { return string(e.id) }
-func (e *baseEvent) EventType() string     { return e.eventType }
-func (e *baseEvent) OccurredAt() time.Time { return e.occurredAt }
-func (e *baseEvent) AggregateID() string   { return e.aggregateID }
-```
+const (
+    LogLevelDebug    LogLevel = "DEBUG"
+    LogLevelInfo     LogLevel = "INFO"
+    LogLevelWarning  LogLevel = "WARNING"
+    LogLevelError    LogLevel = "ERROR"
+    LogLevelCritical LogLevel = "CRITICAL"
+)
 
-#### Step 2: Define Concrete Events
-
-```go
-// internal/core/domain/subscriber_events.go
-
-package domain
-
-import "time"
-
-// SubscriberRegistered occurs when a new subscriber is created
-type SubscriberRegistered struct {
-    baseEvent
-    SubscriberName string
-    BatchSize      int
-    WaitTime       int
-}
-
-// NewSubscriberRegistered creates a new SubscriberRegistered event
-func NewSubscriberRegistered(subscriber *Subscriber) *SubscriberRegistered {
-    return &SubscriberRegistered{
-        baseEvent: baseEvent{
-            id:          NewEventID(),
-            eventType:   "SubscriberRegistered",
-            occurredAt:  time.Now(),
-            aggregateID: subscriber.Name(),
-        },
-        SubscriberName: subscriber.Name(),
-        BatchSize:      subscriber.BatchSize().Int(),
-        WaitTime:       subscriber.WaitTime().Int(),
+// NewLogLevel creates a LogLevel with validation
+func NewLogLevel(level string) (LogLevel, error) {
+    normalized := strings.ToUpper(strings.TrimSpace(level))
+    switch LogLevel(normalized) {
+    case LogLevelDebug, LogLevelInfo, LogLevelWarning, LogLevelError, LogLevelCritical:
+        return LogLevel(normalized), nil
+    default:
+        return "", fmt.Errorf("invalid log level: %s", level)
     }
 }
 
-// SubscriberBatchSizeChanged occurs when batch size is updated
-type SubscriberBatchSizeChanged struct {
-    baseEvent
-    SubscriberName string
-    OldBatchSize   int
-    NewBatchSize   int
+func (l LogLevel) String() string { return string(l) }
+
+// IsError returns true if this is ERROR or CRITICAL
+func (l LogLevel) IsError() bool {
+    return l == LogLevelError || l == LogLevelCritical
 }
 
-// NewSubscriberBatchSizeChanged creates a new event
-func NewSubscriberBatchSizeChanged(subscriber *Subscriber, oldSize, newSize int) *SubscriberBatchSizeChanged {
-    return &SubscriberBatchSizeChanged{
-        baseEvent: baseEvent{
-            id:          NewEventID(),
-            eventType:   "SubscriberBatchSizeChanged",
-            occurredAt:  time.Now(),
-            aggregateID: subscriber.Name(),
-        },
-        SubscriberName: subscriber.Name(),
-        OldBatchSize:   oldSize,
-        NewBatchSize:   newSize,
+// ==================== ENTITY ====================
+
+// QueueMessage represents a message from the tracer queue
+type QueueMessage struct {
+    messageID   string
+    processName string
+    logLevel    LogLevel
+    payload     string
+    timestamp   time.Time
+}
+
+// NewQueueMessage creates a new QueueMessage
+func NewQueueMessage(
+    messageID string,
+    processName string,
+    logLevel LogLevel,
+    payload string,
+    timestamp time.Time,
+) (*QueueMessage, error) {
+    if strings.TrimSpace(messageID) == "" {
+        return nil, ErrInvalidMessageID
     }
-}
-```
-
-```go
-// internal/core/domain/message_events.go
-
-package domain
-
-import "time"
-
-// MessageReceived occurs when a tracer message is dequeued
-type MessageReceived struct {
-    baseEvent
-    MessageID   string
-    ProcessName string
-    LogLevel    string
-    Payload     string
-}
-
-// NewMessageReceived creates a new MessageReceived event
-func NewMessageReceived(msg *QueueMessage) *MessageReceived {
-    return &MessageReceived{
-        baseEvent: baseEvent{
-            id:          NewEventID(),
-            eventType:   "MessageReceived",
-            occurredAt:  time.Now(),
-            aggregateID: msg.MessageID,
-        },
-        MessageID:   msg.MessageID,
-        ProcessName: msg.ProcessName,
-        LogLevel:    msg.LogLevel,
-        Payload:     msg.Payload,
+    if strings.TrimSpace(payload) == "" {
+        return nil, ErrInvalidPayload
     }
+
+    return &QueueMessage{
+        messageID:   messageID,
+        processName: processName,
+        logLevel:    logLevel,
+        payload:     payload,
+        timestamp:   timestamp,
+    }, nil
 }
 
-// CriticalMessageReceived occurs when a critical log is received
-type CriticalMessageReceived struct {
-    baseEvent
-    MessageID string
-    ProcessName string
-    Payload string
+// ==================== GETTERS ====================
+
+func (m *QueueMessage) MessageID() string    { return m.messageID }
+func (m *QueueMessage) ProcessName() string  { return m.processName }
+func (m *QueueMessage) LogLevel() LogLevel  { return m.logLevel }
+func (m *QueueMessage) Payload() string      { return m.payload }
+func (m *QueueMessage) Timestamp() time.Time { return m.timestamp }
+
+// ==================== BUSINESS METHODS ====================
+
+// IsCritical returns true if this is an error or critical message
+func (m *QueueMessage) IsCritical() bool {
+    return m.logLevel.IsError()
 }
 
-// NewCriticalMessageReceived creates a new event for critical messages
-func NewCriticalMessageReceived(msg *QueueMessage) *CriticalMessageReceived {
-    return &CriticalMessageReceived{
-        baseEvent: baseEvent{
-            id:          NewEventID(),
-            eventType:   "CriticalMessageReceived",
-            occurredAt:  time.Now(),
-            aggregateID: msg.MessageID,
-        },
-        MessageID:   msg.MessageID,
-        ProcessName: msg.ProcessName,
-        Payload:     msg.Payload,
-    }
+// Format returns a formatted string for display
+// This replaces the formatting logic currently in TracerService
+func (m *QueueMessage) Format() string {
+    return fmt.Sprintf("[%s] [%s] %s: %s",
+        m.timestamp.Format("2006-01-02 15:04:05"),
+        m.logLevel,
+        m.processName,
+        m.payload,
+    )
 }
 ```
 
-#### Step 3: Event Dispatcher
+### Summary of Changes for QueueMessage
+
+| Change | Purpose |
+|--------|---------|
+| Added LogLevel value object | Type-safe log levels with validation |
+| Made fields private | Enforce encapsulation |
+| Added IsCritical method | Business logic in entity |
+| Added Format method | Replaces formatting code in TracerService |
+
+---
+
+## 5. DatabaseSettings Entity - Complete Refactoring
+
+### What This Section Covers
+
+Everything for `database_settings.go` - self-contained:
+
+1. Port value object
+2. DatabaseSettings entity
+3. Repository interface
+
+### Step 5.1: Create database_settings.go
+
+Create or replace `internal/core/domain/database_settings.go`:
 
 ```go
-// internal/core/domain/event_dispatcher.go
-
 package domain
 
-// EventDispatcher manages event handlers
-type EventDispatcher interface {
-    Register(eventType string, handler EventHandler)
-    Dispatch(event DomainEvent) error
+import (
+    "errors"
+    "fmt"
+    "strings"
+)
+
+// ==================== ERRORS ====================
+
+var (
+    ErrEmptyDatabase = errors.New("database name cannot be empty")
+    ErrEmptyHost     = errors.New("host cannot be empty")
+    ErrInvalidPort   = errors.New("invalid port number")
+    ErrEmptyUsername = errors.New("username cannot be empty")
+)
+
+// ==================== VALUE OBJECT ====================
+
+// Port represents a database port number
+type Port int
+
+const (
+    MinPort          Port = 1
+    MaxPort          Port = 65535
+    DefaultOraclePort Port = 1521
+)
+
+func NewPort(p int) (Port, error) {
+    if p < int(MinPort) || p > int(MaxPort) {
+        return 0, fmt.Errorf("port must be between %d and %d", MinPort, MaxPort)
+    }
+    return Port(p), nil
 }
 
-// EventHandler handles domain events
-type EventHandler func(event DomainEvent) error
+func (p Port) Int() int { return int(p) }
 
-// SimpleEventDispatcher is a basic implementation
-type SimpleEventDispatcher struct {
-    handlers map[string][]EventHandler
+// ==================== ENTITY ====================
+
+// DatabaseSettings represents Oracle database connection settings
+type DatabaseSettings struct {
+    database  string
+    host      string
+    port      Port
+    username  string
+    password  string
+    isDefault bool
 }
 
-// NewSimpleEventDispatcher creates a new dispatcher
-func NewSimpleEventDispatcher() *SimpleEventDispatcher {
-    return &SimpleEventDispatcher{
-        handlers: make(map[string][]EventHandler),
+// NewDatabaseSettings creates new database settings with validation
+func NewDatabaseSettings(
+    database string,
+    host string,
+    port Port,
+    username string,
+    password string,
+) (*DatabaseSettings, error) {
+    if strings.TrimSpace(database) == "" {
+        return nil, ErrEmptyDatabase
+    }
+    if strings.TrimSpace(host) == "" {
+        return nil, ErrEmptyHost
+    }
+    if port == 0 {
+        return nil, ErrInvalidPort
+    }
+    if strings.TrimSpace(username) == "" {
+        return nil, ErrEmptyUsername
+    }
+
+    return &DatabaseSettings{
+        database:  database,
+        host:      host,
+        port:      port,
+        username:  username,
+        password:  password,
+        isDefault: false,
+    }, nil
+}
+
+// ==================== GETTERS ====================
+
+func (s *DatabaseSettings) Database() string { return s.database }
+func (s *DatabaseSettings) Host() string     { return s.host }
+func (s *DatabaseSettings) Port() Port       { return s.port }
+func (s *DatabaseSettings) Username() string { return s.username }
+func (s *DatabaseSettings) Password() string { return s.password }
+func (s *DatabaseSettings) IsDefault() bool  { return s.isDefault }
+
+// ==================== BUSINESS METHODS ====================
+
+// GetConnectionString returns the Oracle Easy Connect string
+func (s *DatabaseSettings) GetConnectionString() string {
+    return fmt.Sprintf("%s:%d/%s", s.host, s.port, s.database)
+}
+
+// GetConnectionDetails returns a safe string for logging (without password)
+func (s *DatabaseSettings) GetConnectionDetails() string {
+    return fmt.Sprintf("%s@%s:%d/%s", s.username, s.host, s.port, s.database)
+}
+
+// SetAsDefault marks this as the default database
+func (s *DatabaseSettings) SetAsDefault() {
+    s.isDefault = true
+}
+```
+
+### Step 5.2: Add Repository Interface
+
+Add to `internal/core/ports/repository.go`:
+
+```go
+// ==================== DATABASE SETTINGS REPOSITORY ====================
+
+// DatabaseSettingsRepository defines how to persist and retrieve DatabaseSettings
+type DatabaseSettingsRepository interface {
+    Save(ctx context.Context, settings domain.DatabaseSettings) error
+    GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error)
+    GetDefault(ctx context.Context) (*domain.DatabaseSettings, error)
+    Delete(ctx context.Context, id string) error
+}
+```
+
+### Summary of Changes for DatabaseSettings
+
+| Change | Purpose |
+|--------|---------|
+| Added Port value object | Type-safe port with validation |
+| Added validation in constructor | Fail fast on invalid data |
+| Added GetConnectionString | Encapsulates connection string building |
+| Added GetConnectionDetails | Safe logging without password |
+
+---
+
+## 6. DatabasePermissions Entity - Complete Refactoring
+
+### What This Section Covers
+
+Everything for `permissions.go` - self-contained:
+
+1. PermissionStatus value object
+2. DatabasePermissions entity
+
+### Step 6.1: Create permissions.go
+
+Create or replace `internal/core/domain/permissions.go`:
+
+```go
+package domain
+
+import (
+    "errors"
+    "fmt"
+)
+
+// ==================== ERRORS ====================
+
+var (
+    ErrPermissionDenied   = errors.New("permission denied")
+    ErrMissingPermissions = errors.New("missing required permissions")
+)
+
+// ==================== VALUE OBJECT ====================
+
+// PermissionStatus holds the status of all required permissions
+type PermissionStatus struct {
+    CreateSequence       bool
+    CreateProcedure     bool
+    CreateType          bool
+    AQAdministratorRole bool
+    AQUserRole          bool
+    DBMSAQADMExecute    bool
+    DBMSAQExecute       bool
+}
+
+// HasAllPermissions returns true if all permissions are granted
+func (ps *PermissionStatus) HasAllPermissions() bool {
+    return ps.CreateSequence &&
+        ps.CreateProcedure &&
+        ps.CreateType &&
+        ps.AQAdministratorRole &&
+        ps.AQUserRole &&
+        ps.DBMSAQADMExecute &&
+        ps.DBMSAQExecute
+}
+
+// ==================== ENTITY ====================
+
+// DatabasePermissions represents the result of a permission check
+type DatabasePermissions struct {
+    schema      string
+    permissions PermissionStatus
+}
+
+// NewDatabasePermissions creates new database permissions
+func NewDatabasePermissions(schema string, status PermissionStatus) *DatabasePermissions {
+    return &DatabasePermissions{
+        schema:      schema,
+        permissions: status,
     }
 }
 
-// Register adds a handler for an event type
-func (d *SimpleEventDispatcher) Register(eventType string, handler EventHandler) {
-    d.handlers[eventType] = append(d.handlers[eventType], handler)
+// ==================== GETTERS ====================
+
+func (p *DatabasePermissions) Schema() string            { return p.schema }
+func (p *DatabasePermissions) Permissions() PermissionStatus { return p.permissions }
+
+// ==================== BUSINESS METHODS ====================
+
+// IsValid returns true if all permissions are granted
+func (p *DatabasePermissions) IsValid() bool {
+    return p.permissions.HasAllPermissions()
 }
 
-// Dispatch sends an event to all registered handlers
-func (d *SimpleEventDispatcher) Dispatch(event DomainEvent) error {
-    handlers, ok := d.handlers[event.EventType()]
-    if !ok {
-        return nil // No handlers registered
-    }
-
-    for _, handler := range handlers {
-        if err := handler(event); err != nil {
-            return err
-        }
+// Validate returns an error if permissions are insufficient
+func (p *DatabasePermissions) Validate() error {
+    if !p.IsValid() {
+        return ErrMissingPermissions
     }
     return nil
 }
 ```
 
-### Using Events in Your Services
+### Summary of Changes for DatabasePermissions
+
+| Change | Purpose |
+|--------|---------|
+| Added PermissionStatus value object | Groups all permission flags |
+| Added IsValid method | Single method to check all permissions |
+| Added Validate method | Returns error if not valid |
+
+---
+
+## 7. Remaining Entities
+
+### These entities are simple and don't need much refactoring:
+
+### 7.1 ClientSettings (config.go)
+
+Current code is fine, but add defaults:
+
+```go
+// ClientSettings represents client-specific settings
+type ClientSettings struct {
+    enableUtf8 bool
+}
+
+func NewClientSettings(enableUtf8 bool) *ClientSettings {
+    return &ClientSettings{enableUtf8: enableUtf8}
+}
+
+func DefaultClientSettings() *ClientSettings {
+    return &ClientSettings{enableUtf8: true}
+}
+
+func (c *ClientSettings) EnableUtf8() bool { return c.enableUtf8 }
+```
+
+### 7.2 RunCycleStatus (config.go)
+
+```go
+// RunCycleStatus represents the status of the application's run cycle
+type RunCycleStatus struct {
+    isFirstRun bool
+}
+
+func NewRunCycleStatus(isFirstRun bool) *RunCycleStatus {
+    return &RunCycleStatus{isFirstRun: isFirstRun}
+}
+
+func (r *RunCycleStatus) IsFirstRun() bool { return r.isFirstRun }
+```
+
+### 7.3 QueueConfig (queue.go)
+
+This is already a simple value object, no changes needed:
+
+```go
+const (
+    QueueName      = "OMNI_TRACER_QUEUE"
+    QueueTableName = "AQ$OMNI_TRACER_QUEUE"
+)
+```
+
+---
+
+## 8. Repository Pattern - Implementation
+
+### Step 8.1: Update ports/repository.go
+
+Replace the entire file with:
+
+```go
+package ports
+
+import (
+    "context"
+
+    "OmniView/internal/core/domain"
+)
+
+// ==================== SUBSCRIBER REPOSITORY ====================
+
+type SubscriberRepository interface {
+    Save(ctx context.Context, subscriber domain.Subscriber) error
+    GetByName(ctx context.Context, name string) (*domain.Subscriber, error)
+    Exists(ctx context.Context, name string) (bool, error)
+    Delete(ctx context.Context, name string) error
+}
+
+// ==================== DATABASE SETTINGS REPOSITORY ====================
+
+type DatabaseSettingsRepository interface {
+    Save(ctx context.Context, settings domain.DatabaseSettings) error
+    GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error)
+    GetDefault(ctx context.Context) (*domain.DatabaseSettings, error)
+    Delete(ctx context.Context, id string) error
+}
+
+// ==================== PERMISSIONS REPOSITORY ====================
+
+type PermissionsRepository interface {
+    Save(ctx context.Context, perms *domain.DatabasePermissions) error
+    Get(ctx context.Context, schema string) (*domain.DatabasePermissions, error)
+    Exists(ctx context.Context, schema string) (bool, error)
+}
+```
+
+### Step 8.2: Update BoltDB Adapter
+
+The existing BoltDB adapter already implements these. You just need to wrap it:
+
+```go
+// internal/adapter/storage/boltdb/subscriber_repository.go
+
+package boltdb
+
+import (
+    "OmniView/internal/core/domain"
+    "OmniView/internal/core/ports"
+    "context"
+    "encoding/json"
+)
+
+type SubscriberRepository struct {
+    adapter *BoltAdapter
+    bucket  string
+}
+
+func NewSubscriberRepository(adapter *BoltAdapter) *SubscriberRepository {
+    return &SubscriberRepository{
+        adapter: adapter,
+        bucket:  "subscribers",
+    }
+}
+
+func (r *SubscriberRepository) Save(ctx context.Context, subscriber domain.Subscriber) error {
+    data, err := json.Marshal(subscriber)
+    if err != nil {
+        return err
+    }
+    return r.adapter.db.Update(func(tx *bolt.Tx) error {
+        return tx.Bucket([]byte(r.bucket)).Put([]byte(subscriber.Name()), data)
+    })
+}
+
+func (r *SubscriberRepository) GetByName(ctx context.Context, name string) (*domain.Subscriber, error) {
+    var subscriber domain.Subscriber
+    err := r.adapter.db.View(func(tx *bolt.Tx) error {
+        data := tx.Bucket([]byte(r.bucket)).Get([]byte(name))
+        if data == nil {
+            return domain.ErrSubscriberNotFound
+        }
+        return json.Unmarshal(data, &subscriber)
+    })
+    if err != nil {
+        return nil, err
+    }
+    return &subscriber, nil
+}
+
+func (r *SubscriberRepository) Exists(ctx context.Context, name string) (bool, error) {
+    var exists bool
+    err := r.adapter.db.View(func(tx *bolt.Tx) error {
+        exists = tx.Bucket([]byte(r.bucket)).Get([]byte(name)) != nil
+        return nil
+    })
+    return exists, err
+}
+
+func (r *SubscriberRepository) Delete(ctx context.Context, name string) error {
+    return r.adapter.db.Update(func(tx *bolt.Tx) error {
+        return tx.Bucket([]byte(r.bucket)).Delete([]byte(name))
+    })
+}
+```
+
+---
+
+## 9. Service Refactoring - Complete
+
+### 9.1 SubscriberService
+
+**Before (current):**
 
 ```go
 // internal/service/subscribers/subscriber_service.go
@@ -721,976 +841,343 @@ package subscribers
 import (
     "OmniView/internal/core/domain"
     "OmniView/internal/core/ports"
-)
-
-type SubscriberService struct {
-    db          ports.DatabaseRepository
-    bolt        ports.ConfigRepository
-    dispatcher  domain.EventDispatcher // Add event dispatcher
-}
-
-// RegisterSubscriber with event publishing
-func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
-    subscriber, err := ss.GetSubscriber()
-    if err != nil {
-        if !errors.Is(err, domain.ErrSubscriberNotFound) {
-            return domain.Subscriber{}, err
-        }
-        // Create new subscriber
-        newSub, err := domain.NewRandomSubscriber()
-        if err != nil {
-            return domain.Subscriber{}, err
-        }
-        subscriber = newSub
-    }
-
-    // Register in Oracle DB
-    if err := ss.db.RegisterNewSubscriber(*subscriber); err != nil {
-        return domain.Subscriber{}, err
-    }
-
-    // PUBLISH DOMAIN EVENT
-    event := domain.NewSubscriberRegistered(subscriber)
-    if err := ss.dispatcher.Dispatch(event); err != nil {
-        // Log error but don't fail the operation
-        // Event publishing failure shouldn't block the main flow
-    }
-
-    return *subscriber, nil
-}
-```
-
----
-
-## 5. Aggregates and Aggregate Roots
-
-### What is an Aggregate?
-
-An **Aggregate** is a cluster of related domain objects that are treated as a single unit for data changes. The **Aggregate Root** is the main entity that controls access to the entire cluster.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          AGGREGATE PATTERN                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                    SUBSCRIBER AGGREGATE                         │        │
-│   │  ┌─────────────────────────────────────────────────────────┐   │        │
-│   │  │              Subscriber (AGGREGATE ROOT)                  │   │        │
-│   │  │  - name: string                                          │   │        │
-│   │  │  - batchSize: BatchSize                                  │   │        │
-│   │  │  - waitTime: WaitTime                                    │   │        │
-│   │  │  - status: SubscriberStatus                               │   │        │
-│   │  │  ─────────────────────────────────────────────────────    │   │        │
-│   │  │  + Register()                                            │   │        │
-│   │  │  + ProcessMessages()                                      │   │        │
-│   │  │  + UpdateConfiguration()                                  │   │        │
-│   │  └─────────────────────────────────────────────────────────┘   │        │
-│   │                            │                                      │        │
-│   │                            │ Contains                              │        │
-│   │                            ▼                                      │        │
-│   │  ┌─────────────────────────────────────────────────────────┐   │        │
-│   │  │              SubscriberState (Entity)                   │   │        │
-│   │  │  - lastProcessedAt: time.Time                          │   │        │
-│   │  │  - totalProcessed: int                                  │   │        │
-│   │  │  - status: ProcessingStatus                             │   │        │
-│   │  └─────────────────────────────────────────────────────────┘   │        │
-│   │                            │                                      │        │
-│   │                            │ Contains                              │        │
-│   │                            ▼                                      │        │
-│   │  ┌─────────────────────────────────────────────────────────┐   │        │
-│   │  │           ProcessingSession (Value Object)              │   │        │
-│   │  │  - sessionID: string                                    │   │        │
-│   │  │  - startedAt: time.Time                                │   │        │
-│   │  │  - messagesProcessed: int                               │   │        │
-│   │  └─────────────────────────────────────────────────────────┘   │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-│   KEY RULES:                                                                 │
-│   1. Only the Aggregate Root can be referenced from outside               │
-│   2. All changes to objects within the aggregate go through the root      │
-│   3. The aggregate enforces its own invariants                             │
-│   4. Database operations load/save the entire aggregate                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Implementing Aggregates
-
-```go
-// internal/core/domain/subscriber_aggregate.go
-
-package domain
-
-import (
     "errors"
-    "time"
+    "strings"
+
+    "github.com/google/uuid"
 )
-
-/ SubscriberStatus represents the status of a subscriber
-type SubscriberStatus string
-
-const (
-    SubscriberStatusActive   SubscriberStatus = "ACTIVE"
-    SubscriberStatusInactive SubscriberStatus = "INACTIVE"
-    SubscriberStatusError   SubscriberStatus = "ERROR"
-)
-
-// ProcessingStatus represents the processing state
-type ProcessingStatus string
-
-const (
-    ProcessingStatusIdle       ProcessingStatus = "IDLE"
-    ProcessingStatusRunning   ProcessingStatus = "RUNNING"
-    ProcessingStatusPaused    ProcessingStatus = "PAUSED"
-    ProcessingStatusError     ProcessingStatus = "ERROR"
-)
-
-// ==================== VALUE OBJECTS ====================
-
-// ProcessingSession represents a single processing session
-type ProcessingSession struct {
-    sessionID        string
-    startedAt        time.Time
-    messagesProcessed int
-    lastMessageAt    time.Time
-}
-
-func NewProcessingSession() *ProcessingSession {
-    return &ProcessingSession{
-        sessionID: NewEventID().String(),
-        startedAt: time.Now(),
-    }
-}
-
-func (ps *ProcessingSession) SessionID() string { return ps.sessionID }
-func (ps *ProcessingSession) StartedAt() time.Time { return ps.startedAt }
-func (ps *ProcessingSession) MessagesProcessed() int { return ps.messagesProcessed }
-
-func (ps *ProcessingSession) RecordMessage() {
-    ps.messagesProcessed++
-    ps.lastMessageAt = time.Now()
-}
-
-// ==================== SUBSCRIBER STATE ====================
-
-// SubscriberState tracks runtime state of a subscriber
-type SubscriberState struct {
-    lastProcessedAt   time.Time
-    totalProcessed   int
-    processingStatus ProcessingStatus
-    lastError        string
-}
-
-func NewSubscriberState() *SubscriberState {
-    return &SubscriberState{
-        processingStatus: ProcessingStatusIdle,
-    }
-}
-
-func (ss *SubscriberState) LastProcessedAt() time.Time { return ss.lastProcessedAt }
-func (ss *SubscriberState) TotalProcessed() int { return ss.totalProcessed }
-func (ss *SubscriberState) Status() ProcessingStatus { return ss.processingStatus }
-func (ss *SubscriberState) LastError() string { return ss.lastError }
-
-func (ss *SubscriberState) MarkProcessing() {
-    ss.processingStatus = ProcessingStatusRunning
-}
-
-func (ss *SubscriberState) MarkIdle() {
-    ss.processingStatus = ProcessingStatusIdle
-}
-
-func (ss *SubscriberState) MarkError(err error) {
-    ss.processingStatus = ProcessingStatusError
-    ss.lastError = err.Error()
-}
-
-func (ss *SubscriberState) RecordProcessed(count int) {
-    ss.totalProcessed += count
-    ss.lastProcessedAt = time.Now()
-}
-
-// ==================== AGGREGATE ROOT ====================
-
-// SubscriberAggregate is the aggregate root for subscriber operations
-// It encapsulates all behavior and state related to a subscriber
-type SubscriberAggregate struct {
-    subscriber *Subscriber    // The main entity
-    state      *SubscriberState
-    session    *ProcessingSession
-}
-
-// NewSubscriberAggregate creates a new aggregate from scratch
-func NewSubscriberAggregate(name string) (*SubscriberAggregate, error) {
-    sub, err := NewSubscriberWithDefaults(name)
-    if err != nil {
-        return nil, err
-    }
-
-    return &SubscriberAggregate{
-        subscriber: sub,
-        state:      NewSubscriberState(),
-        session:    nil,
-    }, nil
-}
-
-// NewSubscriberAggregateFromEntity creates an aggregate from existing data
-func NewSubscriberAggregateFromEntity(sub *Subscriber) *SubscriberAggregate {
-    return &SubscriberAggregate{
-        subscriber: sub,
-        state:      NewSubscriberState(),
-        session:    nil,
-    }
-}
-
-// ==================== AGGREGATE ROOT METHODS ====================
-
-// Entity access - all access goes through aggregate root
-
-func (sa *SubscriberAggregate) Subscriber() *Subscriber {
-    return sa.subscriber
-}
-
-func (sa *SubscriberAggregate) State() *SubscriberState {
-    return sa.state
-}
-
-// Register performs subscriber registration
-func (sa *SubscriberAggregate) Register() error {
-    if err := sa.subscriber.Validate(); err != nil {
-        return err
-    }
-    sa.state.MarkIdle()
-    return nil
-}
-
-// StartProcessing begins a processing session
-func (sa *SubscriberAggregate) StartProcessing() error {
-    if !sa.subscriber.CanProcess() {
-        return errors.New("subscriber cannot process")
-    }
-
-    if sa.session != nil {
-        return errors.New("processing session already active")
-    }
-
-    sa.session = NewProcessingSession()
-    sa.state.MarkProcessing()
-    return nil
-}
-
-// RecordProcessed records processed messages
-func (sa *SubscriberAggregate) RecordProcessed(count int) {
-    if sa.session != nil {
-        sa.session.RecordMessage()
-    }
-    sa.state.RecordProcessed(count)
-}
-
-// StopProcessing ends the current processing session
-func (sa *SubscriberAggregate) StopProcessing() {
-    if sa.session != nil {
-        sa.session = nil
-    }
-    sa.state.MarkIdle()
-}
-
-// UpdateConfiguration safely updates configuration
-func (sa *SubscriberAggregate) UpdateConfiguration(batchSize BatchSize, waitTime WaitTime) error {
-    oldSize := sa.subscriber.BatchSize()
-
-    if err := sa.subscriber.UpdateBatchSize(batchSize); err != nil {
-        return err
-    }
-
-    if err := sa.subscriber.UpdateWaitTime(waitTime); err != nil {
-        // Rollback
-        sa.subscriber.UpdateBatchSize(oldSize)
-        return err
-    }
-
-    return nil
-}
-```
-
----
-
-## 6. Domain Services
-
-### What are Domain Services?
-
-**Domain Services** contain business logic that doesn't naturally fit within an Entity or Value Object. They're used when an operation conceptually belongs to the domain but doesn't have a natural home in a single entity.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      WHEN TO USE DOMAIN SERVICES                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                     DOMAIN SERVICE USAGE                        │        │
-│   ├─────────────────────────────────────────────────────────────────┤        │
-│   │                                                                  │        │
-│   │  USE DOMAIN SERVICE WHEN:                                       │        │
-│   │  ─────────────────────────────                                  │        │
-│   │                                                                  │        │
-│   │  1. Operation involves multiple aggregates                    │        │
-│   │     Example: Transfer money between two accounts               │        │
-│   │                                                                  │        │
-│   │  2. Operation is stateless                                      │        │
-│   │     Example: Calculate shipping cost based on order             │        │
-│   │                                                                  │        │
-│   │  3. Operation doesn't belong to any single entity              │        │
-│   │     Example: Validate password strength                         │        │
-│   │                                                                  │        │
-│   │  4. Operation is a transformation                               │        │
-│   │     Example: Convert currency                                   │        │
-│   │                                                                  │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-│   ⚠️  WARNING: Don't use Domain Services as a "catch-all"                  │
-│       If behavior naturally belongs to an entity, put it there!            │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Example: Subscriber Validation Service
-
-```go
-// internal/core/domain/subscriber_validation_service.go
-
-package domain
-
-import "fmt"
-
-// SubscriberValidationService contains subscriber validation logic
-type SubscriberValidationService struct{}
-
-// NewSubscriberValidationService creates a new validation service
-func NewSubscriberValidationService() *SubscriberValidationService {
-    return &SubscriberValidationService{}
-}
-
-// ValidationResult contains the result of validation
-type ValidationResult struct {
-    Valid   bool
-    Errors  []string
-}
-
-func (vr *ValidationResult) AddError(err string) {
-    vr.Errors = append(vr.Errors, err)
-}
-
-func (vr *ValidationResult) IsValid() bool {
-    return vr.Valid && len(vr.Errors) == 0
-}
-
-// ValidateName validates a subscriber name
-func (vs *SubscriberValidationService) ValidateName(name string) error {
-    if len(name) < 3 {
-        return fmt.Errorf("name must be at least 3 characters")
-    }
-    if len(name) > 128 {
-        return fmt.Errorf("name must be at most 128 characters")
-    }
-    // Oracle naming conventions
-    if !isValidOracleIdentifier(name) {
-        return fmt.Errorf("name must be a valid Oracle identifier")
-    }
-    return nil
-}
-
-// ValidateConfiguration validates batch size and wait time
-func (vs *SubscriberValidationService) ValidateConfiguration(batchSize BatchSize, waitTime WaitTime) error {
-    var errors []string
-
-    if batchSize < MinBatchSize || batchSize > MaxBatchSize {
-        errors = append(errors, fmt.Sprintf("batch size must be between %d and %d", MinBatchSize, MaxBatchSize))
-    }
-
-    if waitTime < MinWaitTime || waitTime > MaxWaitTime {
-        errors = append(errors, fmt.Sprintf("wait time must be between %d and %d", MinWaitTime, MaxWaitTime))
-    }
-
-    if len(errors) > 0 {
-        return fmt.Errorf("validation failed: %v", errors)
-    }
-
-    return nil
-}
-
-// isValidOracleIdentifier checks if a name is valid for Oracle
-func isValidOracleIdentifier(name string) bool {
-    if len(name) == 0 {
-        return false
-    }
-    // Must start with letter
-    first := name[0]
-    if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')) {
-        return false
-    }
-    // Rest can be letters, numbers, underscore
-    for _, c := range name[1:] {
-        if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
-            return false
-        }
-    }
-    return true
-}
-```
-
----
-
-## 7. Application Services vs Domain Services
-
-### Understanding the Layers
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    APPLICATION vs DOMAIN SERVICES                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                    APPLICATION LAYER                           │        │
-│   │                                                                  │        │
-│   │  Application Services (Use Cases)                              │        │
-│   │  ───────────────────────────────────────                        │        │
-│   │  • Coordinate workflow                                         │        │
-│   │  • Handle transactions                                          │        │
-│   │  • Delegate to domain objects                                   │        │
-│   │  • Handle cross-cutting concerns                                │        │
-│   │  • Transform DTOs                                              │        │
-│   │                                                                  │        │
-│   │  Examples:                                                      │        │
-│   │  • RegisterSubscriberUseCase                                   │        │
-│   │  • ProcessMessagesUseCase                                      │        │
-│   │  • DeployTracerPackageUseCase                                  │        │
-│   │                                                                  │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                    │                                        │
-│                                    ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                      DOMAIN LAYER                               │        │
-│   │                                                                  │        │
-│   │  Domain Services                                                │        │
-│   │  ─────────────────                                              │        │
-│   │  • Pure business logic                                          │        │
-│   │  • No infrastructure dependencies                               │        │
-│   │  • Stateless                                                    │        │
-│   │  • Operations that span multiple entities                      │        │
-│   │                                                                  │        │
-│   │  Domain Entities & Aggregates                                   │        │
-│   │  ───────────────────────────────                                │        │
-│   │  • Core business rules                                          │        │
-│   │  • Encapsulated state                                           │        │
-│   │  • Self-validating                                               │        │
-│   │                                                                  │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                    │                                        │
-│                                    ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                   INFRASTRUCTURE LAYER                         │        │
-│   │                                                                  │        │
-│   │  Adapters (Repository, External Services)                      │        │
-│   │  ───────────────────────────────────────                        │        │
-│   │  • Implement ports (interfaces)                                 │        │
-│   │  • Database operations                                         │        │
-│   │  • External API calls                                           │        │
-│   │                                                                  │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Example: Refactoring Subscriber Service
-
-#### Before (Current Structure - Mixed Concerns)
-
-```go
-// internal/service/subscribers/subscriber_service.go
-
-package subscribers
 
 type SubscriberService struct {
     db   ports.DatabaseRepository
     bolt ports.ConfigRepository
 }
 
-// Contains: business logic + persistence + registration
+func NewSubscriberService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *SubscriberService {
+    return &SubscriberService{db: db, bolt: bolt}
+}
+
+// PROBLEM: Business logic mixed with persistence
 func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
-    // Business logic here (creating subscriber)
-    // Database operations here (registering in Oracle)
-    // Bolt operations here (storing in local DB)
-    // ... mixed together!
-}
-```
-
-#### After (Separated Concerns)
-
-```go
-// internal/core/domain/subscriber_factory.go
-
-package domain
-
-// This is DOMAIN - pure business logic
-type SubscriberFactory struct {
-    validationService *SubscriberValidationService
-}
-
-func NewSubscriberFactory() *SubscriberFactory {
-    return &SubscriberFactory{
-        validationService: NewSubscriberValidationService(),
-    }
-}
-
-// CreateSubscriber creates a new subscriber (business logic only)
-func (f *SubscriberFactory) CreateSubscriber(name string) (*Subscriber, error) {
-    // Validate
-    if err := f.validationService.ValidateName(name); err != nil {
-        return nil, err
-    }
-
-    return NewSubscriberWithDefaults(name)
-}
-
-// CreateSubscriberWithConfig creates a subscriber with custom config
-func (f *SubscriberFactory) CreateSubscriberWithConfig(
-    name string,
-    batchSize BatchSize,
-    waitTime WaitTime,
-) (*Subscriber, error) {
-    // Validate
-    if err := f.validationService.ValidateName(name); err != nil {
-        return nil, err
-    }
-    if err := f.validationService.ValidateConfiguration(batchSize, waitTime); err != nil {
-        return nil, err
-    }
-
-    return NewSubscriber(name, batchSize, waitTime)
-}
-```
-
-```go
-// internal/application/subscriber_commands.go
-
-package application
-
-// This is APPLICATION LAYER - orchestration
-// Use case: Register Subscriber
-
-import (
-    "OmniView/internal/core/domain"
-    "OmniView/internal/core/ports"
-)
-
-type RegisterSubscriberCommand struct {
-    Name      string
-    BatchSize int
-    WaitTime  int
-}
-
-type RegisterSubscriberHandler struct {
-    db          ports.DatabaseRepository
-    bolt        ports.ConfigRepository
-    factory     *domain.SubscriberFactory
-    dispatcher  domain.EventDispatcher
-}
-
-func NewRegisterSubscriberHandler(
-    db ports.DatabaseRepository,
-    bolt ports.ConfigRepository,
-    factory *domain.SubscriberFactory,
-    dispatcher domain.EventDispatcher,
-) *RegisterSubscriberHandler {
-    return &RegisterSubscriberHandler{
-        db:         db,
-        bolt:       bolt,
-        factory:    factory,
-        dispatcher: dispatcher,
-    the use case
-func (h * }
-}
-
-// Handle executesRegisterSubscriberHandler) Handle(cmd RegisterSubscriberCommand) (*domain.Subscriber, error) {
-    // 1. Create domain object (delegate to factory)
-    var subscriber *domain.Subscriber
-    var err error
-
-    if cmd.BatchSize > 0 && cmd.WaitTime > 0 {
-        subscriber, err = h.factory.CreateSubscriberWithConfig(
-            cmd.Name,
-            domain.BatchSize(cmd.BatchSize),
-            domain.WaitTime(cmd.WaitTime),
-        )
-    } else {
-        subscriber, err = h.factory.CreateSubscriber(cmd.Name)
-    }
+    subscriber, err := ss.bolt.GetSubscriber()
     if err != nil {
-        return nil, err
+        if !errors.Is(err, domain.ErrSubscriberNotFound) {
+            return domain.Subscriber{}, err
+        }
+        // Create new - but validation is hidden here
+        uuidWithHyphen := uuid.New()
+        subscriber = domain.Subscriber{
+            Name:      "SUB_" + strings.ToUpper(strings.ReplaceAll(uuidWithHyphen.String(), "-", "_")),
+            BatchSize: 1000,  // Magic number!
+            WaitTime:  5,      // Magic number!
+        }
     }
 
-    // 2. Persist to local storage
-    if err := h.bolt.SetSubscriber(*subscriber); err != nil {
-        return nil, err
-    }
-
-    // 3. Register in Oracle
-    if err := h.db.RegisterNewSubscriber(*subscriber); err != nil {
-        return nil, err
-    }
-
-    // 4. Publish domain event
-    event := domain.NewSubscriberRegistered(subscriber)
-    if err := h.dispatcher.Dispatch(event); err != nil {
-        // Log but don't fail - event failure shouldn't block
+    // Register in Oracle
+    if err := ss.db.RegisterNewSubscriber(subscriber); err != nil {
+        return domain.Subscriber{}, err
     }
 
     return subscriber, nil
 }
 ```
 
----
+**After (refactored):**
 
-## 8. Bounded Contexts
+```go
+// internal/service/subscribers/subscriber_service.go
 
-### What is a Bounded Context?
+package subscribers
 
-A **Bounded Context** is a logical boundary within which a particular domain model exists. Each context has its own:
-- Ubiquitous Language (terminology)
-- Domain Model
-- Team Ownership
+import (
+    "OmniView/internal/core/domain"
+    "OmniView/internal/core/ports"
+    "context"
+    "errors"
+)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    BOUNDED CONTEXTS IN OMNIINSPECT                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────┐        │
-│   │                   OMNIINSPECT SYSTEM                             │        │
-│   │                                                                  │        │
-│   │  ┌──────────────────────────┐  ┌──────────────────────────┐     │        │
-│   │  │   SUBSCRIBER CONTEXT    │  │   TRACER CONTEXT        │     │        │
-│   │  │                          │  │                          │     │        │
-│   │  │  Entities:              │  │  Entities:               │     │        │
-│   │  │  - Subscriber          │  │  - QueueMessage          │     │        │
-│   │  │  - SubscriberState      │  │  - TracerPackage        │     │        │
-│   │  │                          │  │                          │     │        │
-│   │  │  Services:              │  │  Services:               │     │        │
-│   │  │  - SubscriberService    │  │  - TracerService         │     │        │
-│   │  │  - ValidationService    │  │  - DeploymentService     │     │        │
-│   │  │                          │  │                          │     │        │
-│   │  │  Language:              │  │  Language:               │     │        │
-│   │  │  - subscriber          │  │  - queue message         │     │        │
-│   │  │  - batch_size           │  │  - dequeue               │     │        │
-│   │  │  - wait_time            │  │  - log_level             │     │        │
-│   │  │                          │  │                          │     │        │
-│   │  └──────────────────────────┘  └──────────────────────────┘     │        │
-│   │                  │                        │                     │        │
-│   │                  │        CONTEXT        │                     │        │
-│   │                  │        MAPPING        │                     │        │
-│   │                  ▼                        ▼                     │        │
-│   │  ┌─────────────────────────────────────────────────────────┐  │        │
-│   │  │              CONFIGURATION CONTEXT                       │  │        │
-│   │  │                                                          │  │        │
-│   │  │  Entities:              Services:                         │  │        │
-│   │  │  - DatabaseConfig       - SettingsService               │  │        │
-│   │  │  - AppSettings          - ConfigLoader                  │  │        │
-│   │  │                                                          │  │        │
-│   │  └─────────────────────────────────────────────────────────┘  │        │
-│   │                                                                  │        │
-│   └─────────────────────────────────────────────────────────────────┘        │
-│                                                                             │
-│   Context Map:                                                               │
-│   ┌─────────────────┐     uses      ┌─────────────────┐                     │
-│   │ Subscriber     │◄──────────────►│    Tracer       │                     │
-│   │ Context        │                │    Context      │                     │
-│   └─────────────────┘                └─────────────────┘                     │
-│          │                                    │                             │
-│          │          conforms to              │                             │
-│          ▼                                    ▼                             │
-│   ┌─────────────────────────────────────────────────────┐                  │
-│   │            Configuration Context                     │                  │
-│   └─────────────────────────────────────────────────────┘                  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+type SubscriberService struct {
+    subscriberRepo ports.SubscriberRepository
+    oracleDB      ports.DatabaseRepository
+}
 
-### Implementing Bounded Contexts in Go
+func NewSubscriberService(
+    subRepo ports.SubscriberRepository,
+    oracleDB ports.DatabaseRepository,
+) *SubscriberService {
+    return &SubscriberService{
+        subscriberRepo: subRepo,
+        oracleDB:      oracleDB,
+    }
+}
 
-```
-internal/
-├── core/
-│   ├── domain/
-│   │   ├── subscriber/        # Subscriber Bounded Context
-│   │   │   ├── subscriber.go
-│   │   │   ├── subscriber_events.go
-│   │   │   ├── subscriber_aggregate.go
-│   │   │   └── validation.go
-│   │   │
-│   │   ├── tracer/           # Tracer Bounded Context
-│   │   │   ├── queue_message.go
-│   │   │   ├── tracer_package.go
-│   │   │   └── events.go
-│   │   │
-│   │   └── config/           # Configuration Bounded Context
-│   │       ├── database_settings.go
-│   │       └── app_settings.go
-│   │
-│   └── ports/
-│       ├── subscriber/        # Subscriber Ports
-│       │   └── repository.go
-│       ├── tracer/           # Tracer Ports
-│       │   └── repository.go
-│       └── config/           # Configuration Ports
-│           └── repository.go
-│
-├── adapter/
-│   ├── oracle/               # Implements tracer ports
-│   ├── boltdb/               # Implements config ports
-│   └── ...
-│
-├── application/
-│   ├── subscriber/          # Subscriber Use Cases
-│   │   ├── commands.go
-│   │   └── queries.go
-│   └── tracer/              # Tracer Use Cases
-│       ├── commands.go
-│       └── queries.go
-│
-└── service/                 # (Legacy - to be refactored)
+// Now thin - just orchestrates, doesn't contain business logic
+func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Subscriber, error) {
+    // Get existing or create new
+    existing, err := ss.subscriberRepo.GetByName(ctx, "")
+    if err != nil && !errors.Is(err, domain.ErrSubscriberNotFound) {
+        return nil, err
+    }
+    if existing != nil {
+        return existing, nil
+    }
+
+    // Use domain factory - validation happens there
+    subscriber, err := domain.NewRandomSubscriber()
+    if err != nil {
+        return nil, err
+    }
+
+    // Save locally
+    if err := ss.subscriberRepo.Save(ctx, *subscriber); err != nil {
+        return nil, err
+    }
+
+    // Register in Oracle
+    if err := ss.oracleDB.RegisterNewSubscriber(*subscriber); err != nil {
+        // Rollback local on Oracle failure
+        ss.subscriberRepo.Delete(ctx, subscriber.Name())
+        return nil, err
+    }
+
+    return subscriber, nil
+}
+
+// GetSubscriber is now a simple delegation
+func (ss *SubscriberService) GetSubscriber(ctx context.Context) (*domain.Subscriber, error) {
+    return ss.subscriberRepo.GetByName(ctx, "")
+}
 ```
 
----
+### 9.2 TracerService
 
-## 9. Refactoring Guide for OmniInspect
+**Before (current):**
 
-### Step-by-Step Refactoring Plan
+```go
+// internal/service/tracer/tracer_service.go
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    REFACTORING ROADMAP                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   PHASE 1: Enrich Domain Entities (Week 1)                                  │
-│   ─────────────────────────────────────                                     │
-│   □ Add validation to Subscriber entity                                    │
-│   □ Add value objects for BatchSize, WaitTime                               │
-│   □ Add business methods (CanProcess, UpdateConfiguration)                 │
-│   □ Add validation to QueueMessage                                         │
-│   □ Add business methods (IsCritical, GetFormattedMessage)                 │
-│                                                                             │
-│   PHASE 2: Add Domain Events (Week 2)                                      │
-│   ──────────────────────────────                                           │
-│   □ Define event interfaces                                                │
-│   □ Create SubscriberRegistered event                                      │
-│   □ Create MessageReceived event                                           │
-│   □ Create EventDispatcher                                                 │
-│   □ Integrate events into services                                         │
-│                                                                             │
-│   PHASE 3: Implement Aggregates (Week 3)                                   │
-│   ─────────────────────────────────                                         │
-│   □ Create SubscriberAggregate                                             │
-│   □ Move business logic from service to aggregate                          │
-│   □ Define aggregate boundaries                                            │
-│                                                                             │
-│   PHASE 4: Separate Application Layer (Week 4)                            │
-│   ───────────────────────────────────────                                   │
-│   □ Create use case handlers                                                │
-│   □ Move orchestration logic from services                                 │
-│   □ Keep services as thin domain service wrappers                          │
-│                                                                             │
-│   PHASE 5: Bounded Contexts (Optional, Week 5)                             │
-│   ───────────────────────────────────────                                   │
-│   □ Organize by context                                                     │
-│   □ Define context boundaries                                              │
-│   □ Create context maps                                                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+// Has mixed responsibilities:
+// - Package deployment
+// - Event listening
+// - Message formatting
+// - All in one file
 ```
 
-### Current vs Target Structure
+**After (refactored):**
 
+```go
+// internal/service/tracer/tracer_service.go
+
+package tracer
+
+import (
+    "OmniView/internal/core/domain"
+    "context"
+    "fmt"
+    "sync"
+)
+
+type TracerService struct {
+    subscriberRepo ports.SubscriberRepository
+    oracleDB       ports.DatabaseRepository
+    processMu      sync.Mutex
+}
+
+func NewTracerService(
+    subRepo ports.SubscriberRepository,
+    oracleDB ports.DatabaseRepository,
+) *TracerService {
+    return &TracerService{
+        subscriberRepo: subRepo,
+        oracleDB:      oracleDB,
+    }
+}
+
+// StartEventListener starts listening for messages
+func (ts *TracerService) StartEventListener(ctx context.Context, subscriberName string) error {
+    subscriber, err := ts.subscriberRepo.GetByName(ctx, subscriberName)
+    if err != nil {
+        return err
+    }
+
+    fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
+
+    // Initial processing
+    go func() {
+        ts.processBatch(ctx, *subscriber)
+    }()
+
+    // Blocking wait loop
+    go ts.blockingConsumerLoop(ctx, *subscriber)
+
+    return nil
+}
+
+// Process a batch of messages
+func (ts *TracerService) processBatch(ctx context.Context, subscriber domain.Subscriber) error {
+    ts.processMu.Lock()
+    defer ts.processMu.Unlock()
+
+    messages, msgIDs, count, err := ts.oracleDB.BulkDequeueTracerMessages(subscriber)
+    if err != nil {
+        return err
+    }
+
+    if count == 0 {
+        return nil
+    }
+
+    for i := 0; i < count; i++ {
+        var msg domain.QueueMessage
+        // Parse message (you may need to adjust this based on actual format)
+        // The key change: using domain.QueueMessage's methods
+
+        ts.handleTracerMessage(msg)
+    }
+
+    return nil
+}
+
+// Handle a single message - now uses domain formatting
+func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
+    // Using the domain's Format method instead of inline formatting
+    fmt.Println(msg.Format())
+}
+
+func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber domain.Subscriber) {
+    for {
+        select {
+        case <-ctx.Done():
+            fmt.Println("Event Listener stopping for subscriber:", subscriber.Name())
+            return
+        default:
+            err := ts.processBatch(ctx, subscriber)
+            if err != nil {
+                fmt.Printf("Error processing batch: %v\n", err)
+            }
+        }
+    }
+}
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    CURRENT STRUCTURE                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   internal/                                                                 │
-│   ├── core/                                                                  │
-│   │   ├── domain/                        ◄── Anemic entities               │
-│   │   │   ├── config.go                                                   │
-│   │   │   ├── permissions.go                                              │
-│   │   │   ├── queue.go                                                   │
-│   │   │   └── subscriber.go                                              │
-│   │   │                                                                   │
-│   │   └── ports/                        ◄── Defined correctly              │
-│   │       ├── config.go                                                   │
-│   │       └── repository.go                                               │
-│   │                                                                           │
-│   ├── service/                           ◄── Too much logic here            │
-│   │   ├── permissions/                                                     │
-│   │   │   └── permissions_service.go                                       │
-│   │   ├── subscribers/                                                     │
-│   │   │   └── subscriber_service.go                                       │
-│   │   └── tracer/                                                          │
-│   │       └── tracer_service.go                                            │
-│   │                                                                           │
-│   └── app/                                ◄── Very thin                    │
-│       └── app.go                                                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
 
-                              ▼ TRANSFORM ▼
+### 9.3 PermissionService
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    TARGET STRUCTURE                                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   internal/                                                                 │
-│   ├── core/                                                                  │
-│   │   ├── domain/                        ◄── Rich domain                   │
-│   │   │   ├── events.go                  ◄── Domain events base           │
-│   │   │   ├── dispatcher.go                                               │
-│   │   │   │                                                                   │
-│   │   │   ├── subscriber/                ◄── Subscriber Context           │
-│   │   │   │   ├── subscriber.go           ◄── Rich entity                   │
-│   │   │   │   ├── subscriber_events.go                                    │
-│   │   │   │   ├── subscriber_aggregate.go                                 │
-│   │   │   │   └── validation.go                                          │
-│   │   │   │                                                                   │
-│   │   │   ├── tracer/                     ◄── Tracer Context               │
-│   │   │   │   ├── queue_message.go        ◄── Rich entity                 │
-│   │   │   │   ├── queue_config.go         ◄── Value object                │
-│   │   │   │   ├── tracer_events.go                                         │
-│   │   │   │   └── tracer_aggregate.go                                    │
-│   │   │   │                                                                   │
-│   │   │   └── config/                   ◄── Config Context                │
-│   │   │       ├── database_settings.go                                    │
-│   │   │       └── app_settings.go                                         │
-│   │   │                                                                   │
-│   │   └── ports/                        ◄── Unchanged                      │
-│   │       ├── config.go                                                   │
-│   │       └── repository.go                                               │
-│   │                                                                           │
-│   ├── application/                     ◄── NEW: Use cases                    │
-│   │   ├── subscriber/                                                      │
-│   │   │   ├── commands.go                                                 │
-│   │   │   └── queries.go                                                  │
-│   │   └── tracer/                                                          │
-│   │       ├── commands.go                                                  │
-│   │       └── queries.go                                                  │
-│   │                                                                           │
-│   ├── adapter/                         ◄── Unchanged                         │
-│   │   ├── config/                                                         │
-│   │   └── storage/                                                       │
-│   │                                                                           │
-│   └── service/                         ◄── Simplified                       │
-│       ├── permissions/                  ◄── Domain service only             │
-│       ├── subscribers/                                                     │
-│       └── tracer/                                                          │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+**Before (current):**
+- Deploys package
+- Checks permissions
+- Saves status
+- Drops package
+- All in one service
+
+**After (refactored):**
+
+```go
+// internal/service/permissions/permissions_service.go
+
+package permissions
+
+import (
+    "OmniView/internal/core/domain"
+    "OmniView/internal/core/ports"
+    "context"
+)
+
+type PermissionService struct {
+    permissionsRepo ports.PermissionsRepository
+    db              ports.DatabaseRepository
+}
+
+func NewPermissionService(
+    permsRepo ports.PermissionsRepository,
+    db ports.DatabaseRepository,
+) *PermissionService {
+    return &PermissionService{
+        permissionsRepo: permsRepo,
+        db:              db,
+    }
+}
+
+// CheckPermissions verifies database permissions
+// Simplified - still has package deployment logic but cleaner
+func (ps *PermissionService) CheckPermissions(ctx context.Context, schema string) (*domain.DatabasePermissions, error) {
+    // Check if already verified
+    exists, err := ps.permissionsRepo.Exists(ctx, schema)
+    if err != nil {
+        return nil, err
+    }
+    if exists {
+        return ps.permissionsRepo.Get(ctx, schema)
+    }
+
+    // Note: Package deployment logic would stay here
+    // (or be moved to a separate deployment service)
+
+    // Run permission check
+    // ... (existing logic)
+
+    // Save result using domain entity
+    // ... (existing logic)
+
+    return nil, nil // Placeholder
+}
 ```
 
 ---
 
-## 10. Summary and Next Steps
+## 10. Error Handling
 
-### Key Takeaways
+### Add to internal/core/domain/errors.go
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         KEY TAKEAWAYS                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   1. RICH ENTITIES vs ANEMIC ENTITIES                                      │
-│      • Move behavior to domain objects                                      │
-│      • Use private fields with getter/setter methods                        │
-│      • Validate at creation time                                            │
-│                                                                             │
-│   2. DOMAIN EVENTS                                                          │
-│      • Capture significant occurrences                                      │
-│      • Enable loose coupling                                                │
-│      • Support audit trails and reaction                                    │
-│                                                                             │
-│   3. AGGREGATES                                                             │
-│      • Group related entities under a root                                  │
-│      • Root controls all access                                             │
-│      • Enforce invariants                                                   │
-│                                                                             │
-│   4. DOMAIN vs APPLICATION SERVICES                                         │
-│      • Domain: pure business logic, stateless                               │
-│      • Application: orchestration, transactions, use cases                 │
-│                                                                             │
-│   5. BOUNDED CONTEXTS                                                       │
-│      • Define clear boundaries                                              │
-│      • Each context has its own language                                    │
-│      • Map relationships between contexts                                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+```go
+package domain
 
-### Recommended Learning Path
+import "fmt"
 
-1. **Start with Phase 1** - Enrich your entities first
-2. **Read "Domain-Driven Design" by Eric Evans** - The definitive book
-3. **Study "Implementing Domain-Driven Design" by Vaughn Vernon** - Practical implementation
-4. **Look at real-world DDD projects** - Study the codebases
+// Sentinel errors - predefined, checkable with errors.Is()
+var (
+    ErrSubscriberNotFound     = fmt.Errorf("subscriber not found")
+    ErrInvalidSubscriberName = fmt.Errorf("invalid subscriber name")
+    ErrQueueEmpty            = fmt.Errorf("queue is empty")
+    ErrPermissionDenied      = fmt.Errorf("permission denied")
+    ErrConnectionFailed      = fmt.Errorf("connection failed")
+)
 
-### Additional Resources
-
-| Resource | Description |
-|----------|-------------|
-| [DDD Community](https://domainlanguage.com/ddd/) | Official DDD resources |
-| [Martin Fowler's DDD Articles](https://martinfowler.com/bliki/DomainDrivenDesign.html) | Excellent explanations |
-| [DDD by Example](https://github.com/ddd-by-examples/library) | Full example project |
-
----
-
-## Appendix: Quick Reference Cards
-
-### Entity Checklist
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    ENTITY CHECKLIST                                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   □ Private fields (no public fields)                                      │
-│   □ Factory method for creation                                             │
-│   □ Validation in constructor                                               │
-│   □ Business methods (not just getters/setters)                             │
-│   □ Domain errors defined                                                   │
-│   □ Documented with domain language                                         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Service Checklist
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SERVICE CHECKLIST                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   DOMAIN SERVICE:                                                           │
-│   □ No infrastructure dependencies                                         │
-│   □ Stateless                                                              │
-│   □ Pure business logic                                                     │
-│   □ Operation spans multiple entities                                      │
-│                                                                             │
-│   APPLICATION SERVICE:                                                      │
-│   □ Orchestrates use cases                                                 │
-│   □ Manages transactions                                                   │
-│   □ Handles DTO conversion                                                  │
-│   □ Delegates to domain objects                                             │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+// WrapError adds context to an error
+func WrapError(err error, context string) error {
+    if err == nil {
+        return nil
+    }
+    return fmt.Errorf("%s: %w", context, err)
+}
 ```
 
 ---
 
-*Document Version: 1.0*
-*Last Updated: February 19, 2026*
-*Author: Claude (DDD Evaluation)*
+## 11. Summary of Changes
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `internal/core/domain/subscriber.go` | Added BatchSize, WaitTime value objects, made entity rich |
+| `internal/core/domain/queue_message.go` | Added LogLevel value object, rich entity |
+| `internal/core/domain/database_settings.go` | NEW - Added Port value object, rich entity |
+| `internal/core/domain/permissions.go` | Added PermissionStatus, rich entity |
+| `internal/core/domain/config.go` | Added ClientSettings defaults |
+| `internal/core/ports/repository.go` | Added repository interfaces |
+| `internal/adapter/storage/boltdb/subscriber_repository.go` | NEW - Implements SubscriberRepository |
+| `internal/service/subscribers/subscriber_service.go` | Simplified |
+| `internal/service/tracer/tracer_service.go` | Simplified |
+| `internal/service/permissions/permissions_service.go` | Simplified |
+
+### Key Benefits
+
+1. **Self-validating entities** - Invalid data can't be created
+2. **Business logic in domain** - Services are thin
+3. **Type-safe value objects** - BatchSize, WaitTime, etc.
+4. **Testable** - Can test business rules without database
+5. **Clear interfaces** - Repository pattern defines contracts
+
+---
+
+*Document Version: 4.0*
+*Last Updated: February 23, 2026*

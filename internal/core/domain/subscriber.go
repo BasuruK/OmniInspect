@@ -74,7 +74,6 @@ var (
 
 // Entity : Subscriber information
 type Subscriber struct {
-	id        string
 	name      string
 	batchSize BatchSize
 	waitTime  WaitTime
@@ -90,7 +89,6 @@ func NewSubscriber(name string, batchSize BatchSize, waitTime WaitTime) (*Subscr
 	}
 
 	return &Subscriber{
-		id:        uuid.New().String(),
 		name:      name,
 		batchSize: batchSize,
 		waitTime:  waitTime,

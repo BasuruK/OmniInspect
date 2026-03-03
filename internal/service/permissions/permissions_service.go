@@ -38,18 +38,24 @@ func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) 
 	if !exists {
 		// Ensure the permission checks package is deployed
 		if err := deployPermissionChecksPackage(ctx, ps); err != nil {
-			_ = dropPermissionChecksPackage(ctx, ps)
+			if dropErr := dropPermissionChecksPackage(ctx, ps); dropErr != nil {
+				return false, fmt.Errorf("failed to deploy permission checks package: %w; cleanup failed: %v", err, dropErr)
+			}
 			return false, err
 		}
 		// Check permissions using the deployed package
 		perStatus, err := checkPermissions(ctx, ps, schema)
 		if err != nil {
-			_ = dropPermissionChecksPackage(ctx, ps)
+			if dropErr := dropPermissionChecksPackage(ctx, ps); dropErr != nil {
+				return false, fmt.Errorf("failed to check permissions: %w; cleanup failed: %v", err, dropErr)
+			}
 			return false, err
 		}
 		// Save the permission status to BoltDB using new repository
 		if err := ps.permsRepo.Save(ctx, perStatus); err != nil {
-			_ = dropPermissionChecksPackage(ctx, ps)
+			if dropErr := dropPermissionChecksPackage(ctx, ps); dropErr != nil {
+				return false, fmt.Errorf("failed to save permission status: %w; cleanup failed: %v", err, dropErr)
+			}
 			return false, err
 		}
 	}

@@ -61,6 +61,8 @@ func (oa *OracleAdapter) GetRawContext() unsafe.Pointer {
 
 // Fetch executes a SELECT query and returns all results as a slice of strings.
 func (oa *OracleAdapter) Fetch(ctx context.Context, query string) ([]string, error) {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	var err error
 
@@ -198,6 +200,8 @@ func (oa *OracleAdapter) PrepareStatement(query string) (*C.dpiStmt, error) {
 // ExecuteStatement executes the given SQL statement without returning results.
 // It's suitable for INSERT, UPDATE, DELETE, or DDL statements.
 func (oa *OracleAdapter) ExecuteStatement(ctx context.Context, query string) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {
@@ -218,6 +222,8 @@ func (oa *OracleAdapter) ExecuteStatement(ctx context.Context, query string) err
 // Connect establishes the connection to the Oracle database using the injected configuration.
 // It initializes the DPI context and the connection handle.
 func (oa *OracleAdapter) Connect(ctx context.Context) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	// 1. Initialize the DPI context
 	if err := oa.InitContext(); err != nil {
@@ -240,6 +246,8 @@ func (oa *OracleAdapter) Connect(ctx context.Context) error {
 
 // Close releases the database connection and context resources.
 func (oa *OracleAdapter) Close(ctx context.Context) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	if oa.payloadType != nil {
 		C.dpiObjectType_release(oa.payloadType)
@@ -402,6 +410,8 @@ func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) 
 
 // FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
 func (oa *OracleAdapter) FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error) {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {
@@ -431,6 +441,8 @@ func (oa *OracleAdapter) FetchWithParams(ctx context.Context, query string, para
 
 // ExecuteWithParams executes a non-SELECT SQL statement with parameters.
 func (oa *OracleAdapter) ExecuteWithParams(ctx context.Context, query string, params map[string]interface{}) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
 	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {

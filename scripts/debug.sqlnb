@@ -15,7 +15,7 @@ cells:
   - kind: 2
     value: >-
       BEGIN
-          FOR i IN 1..20 LOOP
+          FOR i IN 1..1 LOOP
               DECLARE
                   v_level VARCHAR2(10);
               BEGIN

@@ -2,5 +2,4 @@
 .DS_Store
 .claude/settings.local.json
 .vscode/tasks.json
-.gitignore
 omniview.bolt

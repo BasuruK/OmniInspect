@@ -44,7 +44,14 @@ func (oa *OracleAdapter) CheckQueueDepth(ctx context.Context, subscriberID strin
 }
 
 func (oa *OracleAdapter) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, nil, 0, err
+	}
+
+	if oa.Context == nil {
+		return nil, nil, 0, fmt.Errorf("dpi context is not initialized")
+	}
+
 	if oa.Connection == nil {
 		return nil, nil, 0, fmt.Errorf("database connection is not established")
 	}

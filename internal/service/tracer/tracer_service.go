@@ -37,7 +37,9 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
 	go func() {
-		ts.processBatch(ctx, subscriber)
+		if err := ts.processBatch(ctx, subscriber); err != nil {
+			log.Printf("initial batch processing failed for subscriber %s: %v", subscriber.Name(), err)
+		}
 	}()
 
 	// Start the goroutine to listen for notifications

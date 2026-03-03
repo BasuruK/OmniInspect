@@ -76,12 +76,12 @@ func (p *DatabasePermissions) Validate() error {
 
 // databasePermissionsJSON provides a JSON-friendly intermediate representation
 type databasePermissionsJSON struct {
-	Schema      string          `json:"schema"`
+	Schema      string           `json:"schema"`
 	Permissions PermissionStatus `json:"permissions"`
 }
 
 // MarshalJSON implements custom JSON marshaling for DatabasePermissions
-func (p *DatabasePermissions) MarshalJSON() ([]byte, error) {
+func (p DatabasePermissions) MarshalJSON() ([]byte, error) {
 	j := databasePermissionsJSON{
 		Schema:      p.schema,
 		Permissions: p.permissions,

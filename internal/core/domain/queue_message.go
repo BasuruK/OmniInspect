@@ -162,7 +162,7 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 
 	// Parse timestamp - handle both int64 and string formats
 	var ts time.Time
-	if len(j.Timestamp) == 0 {
+	if len(j.Timestamp) == 0 || string(j.Timestamp) == "null" {
 		return ErrInvalidTimestamp
 	} else {
 		// Try parsing as int64 first (Unix timestamp)

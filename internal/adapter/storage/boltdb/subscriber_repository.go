@@ -30,14 +30,6 @@ func (r *SubscriberRepository) Save(ctx context.Context, subscriber domain.Subsc
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// Check for context cancellation before proceeding
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	// Validate adapter before accessing the database
-	if r == nil || r.adapter == nil || r.adapter.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
-	}
 
 	return r.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(SubscriberBucket))

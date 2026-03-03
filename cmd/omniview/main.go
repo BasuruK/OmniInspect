@@ -33,6 +33,10 @@ func main() {
 
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
+	// Shared cancellable context for startup and runtime
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Initialize BoltDB
 	fmt.Println("Initializing BoltDB!")
 	boltAdapter := boltdb.NewBoltAdapter("omniview.bolt")
@@ -54,10 +58,10 @@ func main() {
 
 	// Initialize Oracle DB Adapter (inject Configurations)
 	dbAdapter := oracle.NewOracleAdapter(appConfig)
-	if err := dbAdapter.Connect(); err != nil {
+	if err := dbAdapter.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect to Oracle DB: %v", err)
 	}
-	defer dbAdapter.Close()
+	defer dbAdapter.Close(context.Background())
 
 	// 2. Create DDD Repositories
 	subscriberRepo := boltdb.NewSubscriberRepository(boltAdapter)
@@ -68,11 +72,7 @@ func main() {
 	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
 	subscriberService := subscribers.NewSubscriberService(dbAdapter, subscriberRepo)
 
-	// 4. Create shared cancellable context for startup and runtime
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 5. Application Bootstrap
+	// 4. Application Bootstrap
 	// Run Startup Tasks using Services
 	// 5.1 Ensure Permission Checks Package is Deployed and permissions are granted
 	if _, err := permissionService.DeployAndCheck(ctx, appConfig.Username()); err != nil {
@@ -97,7 +97,6 @@ func main() {
 	fmt.Println(omniApp.GetVersion())
 	go omniApp.StartServer(done)
 
-	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
 	if err := tracerService.StartEventListener(ctx, subscriber, appConfig.Username()); err != nil {
 		log.Fatalf("failed to start tracer event listener: %v", err)
 	}

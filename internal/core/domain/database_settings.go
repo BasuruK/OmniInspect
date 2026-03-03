@@ -48,13 +48,18 @@ type DatabaseSettings struct {
 
 // NewDatabaseSettings creates new database settings with validation
 func NewDatabaseSettings(database string, host string, port Port, username string, password string) (*DatabaseSettings, error) {
+	database = strings.TrimSpace(database)
+	host = strings.TrimSpace(host)
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
 	// Validate database
-	if strings.TrimSpace(database) == "" {
+	if database == "" {
 		return nil, ErrEmptyDatabase
 	}
 
 	// Validate host
-	if strings.TrimSpace(host) == "" {
+	if host == "" {
 		return nil, ErrEmptyHost
 	}
 
@@ -64,12 +69,12 @@ func NewDatabaseSettings(database string, host string, port Port, username strin
 	}
 
 	// Validate username
-	if strings.TrimSpace(username) == "" {
+	if username == "" {
 		return nil, ErrEmptyUsername
 	}
 
 	// Validate password
-	if strings.TrimSpace(password) == "" {
+	if password == "" {
 		return nil, ErrEmptyPassword
 	}
 

@@ -2,20 +2,21 @@ package oracle
 
 import (
 	"OmniView/internal/core/domain"
+	"context"
 	"fmt"
 	"strconv"
 )
 
 // RegisterNewSubscriber registers a new subscriber in the Oracle database.
 // If subscriber already exists, it returns nil.
-func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) error {
-	exists, err := subscriberExists(oa, subscriber)
+func (oa *OracleAdapter) RegisterNewSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	exists, err := subscriberExists(ctx, oa, subscriber)
 	if err != nil {
 		return fmt.Errorf("failed to check subscriber existence: %v", err)
 	}
 	if !exists {
 		// Subscriber does not exist, register it
-		err := oa.ExecuteWithParams("BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
+		err := oa.ExecuteWithParams(ctx, "BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
 			"subscriberName": subscriber.Name(),
 		})
 		if err != nil {
@@ -27,13 +28,13 @@ func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) err
 }
 
 // subscriberExists checks if a subscriber with the given name already exists in the Oracle database.
-func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
+func subscriberExists(ctx context.Context, oa *OracleAdapter, subscriber domain.Subscriber) (bool, error) {
 	query := `SELECT COUNT(1)
 			FROM ALL_QUEUE_SUBSCRIBERS
 			WHERE QUEUE_NAME = :queueName
 			AND CONSUMER_NAME = :subscriberName
 			AND OWNER = :queueOwner`
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
+	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"queueName":      domain.QueueName,
 		"subscriberName": subscriber.Name(),
 		"queueOwner":     oa.config.Username(),

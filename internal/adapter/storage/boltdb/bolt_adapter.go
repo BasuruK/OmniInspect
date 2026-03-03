@@ -193,6 +193,9 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
 
 		// Save the first run status as a simple boolean
 		firstRun := status.IsFirstRun()

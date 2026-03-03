@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -53,8 +54,15 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
 				return fmt.Errorf("failed to save default database settings key: %w", err)
 			}
+		} else {
+			// Clear default pointer if this key was previously the default
+			currentDefault := b.Get([]byte(DefaultDatabaseConfigKey))
+			if currentDefault != nil && string(currentDefault) == key {
+				if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
+					return fmt.Errorf("failed to clear default database settings key: %w", err)
+				}
+			}
 		}
-
 		return nil
 	})
 }
@@ -163,5 +171,5 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 
 // makeDatabaseSettingsKey constructs a unique key for database settings based on username and database name
 func makeDatabaseSettingsKey(username, database string) string {
-	return "cfg:" + username + ":" + database
+	return "cfg:" + url.PathEscape(username) + ":" + url.PathEscape(database)
 }

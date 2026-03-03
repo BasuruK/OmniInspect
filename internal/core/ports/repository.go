@@ -65,40 +65,40 @@ type PermissionsRepository interface {
 
 type DatabaseRepository interface {
 	// RegisterNewSubscriber registers a new subscriber in the database
-	RegisterNewSubscriber(subscriber domain.Subscriber) error
+	RegisterNewSubscriber(ctx context.Context, subscriber domain.Subscriber) error
 
 	// BulkDequeueTracerMessages dequeues multiple messages for a subscriber
-	BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error)
+	BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error)
 
 	// CheckQueueDepth returns the number of messages in the queue
-	CheckQueueDepth(subscriberID string, queueTableName string) (int, error)
+	CheckQueueDepth(ctx context.Context, subscriberID string, queueTableName string) (int, error)
 
 	// Fetch executes a SELECT query and returns all results
-	Fetch(query string) ([]string, error)
+	Fetch(ctx context.Context, query string) ([]string, error)
 
 	// ExecuteStatement executes a SQL statement
-	ExecuteStatement(query string) error
+	ExecuteStatement(ctx context.Context, query string) error
 
 	// ExecuteWithParams executes a SQL statement with parameters
-	ExecuteWithParams(query string, params map[string]interface{}) error
+	ExecuteWithParams(ctx context.Context, query string, params map[string]interface{}) error
 
 	// FetchWithParams executes a SELECT query with parameters
-	FetchWithParams(query string, params map[string]interface{}) ([]string, error)
+	FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error)
 
 	// PackageExists checks if a package exists
-	PackageExists(packageName string) (bool, error)
+	PackageExists(ctx context.Context, packageName string) (bool, error)
 
 	// DeployPackages deploys PL/SQL packages
-	DeployPackages(sequences []string, types []string, packageSpec []string, packageBody []string) error
+	DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error
 
 	// DeployFile deploys a single SQL file
-	DeployFile(sqlContent string) error
+	DeployFile(ctx context.Context, sqlContent string) error
 
 	// Connect establishes a database connection
-	Connect() error
+	Connect(ctx context.Context) error
 
 	// Close closes the database connection
-	Close() error
+	Close(ctx context.Context) error
 }
 
 // ==========================================

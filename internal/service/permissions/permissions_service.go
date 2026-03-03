@@ -37,24 +37,24 @@ func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) 
 	// If permissions don't exist for this schema, run the check
 	if !exists {
 		// Ensure the permission checks package is deployed
-		if err := deployPermissionChecksPackage(ps); err != nil {
-			_ = dropPermissionChecksPackage(ps)
+		if err := deployPermissionChecksPackage(ctx, ps); err != nil {
+			_ = dropPermissionChecksPackage(ctx, ps)
 			return false, err
 		}
 		// Check permissions using the deployed package
-		perStatus, err := checkPermissions(ps, schema)
+		perStatus, err := checkPermissions(ctx, ps, schema)
 		if err != nil {
-			_ = dropPermissionChecksPackage(ps)
+			_ = dropPermissionChecksPackage(ctx, ps)
 			return false, err
 		}
 		// Save the permission status to BoltDB using new repository
 		if err := ps.permsRepo.Save(ctx, perStatus); err != nil {
-			_ = dropPermissionChecksPackage(ps)
+			_ = dropPermissionChecksPackage(ctx, ps)
 			return false, err
 		}
 	}
 	// Always retry cleanup/finalization for first-run flow recovery.
-	if err := dropPermissionChecksPackage(ps); err != nil {
+	if err := dropPermissionChecksPackage(ctx, ps); err != nil {
 		return false, err
 	}
 	if err := ps.config.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
@@ -64,9 +64,9 @@ func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) 
 }
 
 // DeployPermissionChecksPackage deploys the permission checks package to the database if not already present
-func deployPermissionChecksPackage(ps *PermissionService) error {
+func deployPermissionChecksPackage(ctx context.Context, ps *PermissionService) error {
 	// Check if the permission checks package is already deployed
-	exists, err := ps.db.PackageExists("TXEVENTQ_PERMISSION_CHECK_API")
+	exists, err := ps.db.PackageExists(ctx, "TXEVENTQ_PERMISSION_CHECK_API")
 	if err != nil {
 		return fmt.Errorf("failed to check package existence: %w", err)
 	}
@@ -82,17 +82,17 @@ func deployPermissionChecksPackage(ps *PermissionService) error {
 		return fmt.Errorf("failed to read permission checks package file: %w", err)
 	}
 
-	if err := ps.db.DeployFile(string(permissionChecksSQLPackage)); err != nil {
+	if err := ps.db.DeployFile(ctx, string(permissionChecksSQLPackage)); err != nil {
 		return fmt.Errorf("failed to deploy permission checks package: %w", err)
 	}
 
 	return nil
 }
 
-func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePermissions, error) {
+func checkPermissions(ctx context.Context, ps *PermissionService, schema string) (*domain.DatabasePermissions, error) {
 	// Execute permission check procedure
 	query := `SELECT TXEVENTQ_PERMISSION_CHECK_API.Get_Permission_Report(:schema) FROM DUAL`
-	results, err := ps.db.FetchWithParams(query, map[string]interface{}{
+	results, err := ps.db.FetchWithParams(ctx, query, map[string]interface{}{
 		"schema": schema,
 	})
 	if err != nil {
@@ -153,7 +153,7 @@ func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePer
 }
 
 // DropPermissionChecksPackage drops the permission checks package from the database
-func dropPermissionChecksPackage(ps *PermissionService) error {
+func dropPermissionChecksPackage(ctx context.Context, ps *PermissionService) error {
 	dropQuery := `BEGIN
 		EXECUTE IMMEDIATE 'DROP PACKAGE TXEVENTQ_PERMISSION_CHECK_API';
 	EXCEPTION
@@ -163,7 +163,7 @@ func dropPermissionChecksPackage(ps *PermissionService) error {
 			END IF;
 	END;`
 
-	if err := ps.db.ExecuteStatement(dropQuery); err != nil {
+	if err := ps.db.ExecuteStatement(ctx, dropQuery); err != nil {
 		return fmt.Errorf("failed to drop permission checks package: %w", err)
 	}
 

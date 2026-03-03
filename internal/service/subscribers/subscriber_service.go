@@ -76,7 +76,7 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 		}
 	}
 	// Register Subscriber in Oracle DB
-	if err := ss.db.RegisterNewSubscriber(*subscriber); err != nil {
+	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
 		return nil, err
 	}
 

@@ -11,19 +11,20 @@ import "C"
 
 import (
 	"OmniView/internal/core/domain"
+	"context"
 	"fmt"
 	"unsafe"
 )
 
 // CheckQueueDepth checks the queue depth for the given subscriber ID
-func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName string) (int, error) {
+func (oa *OracleAdapter) CheckQueueDepth(ctx context.Context, subscriberID string, queueTableName string) (int, error) {
 	query := fmt.Sprintf(`SELECT COUNT(*) 
 			  FROM %s
 			  WHERE QUEUE = :queueName
 			  AND CONSUMER_NAME = :subscriberID
 			  AND MSG_STATE = 'READY'`, queueTableName)
 
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
+	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"queueName":    domain.QueueName,
 		"subscriberID": subscriberID,
 	})
@@ -42,7 +43,8 @@ func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName str
 	return count, nil
 }
 
-func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+func (oa *OracleAdapter) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+	_ = ctx
 	if oa.Connection == nil {
 		return nil, nil, 0, fmt.Errorf("database connection is not established")
 	}

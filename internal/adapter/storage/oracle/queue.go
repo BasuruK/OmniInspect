@@ -47,7 +47,7 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 		return nil, nil, 0, fmt.Errorf("database connection is not established")
 	}
 
-	if subscriber.BatchSize <= 0 {
+	if subscriber.BatchSize().Int() <= 0 {
 		return nil, nil, 0, fmt.Errorf("batch size must be > 0")
 	}
 
@@ -55,10 +55,10 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	var cIds *C.TraceId
 	var cCount C.uint32_t
 
-	cSubscriberName := C.CString(subscriber.Name)
+	cSubscriberName := C.CString(subscriber.Name())
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
-	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSubscriberName, C.uint32_t(subscriber.BatchSize), C.int32_t(subscriber.WaitTime), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
+	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSubscriberName, C.uint32_t(subscriber.BatchSize().Int()), C.int32_t(subscriber.WaitTime().Int()), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 

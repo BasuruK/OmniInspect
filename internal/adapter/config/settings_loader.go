@@ -50,15 +50,10 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 }
 
 func (cl *ConfigLoader) GetDatabaseDetailsFromUser() (*domain.DatabaseSettings, error) {
-	config := &domain.DatabaseSettings{
-		ID:      "default",
-		Default: true,
-	}
-
 	var err error
 
 	// Host
-	config.Host, err = cl.promptUserRequired("Database Host (e.g., localhost)")
+	host, err := cl.promptUserRequired("Database Host (e.g., localhost)")
 	if err != nil {
 		return nil, err
 	}
@@ -72,25 +67,37 @@ func (cl *ConfigLoader) GetDatabaseDetailsFromUser() (*domain.DatabaseSettings, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid port number: %w", err)
 	}
-	config.Port = port
+	dbPort, err := domain.NewPort(port)
+	if err != nil {
+		return nil, err
+	}
 
 	// Database Name (Service/SID)
-	config.Database, err = cl.promptUserRequired("Database Name (Service/SID)")
+	database, err := cl.promptUserRequired("Database Name (Service/SID)")
 	if err != nil {
 		return nil, err
 	}
 
 	// Username
-	config.Username, err = cl.promptUserRequired("Username")
+	username, err := cl.promptUserRequired("Username")
 	if err != nil {
 		return nil, err
 	}
 
 	// Password
-	config.Password, err = cl.promptUserRequired("Password")
+	password, err := cl.promptUserRequired("Password")
 	if err != nil {
 		return nil, err
 	}
+
+	// Use domain factory to create DatabaseSettings
+	config, err := domain.NewDatabaseSettings(database, host, dbPort, username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set as default
+	config.SetAsDefault()
 
 	return config, nil
 }

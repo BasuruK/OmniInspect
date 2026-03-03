@@ -31,22 +31,21 @@ func (ps *PermissionService) DeployAndCheck(schema string) (bool, error) {
 		return false, err
 	}
 	if isFirstRun {
-		var perStatus domain.DatabasePermissions
 		// Ensure the permission checks package is deployed
 		if err := deployPermissionChecksPackage(ps); err != nil {
 			return false, err
 		}
 		// Check permissions using the deployed package
-		_, err := checkPermissions(ps, schema, &perStatus)
+		perStatus, err := checkPermissions(ps, schema)
 		if err != nil {
 			return false, err
 		}
 		// Save the permission status to BoltDB
-		if err := savePermissionStatus(ps, &perStatus); err != nil {
+		if err := savePermissionStatus(ps, perStatus); err != nil {
 			return false, err
 		}
 		// Set the first run cycle status to indicate that permission checks have been performed
-		if err := ps.bolt.SetFirstRunCycleStatus(domain.RunCycleStatus{IsFirstRun: false}); err != nil {
+		if err := ps.bolt.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
 			return false, err
 		}
 		// Drop the permission checks package from the database
@@ -85,24 +84,28 @@ func deployPermissionChecksPackage(ps *PermissionService) error {
 	return nil
 }
 
-func checkPermissions(ps *PermissionService, schema string, perStatus *domain.DatabasePermissions) (bool, error) {
+func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePermissions, error) {
 	// Execute permission check procedure
 	query := `SELECT TXEVENTQ_PERMISSION_CHECK_API.Get_Permission_Report(:schema) FROM DUAL`
 	results, err := ps.db.FetchWithParams(query, map[string]interface{}{
 		"schema": schema,
 	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if len(results) == 0 {
-		return false, fmt.Errorf("no results returned from permission check package")
+		return nil, fmt.Errorf("no results returned from permission check package")
 	}
 
 	jsonData := results[0]
-	// Unmarshall the result
-	if err := json.Unmarshal([]byte(jsonData), &perStatus.Permissions); err != nil {
-		return false, err
+	// Unmarshal the result into PermissionStatus
+	var permsStatus domain.PermissionStatus
+	if err := json.Unmarshal([]byte(jsonData), &permsStatus); err != nil {
+		return nil, err
 	}
+
+	// Create the DatabasePermissions entity
+	perStatus := domain.NewDatabasePermissions(schema, permsStatus)
 
 	// Helper function to convert bool to status mark
 	statusMark := func(b bool) string {
@@ -122,25 +125,24 @@ func checkPermissions(ps *PermissionService, schema string, perStatus *domain.Da
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
-		"│ %-25s │ %-7s │\n"+
 		"└───────────────────────────┴─────────┘",
 		"Permission", "Status",
-		"Create Sequence", statusMark(perStatus.Permissions.CreateSequence),
-		"Create Procedure", statusMark(perStatus.Permissions.CreateProcedure),
-		"Create Type", statusMark(perStatus.Permissions.CreateType),
-		"AQ Administrator Role", statusMark(perStatus.Permissions.AQAdministratorRole),
-		"AQ User Role", statusMark(perStatus.Permissions.AQUserRole),
-		"Execute DBMS AQADM", statusMark(perStatus.Permissions.DBMSAQADMExecute),
-		"Execute DBMS AQ", statusMark(perStatus.Permissions.DBMSAQExecute))
+		"Create Sequence", statusMark(permsStatus.CreateSequence),
+		"Create Procedure", statusMark(permsStatus.CreateProcedure),
+		"Create Type", statusMark(permsStatus.CreateType),
+		"AQ Administrator Role", statusMark(permsStatus.AQAdministratorRole),
+		"AQ User Role", statusMark(permsStatus.AQUserRole),
+		"Execute DBMS AQADM", statusMark(permsStatus.DBMSAQADMExecute),
+		"Execute DBMS AQ", statusMark(permsStatus.DBMSAQExecute))
 
 	// Evaluate if all permissions are valid
-	if !perStatus.Permissions.AllValid {
-		return false, fmt.Errorf("permission checks failed for schema %s: %+v", schema, permStructTable)
+	if !perStatus.IsValid() {
+		return nil, fmt.Errorf("permission checks failed for schema %s: %+v", schema, permStructTable)
 	} else {
 		fmt.Printf("All permission checks passed for schema %s %s\n", schema, permStructTable)
 	}
 
-	return true, nil
+	return perStatus, nil
 }
 
 func savePermissionStatus(ps *PermissionService, status *domain.DatabasePermissions) error {

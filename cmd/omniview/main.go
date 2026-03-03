@@ -64,7 +64,7 @@ func main() {
 	// 3. Application Bootstrap
 	// Run Startup Tasks using Services
 	// 3.1 Ensure Permission Checks Package is Deployed and permissions are granted
-	if _, err := permissionService.DeployAndCheck(appConfig.Username); err != nil {
+	if _, err := permissionService.DeployAndCheck(appConfig.Username()); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to register subscriber: %v", err)
 	}
-	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name)
+	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name())
 
 	// 4. Start Application
 	// create cancellable context and tie cancellation to signals
@@ -90,7 +90,7 @@ func main() {
 	go omniApp.StartServer(done)
 
 	// subscriber variable is from RegisterSubscriber(); if it's a value use &subscriber
-	if err := tracerService.StartEventListener(ctx, &subscriber, appConfig.Username); err != nil {
+	if err := tracerService.StartEventListener(ctx, subscriber, appConfig.Username()); err != nil {
 		log.Fatalf("failed to start tracer event listener: %v", err)
 	}
 

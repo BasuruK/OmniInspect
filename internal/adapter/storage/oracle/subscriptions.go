@@ -16,7 +16,7 @@ func (oa *OracleAdapter) RegisterNewSubscriber(subscriber domain.Subscriber) err
 	if !exists {
 		// Subscriber does not exist, register it
 		err := oa.ExecuteWithParams("BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
-			"subscriberName": subscriber.Name,
+			"subscriberName": subscriber.Name(),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to register subscriber: %v", err)
@@ -35,8 +35,8 @@ func subscriberExists(oa *OracleAdapter, subscriber domain.Subscriber) (bool, er
 			AND OWNER = :queueOwner`
 	results, err := oa.FetchWithParams(query, map[string]interface{}{
 		"queueName":      domain.QueueName,
-		"subscriberName": subscriber.Name,
-		"queueOwner":     oa.config.Username,
+		"subscriberName": subscriber.Name(),
+		"queueOwner":     oa.config.Username(),
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to query subscriber existence: %w", err)

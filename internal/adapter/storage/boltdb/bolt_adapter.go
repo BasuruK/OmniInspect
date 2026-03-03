@@ -2,6 +2,7 @@ package boltdb
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -75,7 +76,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
-	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username, config.Database)
+	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username(), config.Database())
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
@@ -90,7 +91,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 			return fmt.Errorf("failed to save database config: %v", err)
 		}
 		// If default, update default key
-		if config.Default {
+		if config.IsDefault() {
 			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
 				return fmt.Errorf("failed to set default database config: %v", err)
 			}
@@ -141,7 +142,7 @@ func (ba *BoltAdapter) SaveClientConfig(config domain.DatabasePermissions) error
 		b := tx.Bucket([]byte(ClientConfigBucket))
 
 		// Marshal the config to JSON
-		jsonData, err := json.Marshal(config.Permissions)
+		jsonData, err := json.Marshal(config.Permissions())
 		if err != nil {
 			return fmt.Errorf("failed to marshal client config: %v", err)
 		}
@@ -200,7 +201,7 @@ func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
 }
 
 // SetFirstRunCycleStatus saves the current run cycle status to BoltDB.
-func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) error {
+func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error {
 	if ba.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}

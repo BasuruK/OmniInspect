@@ -4,9 +4,6 @@ import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"errors"
-	"strings"
-
-	"github.com/google/uuid"
 )
 
 // Service: Manages subscriber information
@@ -25,8 +22,8 @@ func NewSubscriberService(db ports.DatabaseRepository, bolt ports.ConfigReposito
 }
 
 // SetSubscriber stores the subscriber in the bolt database
-func (ss *SubscriberService) SetSubscriber(subscriber domain.Subscriber) error {
-	return ss.bolt.SetSubscriber(subscriber)
+func (ss *SubscriberService) SetSubscriber(subscriber *domain.Subscriber) error {
+	return ss.bolt.SetSubscriber(*subscriber)
 }
 
 // GetSubscriber retrieves the subscriber from the bolt database
@@ -35,15 +32,15 @@ func (ss *SubscriberService) GetSubscriber() (*domain.Subscriber, error) {
 }
 
 // NewSubscriber Generates and stores a new unique subscriber name
-func (ss *SubscriberService) NewSubscriber() (domain.Subscriber, error) {
-	subscriberName := generateSubscriberName()
-	subscriber := domain.Subscriber{
-		Name:      subscriberName,
-		BatchSize: 1000,
-		WaitTime:  5,
+func (ss *SubscriberService) NewSubscriber() (*domain.Subscriber, error) {
+	// Use domain factory to create a new subscriber with random name
+	subscriber, err := domain.NewRandomSubscriber()
+	if err != nil {
+		return nil, err
 	}
+
 	if err := ss.SetSubscriber(subscriber); err != nil {
-		return domain.Subscriber{}, err
+		return nil, err
 	}
 
 	return subscriber, nil
@@ -51,35 +48,22 @@ func (ss *SubscriberService) NewSubscriber() (domain.Subscriber, error) {
 
 // RegisterSubscriber Retrieves existing subscriber or creates a new one if not found
 // Registers the subscriber as a listener in the oracle database.
-func (ss *SubscriberService) RegisterSubscriber() (domain.Subscriber, error) {
+func (ss *SubscriberService) RegisterSubscriber() (*domain.Subscriber, error) {
 	subscriber, err := ss.GetSubscriber()
 	if err != nil {
 		if !errors.Is(err, domain.ErrSubscriberNotFound) {
-			return domain.Subscriber{}, err // return other errors
+			return nil, err // return other errors
 		}
 		// If not found, create a new subscriber
-		newSubscriber, err := ss.NewSubscriber()
+		subscriber, err = ss.NewSubscriber()
 		if err != nil {
-			return domain.Subscriber{}, err
+			return nil, err
 		}
-		subscriber = &newSubscriber
 	}
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(*subscriber); err != nil {
-		return domain.Subscriber{}, err
+		return nil, err
 	}
 
-	return *subscriber, nil
-}
-
-// generateSubscriberName Generates a new unique subscriber name
-func generateSubscriberName() string {
-	// UUID V4 Generation
-	uuidWithHyphen := uuid.New()
-	// Format the UUID as a named subscriber identifier
-	// Replace - with _ to comply with Oracle naming conventions
-	// Add a prefix for clarity : SUB_
-	subscriberName := "SUB_" + strings.ToUpper(strings.ReplaceAll(uuidWithHyphen.String(), "-", "_"))
-
-	return subscriberName
+	return subscriber, nil
 }

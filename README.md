@@ -1,15 +1,13 @@
 # OmniView
 
 <p align="center">
-  <img src="resources/omniview.png" alt="OmniView Logo" width="200">
+  <img src="resources/omniview.png" alt="OmniView Logo" width="1000">
 </p>
 
 <p align="center">
-  <a href="https://github.com/BasuruK/OmniInspect">
-    <img src="https://img.shields.io/github/license/BasuruK/OmniInspect" alt="License">
-  </a>
-  <a href="https://github.com/BasuruK/OmniInspect/actions/workflows/build.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/BasuruK/OmniInspect/build.yml" alt="Build">
+  <img src="https://img.shields.io/badge/License-Proprietary-red" alt="License">
+  <a href="https://github.com/BasuruK/OmniInspect/actions/workflows/go.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/BasuruK/OmniInspect/go.yml" alt="Build">
   </a>
   <a href="https://github.com/BasuruK/OmniInspect">
     <img src="https://img.shields.io/github/languages/top/BasuruK/OmniInspect" alt="Top Language">

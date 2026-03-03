@@ -68,29 +68,30 @@ func main() {
 	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
 	subscriberService := subscribers.NewSubscriberService(dbAdapter, subscriberRepo)
 
-	// 4. Application Bootstrap
+	// 4. Create shared cancellable context for startup and runtime
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 5. Application Bootstrap
 	// Run Startup Tasks using Services
-	// 4.1 Ensure Permission Checks Package is Deployed and permissions are granted
-	if _, err := permissionService.DeployAndCheck(context.Background(), appConfig.Username()); err != nil {
+	// 5.1 Ensure Permission Checks Package is Deployed and permissions are granted
+	if _, err := permissionService.DeployAndCheck(ctx, appConfig.Username()); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
 	}
 
-	// 4.2. Ensure Tracer Package is Deployed and initialized
-	if err := tracerService.DeployAndCheck(); err != nil {
+	// 5.2. Ensure Tracer Package is Deployed and initialized
+	if err := tracerService.DeployAndCheck(ctx); err != nil {
 		log.Fatalf("failed to deploy tracer package: %v", err)
 	}
 
-	// 4.3. Subscriber Registration
-	subscriber, err := subscriberService.RegisterSubscriber(context.Background())
+	// 5.3. Subscriber Registration
+	subscriber, err := subscriberService.RegisterSubscriber(ctx)
 	if err != nil {
 		log.Fatalf("failed to register subscriber: %v", err)
 	}
 	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name())
 
-	// 4. Start Application
-	// create cancellable context and tie cancellation to signals
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// 6. Start Application
 
 	omniApp := app.New(boltAdapter, dbAdapter)
 	fmt.Println(omniApp.GetVersion())

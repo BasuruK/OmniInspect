@@ -102,7 +102,7 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized
-func (ts *TracerService) DeployAndCheck() error {
+func (ts *TracerService) DeployAndCheck(ctx context.Context) error {
 	// Check if the tracer package is already deployed
 	// if not, deploy it
 	var exists bool

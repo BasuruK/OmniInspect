@@ -5,6 +5,7 @@ import (
 	"OmniView/internal/core/ports"
 	"context"
 	"errors"
+	"fmt"
 )
 
 // Service: Manages subscriber information
@@ -38,6 +39,9 @@ func (ss *SubscriberService) GetSubscriber(ctx context.Context) (*domain.Subscri
 	}
 	if len(subs) == 0 {
 		return nil, domain.ErrSubscriberNotFound
+	}
+	if len(subs) > 1 {
+		return nil, fmt.Errorf("expected 1 subscriber, found %d", len(subs))
 	}
 	return &subs[0], nil
 }

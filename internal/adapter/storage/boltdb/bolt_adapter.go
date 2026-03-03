@@ -78,10 +78,18 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
+	if config == nil {
+		return fmt.Errorf("database config cannot be nil")
+	}
+
 	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username(), config.Database())
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
+
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
 
 		// Marshal the config to JSON
 		jsonData, err := json.Marshal(config)
@@ -101,7 +109,6 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error
 
 		return nil
 	})
-
 }
 
 func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {

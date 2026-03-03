@@ -27,7 +27,15 @@ func NewSubscriberRepository(adapter *BoltAdapter) *SubscriberRepository {
 
 // Save stores a subscriber
 func (r *SubscriberRepository) Save(ctx context.Context, subscriber domain.Subscriber) error {
-	if r.adapter.db == nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Validate adapter before accessing the database
+	if r == nil || r.adapter == nil || r.adapter.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
@@ -53,7 +61,12 @@ func (r *SubscriberRepository) Save(ctx context.Context, subscriber domain.Subsc
 
 // GetByName retrieves a subscriber by name
 func (r *SubscriberRepository) GetByName(ctx context.Context, name string) (*domain.Subscriber, error) {
-	if r.adapter.db == nil {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Validate adapter before accessing the database
+	if r == nil || r.adapter == nil || r.adapter.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
 
@@ -80,7 +93,12 @@ func (r *SubscriberRepository) GetByName(ctx context.Context, name string) (*dom
 
 // Exists checks if a subscriber exists
 func (r *SubscriberRepository) Exists(ctx context.Context, name string) (bool, error) {
-	if r.adapter.db == nil {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	// Validate adapter before accessing the database
+	if r == nil || r.adapter == nil || r.adapter.db == nil {
 		return false, fmt.Errorf("boltAdapter not initialized")
 	}
 
@@ -99,7 +117,12 @@ func (r *SubscriberRepository) Exists(ctx context.Context, name string) (bool, e
 
 // Delete removes a subscriber
 func (r *SubscriberRepository) Delete(ctx context.Context, name string) error {
-	if r.adapter.db == nil {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Validate adapter before accessing the database
+	if r == nil || r.adapter == nil || r.adapter.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
@@ -115,7 +138,12 @@ func (r *SubscriberRepository) Delete(ctx context.Context, name string) error {
 
 // List returns all subscribers
 func (r *SubscriberRepository) List(ctx context.Context) ([]domain.Subscriber, error) {
-	if r.adapter.db == nil {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Validate adapter before accessing the database
+	if r == nil || r.adapter == nil || r.adapter.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
 

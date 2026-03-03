@@ -22,12 +22,17 @@ func NewDatabaseSettingsRepository(adapter *BoltAdapter) *DatabaseSettingsReposi
 }
 
 // Save stores database settings
-func (r *DatabaseSettingsRepository) Save(ctx context.Context, settings domain.DatabaseSettings) error {
-	if r.adapter.db == nil {
+func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain.DatabaseSettings) error {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Validate adapter before accessing the database
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
-	return r.adapter.db.Update(func(tx *bolt.Tx) error {
+	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
@@ -43,18 +48,30 @@ func (r *DatabaseSettingsRepository) Save(ctx context.Context, settings domain.D
 			return fmt.Errorf("failed to save database settings: %w", err)
 		}
 
+		// Persist default pointer key when this settings object is marked as default.
+		if settings.IsDefault() {
+			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
+				return fmt.Errorf("failed to save default database settings key: %w", err)
+			}
+		}
+
 		return nil
 	})
 }
 
 // GetByID retrieves database settings by ID
-func (r *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
-	if r.adapter.db == nil {
+func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Validate adapter before accessing the database
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
 
 	var settings *domain.DatabaseSettings
-	err := r.adapter.db.View(func(tx *bolt.Tx) error {
+	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
@@ -75,20 +92,25 @@ func (r *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*d
 }
 
 // GetDefault retrieves the default database settings
-func (r *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.DatabaseSettings, error) {
-	if r.adapter.db == nil {
+func (dsr *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.DatabaseSettings, error) {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Validate adapter before accessing the database
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
 
 	var settings *domain.DatabaseSettings
-	err := r.adapter.db.View(func(tx *bolt.Tx) error {
+	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
 		// Get the default key
-		defaultKey := b.Get([]byte("default"))
+		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
 		if defaultKey == nil {
 			return fmt.Errorf("default database settings not found")
 		}
@@ -108,12 +130,17 @@ func (r *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.Da
 }
 
 // Delete removes database settings by ID
-func (r *DatabaseSettingsRepository) Delete(ctx context.Context, id string) error {
-	if r.adapter.db == nil {
+func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) error {
+	// Check for context cancellation before proceeding
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Validate adapter before accessing the database
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
-	return r.adapter.db.Update(func(tx *bolt.Tx) error {
+	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)

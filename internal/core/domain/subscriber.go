@@ -36,7 +36,7 @@ const (
 
 func NewBatchSize(size int) (BatchSize, error) {
 	if size < int(MinBatchSize) || size > int(MaxBatchSize) {
-		return 0, fmt.Errorf("batch size must be between %d and %d", MinBatchSize, MaxBatchSize)
+		return 0, fmt.Errorf("%w: must be between %d and %d", ErrInvalidBatchSize, MinBatchSize, MaxBatchSize)
 	}
 	return BatchSize(size), nil
 }
@@ -48,7 +48,7 @@ type WaitTime int
 
 func NewWaitTime(seconds int) (WaitTime, error) {
 	if seconds < int(MinWaitTime) || seconds > int(MaxWaitTime) {
-		return 0, fmt.Errorf("wait time must be between %d and %d seconds", MinWaitTime, MaxWaitTime)
+		return 0, fmt.Errorf("%w: must be between %d and %d seconds", ErrInvalidWaitTime, MinWaitTime, MaxWaitTime)
 	}
 	return WaitTime(seconds), nil
 }
@@ -149,7 +149,7 @@ type subscriberJSON struct {
 	BatchSize int    `json:"batch_size"`
 	WaitTime  int    `json:"wait_time"`
 	CreatedAt int64  `json:"created_at"`
-	Active    bool   `json:"active"`
+	Active    *bool  `json:"active"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Subscriber
@@ -159,7 +159,7 @@ func (s *Subscriber) MarshalJSON() ([]byte, error) {
 		BatchSize: int(s.batchSize),
 		WaitTime:  int(s.waitTime),
 		CreatedAt: s.createdAt.Unix(),
-		Active:    s.active,
+		Active:    &s.active,
 	}
 	return json.Marshal(j)
 }
@@ -169,6 +169,11 @@ func (s *Subscriber) UnmarshalJSON(data []byte) error {
 	var j subscriberJSON
 	if err := json.Unmarshal(data, &j); err != nil {
 		return fmt.Errorf("failed to unmarshal Subscriber: %w", err)
+	}
+	// Validate subscriber name
+	name := strings.TrimSpace(j.Name)
+	if name == "" {
+		return ErrInvalidSubscriberName
 	}
 
 	// Use defaults for zero values
@@ -191,17 +196,18 @@ func (s *Subscriber) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("invalid wait time: %w", err)
 	}
 
-	// Use current time if created_at is 0
-	createdAt := j.CreatedAt
-	if createdAt == 0 {
-		createdAt = time.Now().Unix()
+	sub, err := NewSubscriber(name, bs, wt)
+	// If createdAt is provided, override the default value
+	if err != nil {
+		return err
 	}
-
-	s.name = j.Name
-	s.batchSize = bs
-	s.waitTime = wt
-	s.createdAt = time.Unix(createdAt, 0)
-	s.active = j.Active
+	if j.CreatedAt != 0 {
+		sub.createdAt = time.Unix(j.CreatedAt, 0)
+	}
+	if j.Active != nil {
+		sub.active = *j.Active
+	}
+	*s = *sub
 
 	return nil
 }

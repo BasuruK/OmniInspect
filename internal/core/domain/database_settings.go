@@ -25,7 +25,7 @@ type Port int
 
 func NewPort(p int) (Port, error) {
 	if p < int(MinPort) || p > int(MaxPort) {
-		return 0, fmt.Errorf("port must be between %d and %d", MinPort, MaxPort)
+		return 0, fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
 	}
 	return Port(p), nil
 }
@@ -87,30 +87,30 @@ func NewDatabaseSettings(database string, host string, port Port, username strin
 // Getters (Read-Only Accessors)
 // ==========================================
 
-func (s *DatabaseSettings) Database() string { return s.database }
-func (s *DatabaseSettings) Host() string     { return s.host }
-func (s *DatabaseSettings) Port() Port       { return s.port }
-func (s *DatabaseSettings) Username() string { return s.username }
-func (s *DatabaseSettings) Password() string { return s.password }
-func (s *DatabaseSettings) IsDefault() bool  { return s.isDefault }
+func (dbs *DatabaseSettings) Database() string { return dbs.database }
+func (dbs *DatabaseSettings) Host() string     { return dbs.host }
+func (dbs *DatabaseSettings) Port() Port       { return dbs.port }
+func (dbs *DatabaseSettings) Username() string { return dbs.username }
+func (dbs *DatabaseSettings) Password() string { return dbs.password }
+func (dbs *DatabaseSettings) IsDefault() bool  { return dbs.isDefault }
 
 // ==========================================
 // Business Methods
 // ==========================================
 
 // GetConnectionString returns the Oracle Easy Connect string
-func (s *DatabaseSettings) GetConnectionString() string {
-	return fmt.Sprintf("%s:%d/%s", s.host, s.port, s.database)
+func (dbs *DatabaseSettings) GetConnectionString() string {
+	return fmt.Sprintf("%s:%d/%s", dbs.host, dbs.port, dbs.database)
 }
 
 // GetConnectionDetails returns a safe string for logging (without password)
-func (s *DatabaseSettings) GetConnectionDetails() string {
-	return fmt.Sprintf("%s@%s:%d/%s", s.username, s.host, s.port, s.database)
+func (dbs *DatabaseSettings) GetConnectionDetails() string {
+	return fmt.Sprintf("%s@%s:%d/%s", dbs.username, dbs.host, dbs.port, dbs.database)
 }
 
 // SetAsDefault marks this as the default database
-func (s *DatabaseSettings) SetAsDefault() {
-	s.isDefault = true
+func (dbs *DatabaseSettings) SetAsDefault() {
+	dbs.isDefault = true
 }
 
 // ==========================================
@@ -128,27 +128,27 @@ type databaseSettingsJSON struct {
 }
 
 // MarshalJSON implements custom JSON marshaling for DatabaseSettings
-func (s *DatabaseSettings) MarshalJSON() ([]byte, error) {
+func (dbs *DatabaseSettings) MarshalJSON() ([]byte, error) {
 	j := databaseSettingsJSON{
-		Database:  s.database,
-		Host:      s.host,
-		Port:      int(s.port),
-		Username:  s.username,
-		Password:  s.password,
-		IsDefault: s.isDefault,
+		Database:  dbs.database,
+		Host:      dbs.host,
+		Port:      int(dbs.port),
+		Username:  dbs.username,
+		Password:  dbs.password,
+		IsDefault: dbs.isDefault,
 	}
 	return json.Marshal(j)
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for DatabaseSettings
-func (s *DatabaseSettings) UnmarshalJSON(data []byte) error {
-	var j databaseSettingsJSON
-	if err := json.Unmarshal(data, &j); err != nil {
+func (dbs *DatabaseSettings) UnmarshalJSON(data []byte) error {
+	var dbSettingJson databaseSettingsJSON
+	if err := json.Unmarshal(data, &dbSettingJson); err != nil {
 		return fmt.Errorf("failed to unmarshal DatabaseSettings: %w", err)
 	}
 
 	// Use default port if not specified
-	port := j.Port
+	port := dbSettingJson.Port
 	if port == 0 {
 		port = int(DefaultOraclePort)
 	}
@@ -157,12 +157,12 @@ func (s *DatabaseSettings) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("invalid port: %w", err)
 	}
 
-	s.database = j.Database
-	s.host = j.Host
-	s.port = p
-	s.username = j.Username
-	s.password = j.Password
-	s.isDefault = j.IsDefault
+	cfg, err := NewDatabaseSettings(dbSettingJson.Database, dbSettingJson.Host, p, dbSettingJson.Username, dbSettingJson.Password)
+	if err != nil {
+		return err
+	}
+	cfg.isDefault = dbSettingJson.IsDefault
+	*dbs = *cfg
 
 	return nil
 }

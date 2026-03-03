@@ -38,15 +38,18 @@ func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) 
 	if !exists {
 		// Ensure the permission checks package is deployed
 		if err := deployPermissionChecksPackage(ps); err != nil {
+			_ = dropPermissionChecksPackage(ps)
 			return false, err
 		}
 		// Check permissions using the deployed package
 		perStatus, err := checkPermissions(ps, schema)
 		if err != nil {
+			_ = dropPermissionChecksPackage(ps)
 			return false, err
 		}
 		// Save the permission status to BoltDB using new repository
 		if err := ps.permsRepo.Save(ctx, perStatus); err != nil {
+			_ = dropPermissionChecksPackage(ps)
 			return false, err
 		}
 		// Drop the permission checks package from the database

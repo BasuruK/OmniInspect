@@ -155,16 +155,15 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("failed to unmarshal QueueMessage: %w", err)
 	}
 
-	// Validate and normalize log level
 	normalizedLevel, err := NewLogLevel(j.LogLevel)
 	if err != nil {
-		return fmt.Errorf("invalid log level: %w", err)
+		return err
 	}
 
 	// Parse timestamp - handle both int64 and string formats
 	var ts time.Time
 	if len(j.Timestamp) == 0 {
-		ts = time.Now()
+		return ErrInvalidTimestamp
 	} else {
 		// Try parsing as int64 first (Unix timestamp)
 		var unixTs int64
@@ -188,19 +187,18 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 					}
 				}
 				if ts.IsZero() {
-					return fmt.Errorf("failed to parse timestamp string: %s", tsStr)
+					return fmt.Errorf("%w: %q", ErrInvalidTimestamp, tsStr)
 				}
 			} else {
-				ts = time.Now()
+				return ErrInvalidTimestamp
 			}
 		}
 	}
 
-	m.messageID = j.MessageID
-	m.processName = j.ProcessName
-	m.logLevel = normalizedLevel
-	m.payload = j.Payload
-	m.timestamp = ts
-
+	qm, err := NewQueueMessage(j.MessageID, j.ProcessName, normalizedLevel, j.Payload, ts)
+	if err != nil {
+		return err
+	}
+	*m = *qm
 	return nil
 }

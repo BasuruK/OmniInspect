@@ -41,7 +41,7 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 	}
 
 	// Save the new configuration to BoltDB
-	if err := cl.configRepo.SaveDatabaseConfig(*config); err != nil {
+	if err := cl.configRepo.SaveDatabaseConfig(config); err != nil {
 		return nil, fmt.Errorf("failed to save database config to boltDB: %w", err)
 	}
 	fmt.Println("✓ saved database config to boltDB")

@@ -1,21 +1,5 @@
 package domain
 
-import "errors"
-
-// ==========================================
-// Constants
-// ==========================================
-
-// ==========================================
-// Errors
-// ==========================================
-
-var (
-	ErrPermissionDenied      = errors.New("permission denied")
-	ErrMissingPermissions    = errors.New("missing required permissions")
-	ErrPermissionCheckFailed = errors.New("permission check failed")
-)
-
 // ==========================================
 // Value Objects
 // ==========================================

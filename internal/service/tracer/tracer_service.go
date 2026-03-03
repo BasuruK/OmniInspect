@@ -29,7 +29,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
-	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name)
+	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
@@ -49,7 +49,7 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 		// Check if context is cancelled before blocking
 		select {
 		case <-ctx.Done():
-			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name)
+			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name())
 			return
 		default:
 			// Continue to blocking wait
@@ -58,7 +58,7 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 		// Blocking wait — Oracle holds this call until messages arrive or wait time expires
 		err := ts.processBatch(subscriber)
 		if err != nil {
-			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
+			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name(), err)
 			select {
 			case <-time.After(errorDelay):
 				continue
@@ -85,8 +85,8 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 	}
 
 	for i := 0; i < count; i++ {
-		var msg domain.QueueMessage
-		if err := json.Unmarshal([]byte(messages[i]), &msg); err != nil {
+		msg := &domain.QueueMessage{}
+		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
 			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
 			continue
 		}
@@ -97,8 +97,8 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 }
 
 // handleTracerMessage processes a single tracer message
-func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
-	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
+func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
+	fmt.Println(msg.Format())
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

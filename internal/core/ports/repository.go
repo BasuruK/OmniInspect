@@ -16,6 +16,9 @@ type SubscriberRepository interface {
 	// GetByName retrieves a subscriber by name
 	GetByName(ctx context.Context, name string) (*domain.Subscriber, error)
 
+	// List returns all subscribers
+	List(ctx context.Context) ([]domain.Subscriber, error)
+
 	// Exists checks if a subscriber exists
 	Exists(ctx context.Context, name string) (bool, error)
 
@@ -103,23 +106,11 @@ type DatabaseRepository interface {
 // ==========================================
 
 type ConfigRepository interface {
-	// SetSubscriber saves subscriber information
-	SetSubscriber(subscriber domain.Subscriber) error
-
-	// GetSubscriber retrieves subscriber information
-	GetSubscriber() (*domain.Subscriber, error)
-
 	// SaveDatabaseConfig saves database configuration
-	SaveDatabaseConfig(config domain.DatabaseSettings) error
+	SaveDatabaseConfig(config *domain.DatabaseSettings) error
 
 	// GetDefaultDatabaseConfig retrieves the default database configuration
 	GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error)
-
-	// SaveClientConfig saves client configuration (permissions)
-	SaveClientConfig(config domain.DatabasePermissions) error
-
-	// DatabaseConfigExists checks if a database configuration exists
-	DatabaseConfigExists(key string) (bool, error)
 
 	// IsApplicationFirstRun checks if this is the first run
 	IsApplicationFirstRun() (bool, error)

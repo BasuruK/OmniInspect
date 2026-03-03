@@ -4,29 +4,32 @@ import (
 	"OmniView/assets"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"context"
 	"encoding/json"
 	"fmt"
 )
 
 // Service: Manages database permission checks and package deployments
-// Injects a DatabaseRepository to interact with the database
+// Uses dedicated PermissionsRepository for persistence
 type PermissionService struct {
-	db   ports.DatabaseRepository
-	bolt ports.ConfigRepository
+	db        ports.DatabaseRepository
+	permsRepo ports.PermissionsRepository
+	config    ports.ConfigRepository
 }
 
 // Constructor: NewPermissionService Constructor for PermissionService
-func NewPermissionService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *PermissionService {
+func NewPermissionService(db ports.DatabaseRepository, permsRepo ports.PermissionsRepository, config ports.ConfigRepository) *PermissionService {
 	return &PermissionService{
-		db:   db,
-		bolt: bolt,
+		db:        db,
+		permsRepo: permsRepo,
+		config:    config,
 	}
 }
 
 // DeployAndCheck ensures the necessary permission checks package is deployed, checked and dropped
-func (ps *PermissionService) DeployAndCheck(schema string) (bool, error) {
+func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) (bool, error) {
 	// Check if permission checks have already been performed
-	isFirstRun, err := ps.bolt.IsApplicationFirstRun()
+	isFirstRun, err := ps.config.IsApplicationFirstRun()
 	if err != nil {
 		return false, err
 	}
@@ -40,17 +43,17 @@ func (ps *PermissionService) DeployAndCheck(schema string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		// Save the permission status to BoltDB
-		if err := savePermissionStatus(ps, perStatus); err != nil {
-			return false, err
-		}
-		// Set the first run cycle status to indicate that permission checks have been performed
-		if err := ps.bolt.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
+		// Save the permission status to BoltDB using new repository
+		if err := ps.permsRepo.Save(ctx, perStatus); err != nil {
 			return false, err
 		}
 		// Drop the permission checks package from the database
 		// Dropping the package to maintain a clean database state and security
 		if err := dropPermissionChecksPackage(ps); err != nil {
+			return false, err
+		}
+		// Mark first-run complete only after all first-run steps succeed
+		if err := ps.config.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
 			return false, err
 		}
 	}
@@ -125,6 +128,7 @@ func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePer
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
 		"└───────────────────────────┴─────────┘",
 		"Permission", "Status",
 		"Create Sequence", statusMark(permsStatus.CreateSequence),
@@ -143,13 +147,6 @@ func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePer
 	}
 
 	return perStatus, nil
-}
-
-func savePermissionStatus(ps *PermissionService, status *domain.DatabasePermissions) error {
-	if err := ps.bolt.SaveClientConfig(*status); err != nil {
-		return err
-	}
-	return nil
 }
 
 // DropPermissionChecksPackage drops the permission checks package from the database

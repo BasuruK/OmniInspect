@@ -56,25 +56,29 @@ func main() {
 	}
 	defer dbAdapter.Close()
 
-	// 2. Services (Inject Adapters)
-	permissionService := permissions.NewPermissionService(dbAdapter, boltAdapter)
-	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
-	subscriberService := subscribers.NewSubscriberService(dbAdapter, boltAdapter)
+	// 2. Create DDD Repositories
+	subscriberRepo := boltdb.NewSubscriberRepository(boltAdapter)
+	permissionsRepo := boltdb.NewPermissionsRepository(boltAdapter)
 
-	// 3. Application Bootstrap
+	// 3. Services (Inject Repositories)
+	permissionService := permissions.NewPermissionService(dbAdapter, permissionsRepo, boltAdapter)
+	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
+	subscriberService := subscribers.NewSubscriberService(dbAdapter, subscriberRepo)
+
+	// 4. Application Bootstrap
 	// Run Startup Tasks using Services
-	// 3.1 Ensure Permission Checks Package is Deployed and permissions are granted
-	if _, err := permissionService.DeployAndCheck(appConfig.Username()); err != nil {
+	// 4.1 Ensure Permission Checks Package is Deployed and permissions are granted
+	if _, err := permissionService.DeployAndCheck(context.Background(), appConfig.Username()); err != nil {
 		log.Fatalf("failed to run permission checks: %v", err)
 	}
 
-	// 3.2. Ensure Tracer Package is Deployed and initialized
+	// 4.2. Ensure Tracer Package is Deployed and initialized
 	if err := tracerService.DeployAndCheck(); err != nil {
 		log.Fatalf("failed to deploy tracer package: %v", err)
 	}
 
-	// 3.3. Subscriber Registration
-	subscriber, err := subscriberService.RegisterSubscriber()
+	// 4.3. Subscriber Registration
+	subscriber, err := subscriberService.RegisterSubscriber(context.Background())
 	if err != nil {
 		log.Fatalf("failed to register subscriber: %v", err)
 	}

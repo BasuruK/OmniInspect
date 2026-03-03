@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -56,19 +56,6 @@ func NewWaitTime(seconds int) (WaitTime, error) {
 func (w WaitTime) Int() int { return int(w) }
 
 // ==========================================
-// Errors
-// ==========================================
-
-// Errors: Subscriber Entity
-var (
-	ErrSubscriberNotFound    = errors.New("subscriber not found")
-	ErrInvalidSubscriberName = errors.New("invalid subscriber name")
-	ErrSubscriberNotActive   = errors.New("subscriber is not active")
-	ErrInvalidBatchSize      = errors.New("invalid batch size")
-	ErrInvalidWaitTime       = errors.New("invalid wait time")
-)
-
-// ==========================================
 // Subscriber Entity
 // ==========================================
 
@@ -86,6 +73,14 @@ func NewSubscriber(name string, batchSize BatchSize, waitTime WaitTime) (*Subscr
 	// Validate subscriber name
 	if strings.TrimSpace(name) == "" {
 		return nil, ErrInvalidSubscriberName
+	}
+	// Validate batch size
+	if batchSize < MinBatchSize || batchSize > MaxBatchSize {
+		return nil, ErrInvalidBatchSize
+	}
+	// Validate wait time
+	if waitTime < MinWaitTime || waitTime > MaxWaitTime {
+		return nil, ErrInvalidWaitTime
 	}
 
 	return &Subscriber{
@@ -142,4 +137,71 @@ func (s *Subscriber) Reactivate() {
 func (s *Subscriber) String() string {
 	return fmt.Sprintf("Subscriber{Name: %s, BatchSize: %d, WaitTime: %ds, Active: %v}",
 		s.name, s.batchSize, s.waitTime, s.active)
+}
+
+// ==========================================
+// JSON Marshaling
+// ==========================================
+
+// subscriberJSON provides a JSON-friendly intermediate representation
+type subscriberJSON struct {
+	Name      string `json:"name"`
+	BatchSize int    `json:"batch_size"`
+	WaitTime  int    `json:"wait_time"`
+	CreatedAt int64  `json:"created_at"`
+	Active    bool   `json:"active"`
+}
+
+// MarshalJSON implements custom JSON marshaling for Subscriber
+func (s *Subscriber) MarshalJSON() ([]byte, error) {
+	j := subscriberJSON{
+		Name:      s.name,
+		BatchSize: int(s.batchSize),
+		WaitTime:  int(s.waitTime),
+		CreatedAt: s.createdAt.Unix(),
+		Active:    s.active,
+	}
+	return json.Marshal(j)
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for Subscriber
+func (s *Subscriber) UnmarshalJSON(data []byte) error {
+	var j subscriberJSON
+	if err := json.Unmarshal(data, &j); err != nil {
+		return fmt.Errorf("failed to unmarshal Subscriber: %w", err)
+	}
+
+	// Use defaults for zero values
+	batchSize := j.BatchSize
+	if batchSize == 0 {
+		batchSize = int(DefaultBatchSize)
+	}
+	bs, err := NewBatchSize(batchSize)
+	if err != nil {
+		return fmt.Errorf("invalid batch size: %w", err)
+	}
+
+	// Use defaults for zero values
+	waitTime := j.WaitTime
+	if waitTime == 0 {
+		waitTime = int(DefaultWaitTime)
+	}
+	wt, err := NewWaitTime(waitTime)
+	if err != nil {
+		return fmt.Errorf("invalid wait time: %w", err)
+	}
+
+	// Use current time if created_at is 0
+	createdAt := j.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+
+	s.name = j.Name
+	s.batchSize = bs
+	s.waitTime = wt
+	s.createdAt = time.Unix(createdAt, 0)
+	s.active = j.Active
+
+	return nil
 }

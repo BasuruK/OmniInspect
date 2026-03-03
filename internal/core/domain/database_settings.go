@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -14,20 +14,6 @@ const (
 	MinPort           Port = 1
 	MaxPort           Port = 65535
 	DefaultOraclePort Port = 1521
-)
-
-// ==========================================
-// Errors
-// ==========================================
-
-var (
-	ErrEmptyDatabase     = errors.New("database name cannot be empty")
-	ErrEmptyHost         = errors.New("host cannot be empty")
-	ErrInvalidPort       = errors.New("invalid port number")
-	ErrEmptyUsername     = errors.New("username cannot be empty")
-	ErrEmptyPassword     = errors.New("password cannot be empty")
-	ErrInvalidConnection = errors.New("invalid connection string")
-	ErrHostUnreachable   = errors.New("host is unreachable")
 )
 
 // ==========================================
@@ -73,8 +59,8 @@ func NewDatabaseSettings(database string, host string, port Port, username strin
 	}
 
 	// Validate port
-	if port == 0 {
-		return nil, ErrInvalidPort
+	if port < MinPort || port > MaxPort {
+		return nil, fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
 	}
 
 	// Validate username
@@ -125,4 +111,58 @@ func (s *DatabaseSettings) GetConnectionDetails() string {
 // SetAsDefault marks this as the default database
 func (s *DatabaseSettings) SetAsDefault() {
 	s.isDefault = true
+}
+
+// ==========================================
+// JSON Marshaling
+// ==========================================
+
+// databaseSettingsJSON provides a JSON-friendly intermediate representation
+type databaseSettingsJSON struct {
+	Database  string `json:"database"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	IsDefault bool   `json:"isDefault"`
+}
+
+// MarshalJSON implements custom JSON marshaling for DatabaseSettings
+func (s *DatabaseSettings) MarshalJSON() ([]byte, error) {
+	j := databaseSettingsJSON{
+		Database:  s.database,
+		Host:      s.host,
+		Port:      int(s.port),
+		Username:  s.username,
+		Password:  s.password,
+		IsDefault: s.isDefault,
+	}
+	return json.Marshal(j)
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for DatabaseSettings
+func (s *DatabaseSettings) UnmarshalJSON(data []byte) error {
+	var j databaseSettingsJSON
+	if err := json.Unmarshal(data, &j); err != nil {
+		return fmt.Errorf("failed to unmarshal DatabaseSettings: %w", err)
+	}
+
+	// Use default port if not specified
+	port := j.Port
+	if port == 0 {
+		port = int(DefaultOraclePort)
+	}
+	p, err := NewPort(port)
+	if err != nil {
+		return fmt.Errorf("invalid port: %w", err)
+	}
+
+	s.database = j.Database
+	s.host = j.Host
+	s.port = p
+	s.username = j.Username
+	s.password = j.Password
+	s.isDefault = j.IsDefault
+
+	return nil
 }

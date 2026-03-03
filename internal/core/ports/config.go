@@ -1,27 +1,22 @@
 package ports
 
-// ClientSettings represents client-specific settings
-type ClientSettings struct {
-	enableUtf8 bool
+import "OmniView/internal/core/domain"
+
+// ClientSettings is an alias for domain.ClientSettings
+type ClientSettings = domain.ClientSettings
+
+// RunCycleStatus is an alias for domain.RunCycleStatus
+type RunCycleStatus = domain.RunCycleStatus
+
+// Helper constructors that delegate to domain
+func NewClientSettings(enableUtf8 bool) *domain.ClientSettings {
+	return domain.NewClientSettings(enableUtf8)
 }
 
-func NewClientSettings(enableUtf8 bool) *ClientSettings {
-	return &ClientSettings{enableUtf8: enableUtf8}
+func DefaultClientSettings() *domain.ClientSettings {
+	return domain.DefaultClientSettings()
 }
 
-func DefaultClientSettings() *ClientSettings {
-	return &ClientSettings{enableUtf8: true}
+func NewRunCycleStatus(isFirstRun bool) *domain.RunCycleStatus {
+	return domain.NewRunCycleStatus(isFirstRun)
 }
-
-func (c *ClientSettings) EnableUtf8() bool { return c.enableUtf8 }
-
-// RunCycleStatus represents the status of the application's run cycle
-type RunCycleStatus struct {
-	isFirstRun bool
-}
-
-func NewRunCycleStatus(isFirstRun bool) *RunCycleStatus {
-	return &RunCycleStatus{isFirstRun: isFirstRun}
-}
-
-func (r *RunCycleStatus) IsFirstRun() bool { return r.isFirstRun }

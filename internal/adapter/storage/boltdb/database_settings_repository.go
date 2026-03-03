@@ -1,0 +1,124 @@
+package boltdb
+
+import (
+	"OmniView/internal/core/domain"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	bolt "go.etcd.io/bbolt"
+)
+
+// DatabaseSettingsRepository implements ports.DatabaseSettingsRepository
+type DatabaseSettingsRepository struct {
+	adapter *BoltAdapter
+}
+
+// NewDatabaseSettingsRepository creates a new DatabaseSettingsRepository
+func NewDatabaseSettingsRepository(adapter *BoltAdapter) *DatabaseSettingsRepository {
+	return &DatabaseSettingsRepository{
+		adapter: adapter,
+	}
+}
+
+// Save stores database settings
+func (r *DatabaseSettingsRepository) Save(ctx context.Context, settings domain.DatabaseSettings) error {
+	if r.adapter.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return r.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		jsonData, err := json.Marshal(&settings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal database settings: %w", err)
+		}
+
+		key := settings.Username() + ":" + settings.Database()
+		if err := b.Put([]byte(key), jsonData); err != nil {
+			return fmt.Errorf("failed to save database settings: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetByID retrieves database settings by ID
+func (r *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
+	if r.adapter.db == nil {
+		return nil, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var settings *domain.DatabaseSettings
+	err := r.adapter.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		data := b.Get([]byte(id))
+		if data == nil {
+			return fmt.Errorf("database settings not found for id: %s", id)
+		}
+
+		return json.Unmarshal(data, &settings)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return settings, nil
+}
+
+// GetDefault retrieves the default database settings
+func (r *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.DatabaseSettings, error) {
+	if r.adapter.db == nil {
+		return nil, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var settings *domain.DatabaseSettings
+	err := r.adapter.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		// Get the default key
+		defaultKey := b.Get([]byte("default"))
+		if defaultKey == nil {
+			return fmt.Errorf("default database settings not found")
+		}
+
+		data := b.Get(defaultKey)
+		if data == nil {
+			return fmt.Errorf("database settings not found for key: %s", string(defaultKey))
+		}
+
+		return json.Unmarshal(data, &settings)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return settings, nil
+}
+
+// Delete removes database settings by ID
+func (r *DatabaseSettingsRepository) Delete(ctx context.Context, id string) error {
+	if r.adapter.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return r.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		return b.Delete([]byte(id))
+	})
+}

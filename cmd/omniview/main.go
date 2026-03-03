@@ -42,8 +42,11 @@ func main() {
 	defer boltAdapter.Close()
 
 	// 1. Infrastructure Setup (Logging, Config, etc.)
+	// Create repositories
+	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
+
 	// Load Configurations
-	cfgLoader := config.NewConfigLoader(boltAdapter)
+	cfgLoader := config.NewConfigLoader(dbSettingsRepo)
 	appConfig, err := cfgLoader.LoadClientConfigurations()
 	if err != nil {
 		log.Fatalf("failed to load configurations: %v", err)

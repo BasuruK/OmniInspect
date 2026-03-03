@@ -2,6 +2,7 @@ package boltdb
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -13,14 +14,10 @@ const (
 	// Buckets
 	DatabaseConfigBucket = "DatabaseConfigurations"
 	ClientConfigBucket   = "ClientConfigurations"
-	// Bucket Defaults
-	DefaultDatabaseConfigKey   = "db:default"
-	DefaultClientConfigKey     = "client:default"
-	DefaultPermissionConfigKey = "client:permissions"
-	RunCycleStatusKey          = "run:status"
-	SubscriberNameKey          = "subscriber:name"
-	// Bucket Key Signatures
-	DatabaseConfigKeyPrefix = "db:config:"
+	// Bucket Keys
+	DefaultDatabaseConfigKey = "db:default"
+	RunCycleStatusKey        = "run:status"
+	DatabaseConfigKeyPrefix  = "db:config:"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -54,6 +51,12 @@ func (ba *BoltAdapter) Initialize() error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(ClientConfigBucket)); err != nil {
 			return fmt.Errorf("failed to create bucket: %v", err)
 		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(SubscriberBucket)); err != nil {
+			return fmt.Errorf("failed to create bucket: %v", err)
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(PermissionsBucket)); err != nil {
+			return fmt.Errorf("failed to create bucket: %v", err)
+		}
 
 		return nil
 	})
@@ -70,15 +73,23 @@ func (ba *BoltAdapter) Close() error {
 	return nil
 }
 
-func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error {
+func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error {
 	if ba.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
-	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username, config.Database)
+	if config == nil {
+		return fmt.Errorf("database config cannot be nil")
+	}
+
+	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username(), config.Database())
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
+
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
 
 		// Marshal the config to JSON
 		jsonData, err := json.Marshal(config)
@@ -90,7 +101,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 			return fmt.Errorf("failed to save database config: %v", err)
 		}
 		// If default, update default key
-		if config.Default {
+		if config.IsDefault() {
 			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
 				return fmt.Errorf("failed to set default database config: %v", err)
 			}
@@ -98,7 +109,6 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config domain.DatabaseSettings) error 
 
 		return nil
 	})
-
 }
 
 func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
@@ -106,7 +116,7 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, err
 		return nil, fmt.Errorf("boltAdapter not initialized")
 	}
 
-	var config domain.DatabaseSettings
+	var config *domain.DatabaseSettings
 
 	// Get Default Key
 	err := ba.db.View(func(tx *bolt.Tx) error {
@@ -127,31 +137,7 @@ func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, err
 		return nil, err
 	}
 
-	return &config, nil
-}
-
-func (ba *BoltAdapter) SaveClientConfig(config domain.DatabasePermissions) error {
-	if ba.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
-	}
-
-	key := DefaultPermissionConfigKey
-
-	return ba.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(ClientConfigBucket))
-
-		// Marshal the config to JSON
-		jsonData, err := json.Marshal(config.Permissions)
-		if err != nil {
-			return fmt.Errorf("failed to marshal client config: %v", err)
-		}
-		// Save Config
-		if err := b.Put([]byte(key), jsonData); err != nil {
-			return fmt.Errorf("failed to save client config: %v", err)
-		}
-
-		return nil
-	})
+	return config, nil
 }
 
 // DatabaseConfigExists checks if a database configuration exists for the given key.
@@ -200,73 +186,29 @@ func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
 }
 
 // SetFirstRunCycleStatus saves the current run cycle status to BoltDB.
-func (ba *BoltAdapter) SetFirstRunCycleStatus(status domain.RunCycleStatus) error {
+func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error {
 	if ba.db == nil {
 		return fmt.Errorf("boltAdapter not initialized")
 	}
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
-
-		// Marshal the status to JSON
-		jsonData, err := json.Marshal(status)
-		if err != nil {
-			return fmt.Errorf("failed to marshal run cycle status: %v", err)
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
 		}
-		// Save Status
-		if err := b.Put([]byte(RunCycleStatusKey), jsonData); err != nil {
+
+		// Save the first run status as a simple boolean
+		firstRun := status.IsFirstRun()
+		var data []byte
+		if firstRun {
+			data = []byte("true")
+		} else {
+			data = []byte("false")
+		}
+		if err := b.Put([]byte(RunCycleStatusKey), data); err != nil {
 			return fmt.Errorf("failed to save run cycle status: %v", err)
 		}
 
 		return nil
 	})
-}
-
-// SetSubscriber saves the subscriber information to BoltDB.
-func (ba *BoltAdapter) SetSubscriber(subscriber domain.Subscriber) error {
-	if ba.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
-	}
-
-	return ba.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(ClientConfigBucket))
-
-		// Marshal the name to JSON
-		jsonData, err := json.Marshal(subscriber)
-		if err != nil {
-			return fmt.Errorf("failed to marshal subscriber name: %v", err)
-		}
-
-		// Save Subscriber Name
-		if err := b.Put([]byte(SubscriberNameKey), jsonData); err != nil {
-			return fmt.Errorf("failed to save subscriber name: %v", err)
-		}
-
-		return nil
-	})
-}
-
-// GetSubscriber retrieves the subscriber information from BoltDB.
-func (ba *BoltAdapter) GetSubscriber() (*domain.Subscriber, error) {
-	if ba.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
-	}
-
-	var subscriber domain.Subscriber
-	err := ba.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(ClientConfigBucket))
-
-		// Get Subscriber Name JSON
-		data := b.Get([]byte(SubscriberNameKey))
-		if data == nil {
-			return domain.ErrSubscriberNotFound
-		}
-
-		return json.Unmarshal(data, &subscriber)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &subscriber, nil
 }

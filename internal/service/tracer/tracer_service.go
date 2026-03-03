@@ -29,12 +29,17 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
-	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name)
+	if subscriber == nil {
+		return fmt.Errorf("subscriber cannot be nil")
+	}
+	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
 	go func() {
-		ts.processBatch(subscriber)
+		if err := ts.processBatch(ctx, subscriber); err != nil {
+			log.Printf("initial batch processing failed for subscriber %s: %v", subscriber.Name(), err)
+		}
 	}()
 
 	// Start the goroutine to listen for notifications
@@ -49,16 +54,16 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 		// Check if context is cancelled before blocking
 		select {
 		case <-ctx.Done():
-			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name)
+			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name())
 			return
 		default:
 			// Continue to blocking wait
 		}
 
 		// Blocking wait — Oracle holds this call until messages arrive or wait time expires
-		err := ts.processBatch(subscriber)
+		err := ts.processBatch(ctx, subscriber)
 		if err != nil {
-			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name, err)
+			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name(), err)
 			select {
 			case <-time.After(errorDelay):
 				continue
@@ -70,12 +75,15 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 }
 
 // processBatch processes a batch of tracer data for the given subscriber ID
-func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
+func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Subscriber) error {
+	if subscriber == nil {
+		return fmt.Errorf("subscriber cannot be nil")
+	}
 	// Lock for processing to avoid concurrent dequeues
 	ts.processMu.Lock()
 	defer ts.processMu.Unlock()
 
-	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(*subscriber)
+	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
 	if err != nil {
 		return err
 	}
@@ -84,9 +92,13 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 		return nil // return
 	}
 
+	if len(messages) < count || len(msgIDs) < count {
+		return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
+	}
+
 	for i := 0; i < count; i++ {
-		var msg domain.QueueMessage
-		if err := json.Unmarshal([]byte(messages[i]), &msg); err != nil {
+		msg := &domain.QueueMessage{}
+		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
 			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
 			continue
 		}
@@ -97,21 +109,21 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 }
 
 // handleTracerMessage processes a single tracer message
-func (ts *TracerService) handleTracerMessage(msg domain.QueueMessage) {
-	fmt.Printf("[%s] [%s] %s: %s \n", msg.Timestamp, msg.LogLevel, msg.ProcessName, msg.Payload)
+func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
+	fmt.Println(msg.Format())
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized
-func (ts *TracerService) DeployAndCheck() error {
+func (ts *TracerService) DeployAndCheck(ctx context.Context) error {
 	// Check if the tracer package is already deployed
 	// if not, deploy it
 	var exists bool
-	if err := deployTracerPackage(ts, &exists); err != nil {
+	if err := deployTracerPackage(ctx, ts, &exists); err != nil {
 		return fmt.Errorf("failed to deploy tracer package: %w", err)
 	}
 	if !exists {
 		// Initialize the tracer package
-		if err := initializeTracerPackage(ts); err != nil {
+		if err := initializeTracerPackage(ctx, ts); err != nil {
 			return fmt.Errorf("failed to initialize tracer package: %w", err)
 		}
 	}
@@ -120,9 +132,9 @@ func (ts *TracerService) DeployAndCheck() error {
 }
 
 // DeployTracerPackage deploys the Omni tracer package to the database if not already present
-func deployTracerPackage(ts *TracerService, exists *bool) error {
+func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) error {
 	var err error
-	*exists, err = ts.db.PackageExists("OMNI_TRACER_API")
+	*exists, err = ts.db.PackageExists(ctx, "OMNI_TRACER_API")
 	if err != nil {
 		return fmt.Errorf("failed to check package existence: %w", err)
 	}
@@ -138,7 +150,7 @@ func deployTracerPackage(ts *TracerService, exists *bool) error {
 		return fmt.Errorf("failed to read Omni tracer package file: %w", err)
 	}
 
-	if err := ts.db.DeployFile(string(omniTracerSQLPackage)); err != nil {
+	if err := ts.db.DeployFile(ctx, string(omniTracerSQLPackage)); err != nil {
 		return fmt.Errorf("failed to deploy Omni tracer package: %w", err)
 	}
 
@@ -146,13 +158,13 @@ func deployTracerPackage(ts *TracerService, exists *bool) error {
 }
 
 // InitializeTracerPackage initializes the Omni tracer package in the database
-func initializeTracerPackage(ts *TracerService) error {
+func initializeTracerPackage(ctx context.Context, ts *TracerService) error {
 	omniInitInsFile, err := assets.GetInsFile("Omni_Initialize.ins")
 	if err != nil {
 		return fmt.Errorf("failed to read Omni initialize file: %w", err)
 	}
 
-	if err := ts.db.ExecuteStatement(string(omniInitInsFile)); err != nil {
+	if err := ts.db.ExecuteStatement(ctx, string(omniInitInsFile)); err != nil {
 		return fmt.Errorf("failed to deploy Omni initialize file: %w", err)
 	}
 

@@ -16,6 +16,7 @@ import "C"
 
 import (
 	"OmniView/internal/core/domain"
+	"context"
 	"fmt"
 	"unsafe"
 )
@@ -59,7 +60,10 @@ func (oa *OracleAdapter) GetRawContext() unsafe.Pointer {
 }
 
 // Fetch executes a SELECT query and returns all results as a slice of strings.
-func (oa *OracleAdapter) Fetch(query string) ([]string, error) {
+func (oa *OracleAdapter) Fetch(ctx context.Context, query string) ([]string, error) {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	var err error
 
 	stmt, err := oa.ExecuteAndReturnStatement(query)
@@ -195,7 +199,10 @@ func (oa *OracleAdapter) PrepareStatement(query string) (*C.dpiStmt, error) {
 
 // ExecuteStatement executes the given SQL statement without returning results.
 // It's suitable for INSERT, UPDATE, DELETE, or DDL statements.
-func (oa *OracleAdapter) ExecuteStatement(query string) error {
+func (oa *OracleAdapter) ExecuteStatement(ctx context.Context, query string) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {
 		return err
@@ -214,16 +221,19 @@ func (oa *OracleAdapter) ExecuteStatement(query string) error {
 
 // Connect establishes the connection to the Oracle database using the injected configuration.
 // It initializes the DPI context and the connection handle.
-func (oa *OracleAdapter) Connect() error {
+func (oa *OracleAdapter) Connect(ctx context.Context) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	// 1. Initialize the DPI context
 	if err := oa.InitContext(); err != nil {
 		return err
 	}
 	// 2. Create the connection string
 	//connectionString := fmt.Sprintf("%s:%s/%s", oa.config.Host, fmt.Sprint(oa.config.Port), oa.config.Database)
-	connectionString := fmt.Sprintf("(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=%s)(PORT=%d))(CONNECT_DATA=(SERVICE_NAME=%s))(ENABLE=BROKEN))", oa.config.Host, oa.config.Port, oa.config.Database)
+	connectionString := fmt.Sprintf("(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=%s)(PORT=%d))(CONNECT_DATA=(SERVICE_NAME=%s))(ENABLE=BROKEN))", oa.config.Host(), oa.config.Port().Int(), oa.config.Database())
 	// 3. Create the connection
-	if err := oa.CreateConnection(oa.config.Username, oa.config.Password, connectionString); err != nil {
+	if err := oa.CreateConnection(oa.config.Username(), oa.config.Password(), connectionString); err != nil {
 		// Cleanup context if connection fails
 		C.dpiContext_destroy(oa.Context)
 		oa.Context = nil
@@ -235,7 +245,10 @@ func (oa *OracleAdapter) Connect() error {
 }
 
 // Close releases the database connection and context resources.
-func (oa *OracleAdapter) Close() error {
+func (oa *OracleAdapter) Close(ctx context.Context) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	if oa.payloadType != nil {
 		C.dpiObjectType_release(oa.payloadType)
 		oa.payloadType = nil
@@ -369,14 +382,14 @@ func (oa *OracleAdapter) BindParamsToQuery(stmt *C.dpiStmt, params map[string]in
 }
 
 // PackageExists checks if a specific package exists and is valid in the connected Oracle database.
-func (oa *OracleAdapter) PackageExists(packageName string) (bool, error) {
+func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) (bool, error) {
 	query := `SELECT COUNT(1) 
 			FROM user_objects 
 			WHERE object_type = 'PACKAGE' 
 			AND object_name = UPPER(:packageName) 
 			AND status = 'VALID'`
 
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
+	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"packageName": packageName,
 	})
 
@@ -396,7 +409,10 @@ func (oa *OracleAdapter) PackageExists(packageName string) (bool, error) {
 }
 
 // FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
-func (oa *OracleAdapter) FetchWithParams(query string, params map[string]interface{}) ([]string, error) {
+func (oa *OracleAdapter) FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error) {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {
 		return nil, err
@@ -424,7 +440,10 @@ func (oa *OracleAdapter) FetchWithParams(query string, params map[string]interfa
 }
 
 // ExecuteWithParams executes a non-SELECT SQL statement with parameters.
-func (oa *OracleAdapter) ExecuteWithParams(query string, params map[string]interface{}) error {
+func (oa *OracleAdapter) ExecuteWithParams(ctx context.Context, query string, params map[string]interface{}) error {
+	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.
+	// If cancelable behavior is needed, run this work in a goroutine and coordinate cancellation at the Go layer.
+	_ = ctx
 	stmt, err := oa.PrepareStatement(query)
 	if err != nil {
 		return err
@@ -447,32 +466,32 @@ func (oa *OracleAdapter) ExecuteWithParams(query string, params map[string]inter
 
 // DeployPackages deploys the given SQL package to the connected Oracle database.
 // Package structure should contain Package Specification and Package Body as a single string in the correct order.
-func (oa *OracleAdapter) DeployPackages(sequences []string, types []string, packageSpec []string, packageBody []string) error {
+func (oa *OracleAdapter) DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error {
 	// Execution Order: Sequence -> Package Specification -> Package Body
 	// The loops are nil safe, so empty slices will be skipped.
 	// Step 1: Deploy Sequences
 	for _, seq := range sequences {
-		if err := oa.ExecuteStatement(seq); err != nil {
+		if err := oa.ExecuteStatement(ctx, seq); err != nil {
 			return fmt.Errorf("failed to deploy sequence: %s", err)
 		}
 	}
 
 	// Step 2: Deploy Types
 	for _, t := range types {
-		if err := oa.ExecuteStatement(t); err != nil {
+		if err := oa.ExecuteStatement(ctx, t); err != nil {
 			return fmt.Errorf("failed to deploy type: %s", err)
 		}
 	}
 	// Step 3: Deploy Package Specifications
 	for _, spec := range packageSpec {
-		if err := oa.ExecuteStatement(spec); err != nil {
+		if err := oa.ExecuteStatement(ctx, spec); err != nil {
 			return fmt.Errorf("failed to deploy package specification: %s", err)
 		}
 	}
 
 	// Step 4: Deploy Package Body
 	for _, body := range packageBody {
-		if err := oa.ExecuteStatement(body); err != nil {
+		if err := oa.ExecuteStatement(ctx, body); err != nil {
 			return fmt.Errorf("failed to deploy package body: %s", err)
 		}
 	}
@@ -481,13 +500,13 @@ func (oa *OracleAdapter) DeployPackages(sequences []string, types []string, pack
 }
 
 // DeployFile deploys a SQL file content to the connected Oracle database.
-func (oa *OracleAdapter) DeployFile(sqlContent string) error {
+func (oa *OracleAdapter) DeployFile(ctx context.Context, sqlContent string) error {
 	sequences, types, packageSpecs, packageBodies, err := Extract(sqlContent)
 	if err != nil {
 		return fmt.Errorf("failed to extract SQL content: %s", err)
 	}
 
-	if err := oa.DeployPackages(sequences, types, packageSpecs, packageBodies); err != nil {
+	if err := oa.DeployPackages(ctx, sequences, types, packageSpecs, packageBodies); err != nil {
 		return fmt.Errorf("failed to deploy SQL content: %s", err)
 	}
 

@@ -11,19 +11,20 @@ import "C"
 
 import (
 	"OmniView/internal/core/domain"
+	"context"
 	"fmt"
 	"unsafe"
 )
 
 // CheckQueueDepth checks the queue depth for the given subscriber ID
-func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName string) (int, error) {
+func (oa *OracleAdapter) CheckQueueDepth(ctx context.Context, subscriberID string, queueTableName string) (int, error) {
 	query := fmt.Sprintf(`SELECT COUNT(*) 
 			  FROM %s
 			  WHERE QUEUE = :queueName
 			  AND CONSUMER_NAME = :subscriberID
 			  AND MSG_STATE = 'READY'`, queueTableName)
 
-	results, err := oa.FetchWithParams(query, map[string]interface{}{
+	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"queueName":    domain.QueueName,
 		"subscriberID": subscriberID,
 	})
@@ -42,12 +43,20 @@ func (oa *OracleAdapter) CheckQueueDepth(subscriberID string, queueTableName str
 	return count, nil
 }
 
-func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+func (oa *OracleAdapter) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, 0, err
+	}
+
+	if oa.Context == nil {
+		return nil, nil, 0, fmt.Errorf("dpi context is not initialized")
+	}
+
 	if oa.Connection == nil {
 		return nil, nil, 0, fmt.Errorf("database connection is not established")
 	}
 
-	if subscriber.BatchSize <= 0 {
+	if subscriber.BatchSize().Int() <= 0 {
 		return nil, nil, 0, fmt.Errorf("batch size must be > 0")
 	}
 
@@ -55,10 +64,10 @@ func (oa *OracleAdapter) BulkDequeueTracerMessages(subscriber domain.Subscriber)
 	var cIds *C.TraceId
 	var cCount C.uint32_t
 
-	cSubscriberName := C.CString(subscriber.Name)
+	cSubscriberName := C.CString(subscriber.Name())
 	defer C.free(unsafe.Pointer(cSubscriberName))
 
-	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSubscriberName, C.uint32_t(subscriber.BatchSize), C.int32_t(subscriber.WaitTime), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
+	if C.DequeueManyAndExtract(oa.Connection, oa.Context, cSubscriberName, C.uint32_t(subscriber.BatchSize().Int()), C.int32_t(subscriber.WaitTime().Int()), &cMessages, &cIds, &cCount) != C.DPI_SUCCESS {
 		var errInfo C.dpiErrorInfo
 		C.dpiContext_getError(oa.Context, &errInfo)
 

@@ -90,6 +90,10 @@ func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
 		return nil // return
 	}
 
+	if len(messages) < count || len(msgIDs) < count {
+		return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
+	}
+
 	for i := 0; i < count; i++ {
 		msg := &domain.QueueMessage{}
 		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {

@@ -43,7 +43,7 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 			return fmt.Errorf("failed to marshal database settings: %w", err)
 		}
 
-		key := settings.Username() + ":" + settings.Database()
+		key := makeDatabaseSettingsKey(settings.Username(), settings.Database())
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save database settings: %w", err)
 		}
@@ -159,4 +159,9 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 		}
 		return nil
 	})
+}
+
+// makeDatabaseSettingsKey constructs a unique key for database settings based on username and database name
+func makeDatabaseSettingsKey(username, database string) string {
+	return "cfg:" + username + ":" + database
 }

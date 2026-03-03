@@ -42,10 +42,7 @@ func (r *SubscriberRepository) Save(ctx context.Context, subscriber domain.Subsc
 			return fmt.Errorf("failed to marshal subscriber: %w", err)
 		}
 
-		fmt.Printf("[DEBUG] Marshal JSON: %s\n", string(jsonData))
-
 		key := subscriber.Name()
-		fmt.Printf("[DEBUG] Saving with key: %s, value length: %d\n", key, len(jsonData))
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save subscriber: %w", err)
 		}
@@ -131,7 +128,6 @@ func (r *SubscriberRepository) List(ctx context.Context) ([]domain.Subscriber, e
 
 		cursor := b.Cursor()
 		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
-			fmt.Printf("[DEBUG] Found key: %s, value: %s\n", string(k), string(v))
 			var subscriber domain.Subscriber
 			if err := json.Unmarshal(v, &subscriber); err != nil {
 				return fmt.Errorf("failed to unmarshal subscriber: %w", err)

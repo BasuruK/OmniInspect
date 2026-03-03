@@ -5,7 +5,6 @@ import (
 	"OmniView/internal/core/ports"
 	"context"
 	"errors"
-	"fmt"
 )
 
 // Service: Manages subscriber information
@@ -28,25 +27,18 @@ func (ss *SubscriberService) SetSubscriber(ctx context.Context, subscriber *doma
 	if subscriber == nil {
 		return errors.New("subscriber cannot be nil")
 	}
-	fmt.Printf("[DEBUG] Saving subscriber: %s\n", subscriber.Name())
-	if err := ss.subRepo.Save(ctx, *subscriber); err != nil {
-		return fmt.Errorf("failed to save subscriber: %w", err)
-	}
-	fmt.Printf("[DEBUG] Subscriber saved successfully\n")
-	return nil
+	return ss.subRepo.Save(ctx, *subscriber)
 }
 
 // GetSubscriber retrieves the subscriber from the bolt database
 func (ss *SubscriberService) GetSubscriber(ctx context.Context) (*domain.Subscriber, error) {
 	subs, err := ss.subRepo.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list subscribers: %w", err)
+		return nil, err
 	}
-	fmt.Printf("[DEBUG] Found %d subscribers\n", len(subs))
 	if len(subs) == 0 {
 		return nil, domain.ErrSubscriberNotFound
 	}
-	fmt.Printf("[DEBUG] Returning subscriber: %s\n", subs[0].Name())
 	return &subs[0], nil
 }
 

@@ -28,12 +28,14 @@ func NewPermissionService(db ports.DatabaseRepository, permsRepo ports.Permissio
 
 // DeployAndCheck ensures the necessary permission checks package is deployed, checked and dropped
 func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) (bool, error) {
-	// Check if permission checks have already been performed
-	isFirstRun, err := ps.config.IsApplicationFirstRun()
+	// Check if permissions already exist for this schema in boltDB
+	exists, err := ps.permsRepo.Exists(ctx, schema)
 	if err != nil {
 		return false, err
 	}
-	if isFirstRun {
+
+	// If permissions don't exist for this schema, run the check
+	if !exists {
 		// Ensure the permission checks package is deployed
 		if err := deployPermissionChecksPackage(ps); err != nil {
 			return false, err
@@ -101,6 +103,7 @@ func checkPermissions(ps *PermissionService, schema string) (*domain.DatabasePer
 	}
 
 	jsonData := results[0]
+
 	// Unmarshal the result into PermissionStatus
 	var permsStatus domain.PermissionStatus
 	if err := json.Unmarshal([]byte(jsonData), &permsStatus); err != nil {

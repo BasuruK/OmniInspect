@@ -1,18 +1,20 @@
 package domain
 
+import "encoding/json"
+
 // ==========================================
 // Value Objects
 // ==========================================
 
 // Value Object : Results of permission checks
 type PermissionStatus struct {
-	CreateSequence      bool
-	CreateProcedure     bool
-	CreateType          bool
-	AQAdministratorRole bool
-	AQUserRole          bool
-	DBMSAQADMExecute    bool
-	DBMSAQExecute       bool
+	CreateSequence      bool `json:"CreateSequence"`
+	CreateProcedure     bool `json:"CreateProcedure"`
+	CreateType          bool `json:"CreateType"`
+	AQAdministratorRole bool `json:"AQAdministratorRole"`
+	AQUserRole          bool `json:"AQUserRole"`
+	DBMSAQADMExecute    bool `json:"DBMSAQADMExecute"`
+	DBMSAQExecute       bool `json:"DBMSAQExecute"`
 }
 
 // HasAllPermissions returns true if all permissions are granted
@@ -65,5 +67,35 @@ func (p *DatabasePermissions) Validate() error {
 	if !p.IsValid() {
 		return ErrMissingPermissions
 	}
+	return nil
+}
+
+// ==========================================
+// JSON Marshaling
+// ==========================================
+
+// databasePermissionsJSON provides a JSON-friendly intermediate representation
+type databasePermissionsJSON struct {
+	Schema      string          `json:"schema"`
+	Permissions PermissionStatus `json:"permissions"`
+}
+
+// MarshalJSON implements custom JSON marshaling for DatabasePermissions
+func (p *DatabasePermissions) MarshalJSON() ([]byte, error) {
+	j := databasePermissionsJSON{
+		Schema:      p.schema,
+		Permissions: p.permissions,
+	}
+	return json.Marshal(j)
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for DatabasePermissions
+func (p *DatabasePermissions) UnmarshalJSON(data []byte) error {
+	var j databasePermissionsJSON
+	if err := json.Unmarshal(data, &j); err != nil {
+		return err
+	}
+	p.schema = j.Schema
+	p.permissions = j.Permissions
 	return nil
 }

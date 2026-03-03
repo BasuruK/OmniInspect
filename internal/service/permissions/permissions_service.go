@@ -52,17 +52,14 @@ func (ps *PermissionService) DeployAndCheck(ctx context.Context, schema string) 
 			_ = dropPermissionChecksPackage(ps)
 			return false, err
 		}
-		// Drop the permission checks package from the database
-		// Dropping the package to maintain a clean database state and security
-		if err := dropPermissionChecksPackage(ps); err != nil {
-			return false, err
-		}
-		// Mark first-run complete only after all first-run steps succeed
-		if err := ps.config.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
-			return false, err
-		}
 	}
-
+	// Always retry cleanup/finalization for first-run flow recovery.
+	if err := dropPermissionChecksPackage(ps); err != nil {
+		return false, err
+	}
+	if err := ps.config.SetFirstRunCycleStatus(*ports.NewRunCycleStatus(false)); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 

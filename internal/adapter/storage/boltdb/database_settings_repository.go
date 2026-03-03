@@ -146,6 +146,17 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		return b.Delete([]byte(id))
+		if err := b.Delete([]byte(id)); err != nil {
+			return err
+		}
+
+		// If the deleted config was the default, clear the default pointer key
+		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
+		if defaultKey != nil && string(defaultKey) == id {
+			if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
+				return fmt.Errorf("failed to clear default database settings key: %w", err)
+			}
+		}
+		return nil
 	})
 }

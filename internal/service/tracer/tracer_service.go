@@ -29,6 +29,9 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 }
 
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
+	if subscriber == nil {
+		return fmt.Errorf("subscriber cannot be nil")
+	}
 	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Initial processing to handle any existing messages
@@ -71,6 +74,9 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 
 // processBatch processes a batch of tracer data for the given subscriber ID
 func (ts *TracerService) processBatch(subscriber *domain.Subscriber) error {
+	if subscriber == nil {
+		return fmt.Errorf("subscriber cannot be nil")
+	}
 	// Lock for processing to avoid concurrent dequeues
 	ts.processMu.Lock()
 	defer ts.processMu.Unlock()

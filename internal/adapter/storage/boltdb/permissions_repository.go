@@ -88,7 +88,7 @@ func (pr *PermissionsRepository) Get(ctx context.Context, schema string) (*domai
 			return fmt.Errorf("bucket %s not found", PermissionsBucket)
 		}
 
-		data := b.Get([]byte(schema))
+		data := b.Get([]byte(key))
 		if data == nil {
 			return domain.ErrMissingPermissions
 		}
@@ -104,8 +104,17 @@ func (pr *PermissionsRepository) Get(ctx context.Context, schema string) (*domai
 
 // Exists checks if permissions exist for a schema
 func (pr *PermissionsRepository) Exists(ctx context.Context, schema string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	if pr == nil || pr.adapter == nil || pr.adapter.db == nil {
 		return false, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	key := strings.TrimSpace(schema)
+	if key == "" {
+		return false, fmt.Errorf("schema cannot be empty")
 	}
 
 	var exists bool
@@ -115,7 +124,7 @@ func (pr *PermissionsRepository) Exists(ctx context.Context, schema string) (boo
 			return fmt.Errorf("bucket %s not found", PermissionsBucket)
 		}
 
-		exists = b.Get([]byte(schema)) != nil
+		exists = b.Get([]byte(key)) != nil
 		return nil
 	})
 	return exists, err

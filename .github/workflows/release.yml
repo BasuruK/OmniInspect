@@ -52,8 +52,7 @@ jobs:
           go-version: '1.24'
 
       - name: Build release binary
-        run: make build VERSION=${{ github.ref_name }}
-        shell: cmd
+        run: go build -v -ldflags "-X OmniView/internal/app.Version=${{ github.ref_name }}" -o omniview.exe ./cmd/omniview
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
@@ -116,7 +115,7 @@ jobs:
           go-version: '1.24'
 
       - name: Build release binary
-        run: make build VERSION=${{ github.ref_name }}
+        run: go build -v -ldflags "-X OmniView/internal/app.Version=${{ github.ref_name }}" -o omniview ./cmd/omniview
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include

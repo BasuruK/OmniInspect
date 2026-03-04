@@ -92,13 +92,18 @@ jobs:
 
           # Mount and extract basic
           hdiutil attach instantclient-basic.dmg -mountpoint /Volumes/instantclient-basic
+          ls -la /Volumes/instantclient-basic/
           sudo mkdir -p /opt/oracle
-          sudo cp -R /Volumes/instantclient-basic/instantclient_23_3 /opt/oracle/instantclient_23_7
+          # Find the actual folder name in the DMG (may vary by version)
+          INSTANT_CLIENT_FOLDER=$(ls /Volumes/instantclient-basic/ | grep instantclient_)
+          echo "Found folder: $INSTANT_CLIENT_FOLDER"
+          sudo cp -R "/Volumes/instantclient-basic/$INSTANT_CLIENT_FOLDER" /opt/oracle/instantclient_23_7
           hdiutil detach /Volumes/instantclient-basic
 
           # Mount and extract SDK
           hdiutil attach instantclient-sdk.dmg -mountpoint /Volumes/instantclient-sdk
-          sudo cp -R /Volumes/instantclient-sdk/instantclient_23_3/sdk /opt/oracle/instantclient_23_7/sdk
+          ls -la /Volumes/instantclient-sdk/
+          sudo cp -R /Volumes/instantclient-sdk/$INSTANT_CLIENT_FOLDER/sdk /opt/oracle/instantclient_23_7/sdk
           hdiutil detach /Volumes/instantclient-sdk
 
       - name: Download and setup ODPI-C

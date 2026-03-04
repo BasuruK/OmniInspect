@@ -61,8 +61,8 @@ else ifeq ($(DETECTED_OS),MacOS)
     INSTANT_CLIENT_DIR ?= /opt/oracle/instantclient_23_7
     INSTANT_CLIENT_INCLUDE = $(INSTANT_CLIENT_DIR)/sdk/include
     LDFLAGS = -dynamiclib -arch arm64 \
-        -install_name @rpath/libodpi.dylib \
-        -Wl,-rpath,$(INSTANT_CLIENT_DIR)
+        -install_name @executable_path/third_party/odpi/lib/libodpi.dylib \
+        -Wl,-rpath,@executable_path/instantclient_23_7
     CFLAGS = -O2 -Wall $(INCLUDE) -I$(INSTANT_CLIENT_INCLUDE) -arch arm64
     TARGET = $(ODPI_BASE)/lib/libodpi.dylib
     LIBS = -L$(INSTANT_CLIENT_DIR) -lclntsh
@@ -80,9 +80,18 @@ VERSION ?= dev
 GO_LDFLAGS = -ldflags "-X OmniView/internal/app.Version=$(VERSION)"
 
 # Export CGO flags for Go build (picked up automatically by go build)
+# Note: The actual library linking is done in the Go files via #cgo directives
+# For local development, use rpath to system Oracle Instant Client
+# For release builds (RELEASE=1), use @executable_path for distribution
 ifeq ($(DETECTED_OS),MacOS)
     export CGO_CFLAGS = -I$(PWD)/$(ODPI_BASE)/include
-    export CGO_LDFLAGS = -L$(PWD)/$(ODPI_BASE)/lib -lodpi -Wl,-rpath,$(PWD)/$(ODPI_BASE)/lib -Wl,-rpath,$(INSTANT_CLIENT_DIR)
+    ifeq ($(RELEASE),1)
+        # Release build: use @executable_path for distribution
+        export CGO_LDFLAGS = -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/third_party/odpi/lib -Wl,-rpath,@executable_path/instantclient_23_7
+    else
+        # Local dev build: use system Oracle Instant Client path
+        export CGO_LDFLAGS = -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/third_party/odpi/lib -Wl,-rpath,$(INSTANT_CLIENT_DIR)
+    endif
 else ifeq ($(DETECTED_OS),Windows)
     export CGO_CFLAGS = -I$(PWD)/$(ODPI_BASE)/include
     export CGO_LDFLAGS = -L$(PWD)/$(ODPI_BASE)/lib -lodpi -L$(INSTANT_CLIENT_DIR) -loci
@@ -157,11 +166,11 @@ endif
 .PHONY: run
 run: build
 	@echo "[RUN] Running $(BINARY_NAME)..."
-	ifeq ($(DETECTED_OS),Windows)
-		./$(BINARY_NAME).exe
-	else
-		./$(BINARY_NAME)
-	endif
+ifneq ($(DETECTED_OS),Windows)
+	./$(BINARY_NAME)
+else
+	./$(BINARY_NAME).exe
+endif
 
 # Run tests
 .PHONY: test
@@ -242,44 +251,22 @@ else ifeq ($(DETECTED_OS),MacOS)
 	@echo "[OK] Created omniview-darwin-arm64-$(RELEASE_TAG).tar.gz"
 endif
 
-# Publish: Build release, create git tag and push to remote
-# Use UPLOAD=1 to also upload locally built artifacts to GitHub (requires gh CLI)
+# Publish: Build binary, create git tag and push to remote
+# Release artifacts are created by GitHub Actions (release.yml)
 .PHONY: publish
 publish:
 ifneq ($(findstring dev,$(VERSION)),)
 	@echo "[ERROR] VERSION must be provided for publish (e.g., make publish VERSION=1.0.0)"
 	@exit 1
 endif
-	@echo "[PUBLISH] Building release package..."
-	@$(MAKE) release VERSION=$(VERSION)
+	@echo "[PUBLISH] Building binary..."
+	@$(MAKE) build VERSION=$(VERSION)
 	@echo "[PUBLISH] Creating annotated tag $(RELEASE_TAG)..."
 	@git tag -a $(RELEASE_TAG) -m "Release version $(RELEASE_NUM)"
 	@echo "[PUBLISH] Pushing tag $(RELEASE_TAG) to origin..."
 	@git push origin $(RELEASE_TAG)
 	@echo "[OK] Published $(RELEASE_TAG) to remote"
-ifeq ($(UPLOAD),1)
-	@echo "[PUBLISH] Uploading release artifacts to GitHub..."
-	@echo "[INFO] Checking gh CLI authentication..."
-	@gh auth status || (echo "[ERROR] gh CLI not authenticated. Run 'gh auth login' first." && exit 1)
-ifeq ($(DETECTED_OS),Windows)
-	@if exist omniview-windows-amd64-v$(VERSION).zip ( \
-		gh release create v$(VERSION) --generate-notes omniview-windows-amd64-v$(VERSION).zip || \
-		echo "[WARN] Failed to upload Windows artifact" \
-	) else ( \
-		echo "[WARN] Windows artifact not found: omniview-windows-amd64-v$(VERSION).zip" \
-	)
-else
-	@if exist omniview-darwin-arm64-v$(VERSION).tar.gz ( \
-		gh release create v$(VERSION) --generate-notes omniview-darwin-arm64-v$(VERSION).tar.gz || \
-		echo "[WARN] Failed to upload macOS artifact" \
-	) else ( \
-		echo "[WARN] macOS artifact not found: omniview-darwin-arm64-v$(VERSION).tar.gz" \
-	)
-endif
-	@echo "[OK] Release artifacts upload complete"
-else
 	@echo "[INFO] GitHub workflow will now build and upload release artifacts"
-endif
 
 # Clean all build artifacts
 .PHONY: clean
@@ -314,8 +301,7 @@ help:
 	@echo "  make run                          - Build and run the application"
 	@echo "  make release                      - Build and package for distribution"
 	@echo "  make release VERSION=v1.0.0       - Package with specific version"
-	@echo "  make publish VERSION=1.0.0        - Build, tag and push to remote"
-	@echo "  make publish VERSION=1.0.0 UPLOAD=1 - Also upload artifacts to GitHub"
+	@echo "  make publish VERSION=1.0.0        - Build, tag and push to remote (GitHub Actions handles packaging)"
 	@echo "  make odpi                         - Build only ODPI-C library"
 	@echo "  make deps                         - Check/build dependencies"
 	@echo "  make clean                        - Remove all build artifacts"

@@ -2,7 +2,7 @@ package oracle
 
 /*
 #cgo darwin CFLAGS: -I${SRCDIR}/../../../../third_party/odpi/include
-#cgo darwin LDFLAGS: -L${SRCDIR}/../../../../third_party/odpi/lib -lodpi -Wl,-rpath,${SRCDIR}/../../../../third_party/odpi/lib -Wl,-rpath,/opt/oracle/instantclient_23_7
+#cgo darwin LDFLAGS: -L/opt/oracle/instantclient_23_7 -lclntsh -L${SRCDIR}/../../../../third_party/odpi/lib -lodpi
 
 #cgo windows CFLAGS: -I${SRCDIR}/../../../../third_party/odpi/include
 #cgo windows LDFLAGS: -L${SRCDIR}/../../../../third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci

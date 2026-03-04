@@ -344,14 +344,14 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 
 ```text
 ┌─────────────────┐     Trace_Message()      ┌─────────────────┐
-│  Oracle PL/SQL  │ ────────────────────────▶│  OMNI_TRACER    │
+│  Oracle PL/SQL  │ ───────────────────────▶│  OMNI_TRACER    │
 │     Code        │                          │     QUEUE       │
 └─────────────────┘                          └────────┬────────┘
                                                            │
                                                            │ Dequeue
                                                            ▼
 ┌─────────────────┐     Display            ┌─────────────────┐
-│  OmniView TUI   │ ◀──────────────────────│   Blocking      │
+│  OmniView TUI   │ ◀─────────────────────│   Blocking      │
 │   (Console)     │                        │   Consumer      │
 └─────────────────┘                        └─────────────────┘
 ```

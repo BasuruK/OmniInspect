@@ -18,6 +18,11 @@ import (
 )
 
 func main() {
+	// Initialize the application and display logo and version info
+	omniApp := app.New()
+	// Print LOGO version info and start the server
+	fmt.Println(omniApp.GetLogoASCII())
+
 	// Clean up leftover binary from a previous update (safe no-op if nothing to clean)
 	updater.CleanupOldBinary()
 
@@ -91,11 +96,8 @@ func main() {
 	}
 	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name())
 
-	// 6. Start Application
-
-	omniApp := app.New(boltAdapter, dbAdapter)
-	fmt.Println(omniApp.GetVersion())
-	go omniApp.StartServer(done)
+	// 6. Show Application Status
+	go omniApp.ShowStatus(done)
 
 	if err := tracerService.StartEventListener(ctx, subscriber, appConfig.Username()); err != nil {
 		log.Fatalf("failed to start tracer event listener: %v", err)

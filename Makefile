@@ -146,7 +146,11 @@ build: deps
 	@echo "[BUILD] Building $(BINARY_NAME) (version: $(VERSION))..."
 	@echo "   CGO_CFLAGS=$(CGO_CFLAGS)"
 	@echo "   CGO_LDFLAGS=$(CGO_LDFLAGS)"
+ifeq ($(DETECTED_OS),Windows)
+	go build -v $(GO_LDFLAGS) -o $(BINARY_NAME).exe ./$(MAIN_PATH)
+else
 	go build -v $(GO_LDFLAGS) -o $(BINARY_NAME) ./$(MAIN_PATH)
+endif
 	@echo "[OK] Build complete: $(BINARY_NAME) ($(VERSION))"
 
 # Run the application
@@ -202,6 +206,13 @@ lint:
 # ============================================================================
 # Release Packaging
 # ============================================================================
+# For release/publish, VERSION must be explicitly provided
+# Strip 'v' prefix if present (for internal use in zip filenames)
+# Use Make's built-in subst function (works cross-platform, unlike sed)
+RELEASE_NUM := $(subst v,,$(VERSION))
+# Add 'v' prefix for GitHub tag (used in publish)
+RELEASE_TAG := v$(RELEASE_NUM)
+
 .PHONY: release
 release: build
 	@echo "[RELEASE] Packaging release $(VERSION)..."
@@ -211,24 +222,63 @@ ifeq ($(DETECTED_OS),Windows)
 	@mkdir -p release
 	@cp $(BINARY_NAME).exe release/ 2>/dev/null || cp $(BINARY_NAME) release/
 	@cp odpi.dll release/ 2>/dev/null || true
-	@cd release && zip -r ../omniview-windows-amd64-$(VERSION).zip . && cd ..
+	@cd release && zip -r ../omniview-windows-amd64-$(RELEASE_TAG).zip . && cd ..
 	@rm -rf release
     else
 	@if not exist release $(MKDIR_CMD) release
 	@$(COPY_CMD) $(BINARY_NAME).exe release\ >nul 2>&1 || $(COPY_CMD) $(BINARY_NAME) release\ >nul
 	@$(COPY_CMD) odpi.dll release\ >nul 2>&1
-	@powershell -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(VERSION).zip' -Force"
+	@powershell -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(RELEASE_TAG).zip' -Force"
 	@$(RM_CMD) release
     endif
-	@echo "[OK] Created omniview-windows-amd64-$(VERSION).zip"
+	@echo "[OK] Created omniview-windows-amd64-$(RELEASE_TAG).zip"
 else ifeq ($(DETECTED_OS),MacOS)
 	@echo "[RELEASE] Creating macOS arm64 archive..."
 	@mkdir -p release
 	@cp $(BINARY_NAME) release/
 	@cp $(ODPI_BASE)/lib/libodpi.dylib release/ 2>/dev/null || true
-	@tar -czf omniview-darwin-arm64-$(VERSION).tar.gz -C release .
+	@tar -czf omniview-darwin-arm64-$(RELEASE_TAG).tar.gz -C release .
 	@rm -rf release
-	@echo "[OK] Created omniview-darwin-arm64-$(VERSION).tar.gz"
+	@echo "[OK] Created omniview-darwin-arm64-$(RELEASE_TAG).tar.gz"
+endif
+
+# Publish: Build release, create git tag and push to remote
+# Use UPLOAD=1 to also upload locally built artifacts to GitHub (requires gh CLI)
+.PHONY: publish
+publish:
+ifneq ($(findstring dev,$(VERSION)),)
+	@echo "[ERROR] VERSION must be provided for publish (e.g., make publish VERSION=1.0.0)"
+	@exit 1
+endif
+	@echo "[PUBLISH] Building release package..."
+	@$(MAKE) release VERSION=$(VERSION)
+	@echo "[PUBLISH] Creating annotated tag $(RELEASE_TAG)..."
+	@git tag -a $(RELEASE_TAG) -m "Release version $(RELEASE_NUM)"
+	@echo "[PUBLISH] Pushing tag v$(VERSION) to origin..."
+	@git push origin $(RELEASE_TAG)
+	@echo "[OK] Published v$(VERSION) to remote"
+ifeq ($(UPLOAD),1)
+	@echo "[PUBLISH] Uploading release artifacts to GitHub..."
+	@echo "[INFO] Checking gh CLI authentication..."
+	@gh auth status || (echo "[ERROR] gh CLI not authenticated. Run 'gh auth login' first." && exit 1)
+ifeq ($(DETECTED_OS),Windows)
+	@if exist omniview-windows-amd64-v$(VERSION).zip ( \
+		gh release create v$(VERSION) --generate-notes omniview-windows-amd64-v$(VERSION).zip || \
+		echo "[WARN] Failed to upload Windows artifact" \
+	) else ( \
+		echo "[WARN] Windows artifact not found: omniview-windows-amd64-v$(VERSION).zip" \
+	)
+else
+	@if exist omniview-darwin-arm64-v$(VERSION).tar.gz ( \
+		gh release create v$(VERSION) --generate-notes omniview-darwin-arm64-v$(VERSION).tar.gz || \
+		echo "[WARN] Failed to upload macOS artifact" \
+	) else ( \
+		echo "[WARN] macOS artifact not found: omniview-darwin-arm64-v$(VERSION).tar.gz" \
+	)
+endif
+	@echo "[OK] Release artifacts upload complete"
+else
+	@echo "[INFO] GitHub workflow will now build and upload release artifacts"
 endif
 
 # Clean all build artifacts
@@ -259,19 +309,22 @@ endif
 help:
 	@echo "OmniInspect Makefile - Available targets:"
 	@echo ""
-	@echo "  make build                  - Build the Go application (default)"
-	@echo "  make build VERSION=v1.0.0   - Build with specific version"
-	@echo "  make run                    - Build and run the application"
-	@echo "  make release VERSION=v1.0.0 - Build and package for distribution"
-	@echo "  make odpi                   - Build only ODPI-C library"
-	@echo "  make deps                   - Check/build dependencies"
-	@echo "  make clean                  - Remove all build artifacts"
-	@echo "  make test                   - Run tests"
-	@echo "  make check-cgo              - Debug CGO compilation"
-	@echo "  make install                - Install Go dependencies"
-	@echo "  make fmt                    - Format Go code"
-	@echo "  make lint                   - Lint Go code"
-	@echo "  make help                   - Show this help message"
+	@echo "  make build                        - Build the Go application (default)"
+	@echo "  make build VERSION=v1.0.0         - Build with specific version"
+	@echo "  make run                          - Build and run the application"
+	@echo "  make release                      - Build and package for distribution"
+	@echo "  make release VERSION=v1.0.0       - Package with specific version"
+	@echo "  make publish VERSION=1.0.0        - Build, tag and push to remote"
+	@echo "  make publish VERSION=1.0.0 UPLOAD=1 - Also upload artifacts to GitHub"
+	@echo "  make odpi                         - Build only ODPI-C library"
+	@echo "  make deps                         - Check/build dependencies"
+	@echo "  make clean                        - Remove all build artifacts"
+	@echo "  make test                         - Run tests"
+	@echo "  make check-cgo                    - Debug CGO compilation"
+	@echo "  make install                      - Install Go dependencies"
+	@echo "  make fmt                          - Format Go code"
+	@echo "  make lint                         - Lint Go code"
+	@echo "  make help                         - Show this help message"
 
 # Phony targets
-.PHONY: all clean odpi deps build run test check-cgo install fmt lint release help
+.PHONY: all clean odpi deps build run run-only test check-cgo install fmt lint release publish help

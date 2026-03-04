@@ -300,7 +300,10 @@ If you need to connect to a different database:
 | `make test` | Run tests |
 | `make install` | Install Go dependencies |
 | `make release VERSION=x.x.x` | Build and package for distribution |
+| `make publish VERSION=x.x.x` | Build, tag and push release (GitHub Actions handles packaging) |
 | `make help` | Show available targets |
+
+> **Important**: Always use `make run` or `make build` instead of `go run cmd/omniview/main.go`. The Makefile sets required CGO environment variables (library paths, rpaths) that are needed for the Oracle ODPI-C driver to compile and link correctly.
 
 ## Architecture
 

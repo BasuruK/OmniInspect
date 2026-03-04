@@ -148,10 +148,9 @@ func CleanupOldBinary() {
 	if err != nil {
 		return
 	}
-	selfPath, _ = filepath.EvalSymlinks(selfPath)
-	selfDir := filepath.Dir(selfPath)
-
-	// Clean up the old executable
+	if resolvedPath, err := filepath.EvalSymlinks(selfPath); err == nil {
+		selfPath = resolvedPath
+	}
 	oldPath := selfPath + ".old"
 	if _, err := os.Stat(oldPath); err == nil {
 		os.Remove(oldPath)

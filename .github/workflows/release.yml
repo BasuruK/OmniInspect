@@ -132,14 +132,16 @@ jobs:
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
-          CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -L/opt/oracle/instantclient_23_7 -lclntsh -Wl,-rpath,/opt/oracle/instantclient_23_7
+          CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -L/opt/oracle/instantclient_23_7 -lclntsh -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/third_party/odpi/lib -Wl,-rpath,@executable_path/instantclient_23_7
           INSTANT_CLIENT_DIR: /opt/oracle/instantclient_23_7
 
       - name: Package release archive
         run: |
-          mkdir -p release
+          mkdir -p release/third_party/odpi/lib
+          mkdir -p release/instantclient_23_7
           cp omniview release/
-          cp third_party/odpi/lib/libodpi.dylib release/
+          cp third_party/odpi/lib/libodpi.dylib release/third_party/odpi/lib/
+          cp -R /opt/oracle/instantclient_23_7/. release/instantclient_23_7/
           tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
         shell: bash
 

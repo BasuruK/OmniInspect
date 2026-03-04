@@ -129,6 +129,7 @@ jobs:
           cp omniview release/
           cp third_party/odpi/lib/libodpi.dylib release/
           tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
+        shell: bash
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4

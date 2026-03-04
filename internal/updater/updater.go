@@ -151,6 +151,7 @@ func CleanupOldBinary() {
 	if resolvedPath, err := filepath.EvalSymlinks(selfPath); err == nil {
 		selfPath = resolvedPath
 	}
+	selfDir := filepath.Dir(selfPath)
 	oldPath := selfPath + ".old"
 	if _, err := os.Stat(oldPath); err == nil {
 		os.Remove(oldPath)

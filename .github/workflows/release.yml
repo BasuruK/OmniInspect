@@ -90,6 +90,9 @@ jobs:
           curl -L -o instantclient-basic.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-basic-macos.arm64-23.3.0.23.09.dmg
           curl -L -o instantclient-sdk.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-sdk-macos.arm64-23.3.0.23.09.dmg
 
+          # Clean up any previous installation (in case of re-run)
+          sudo rm -rf /opt/oracle
+
           # Mount and extract basic
           hdiutil attach instantclient-basic.dmg -mountpoint /Volumes/instantclient-basic
           sudo mkdir -p /opt/oracle
@@ -99,6 +102,7 @@ jobs:
 
           # Mount and extract SDK
           hdiutil attach instantclient-sdk.dmg -mountpoint /Volumes/instantclient-sdk
+          sudo mkdir -p /opt/oracle/instantclient_23_7/sdk
           sudo cp -R /Volumes/instantclient-sdk/* /opt/oracle/instantclient_23_7/sdk/
           hdiutil detach /Volumes/instantclient-sdk
 

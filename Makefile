@@ -254,9 +254,9 @@ endif
 	@$(MAKE) release VERSION=$(VERSION)
 	@echo "[PUBLISH] Creating annotated tag $(RELEASE_TAG)..."
 	@git tag -a $(RELEASE_TAG) -m "Release version $(RELEASE_NUM)"
-	@echo "[PUBLISH] Pushing tag v$(VERSION) to origin..."
+	@echo "[PUBLISH] Pushing tag $(RELEASE_TAG) to origin..."
 	@git push origin $(RELEASE_TAG)
-	@echo "[OK] Published v$(VERSION) to remote"
+	@echo "[OK] Published $(RELEASE_TAG) to remote"
 ifeq ($(UPLOAD),1)
 	@echo "[PUBLISH] Uploading release artifacts to GitHub..."
 	@echo "[INFO] Checking gh CLI authentication..."

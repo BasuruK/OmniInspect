@@ -26,6 +26,47 @@
   </a>
 </p>
 
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#project-description">Project Description</a>
+      <ul>
+        <li><a href="#key-functionality">Key Functionality</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#project-structure">Project Structure</a>
+    </li>
+    <li>
+      <a href="#prerequisites">Prerequisites</a>
+      <ul>
+        <li><a href="#required-software">Required Software</a></li>
+        <li><a href="#platform-specific-requirements">Platform-Specific Requirements</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#building-from-source">Building from Source</a>
+      <ul>
+        <li><a href="#quick-start-recommended">Quick Start (Recommended)</a></li>
+        <li><a href="#manual-build-steps">Manual Build Steps</a></li>
+        <li><a href="#makefile-targets">Makefile Targets</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#architecture">Architecture</a>
+    </li>
+    <li>
+      <a href="#message-flow">Message Flow</a>
+    </li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#citations">Citations</a></li>
+  </ol>
+</details>
+
 ## Project Description
 
 OmniView (also known as OmniInspect) is a Message Passing TUI (Text User Interface) application that enables sending event messages and debug traces from Oracle Database. It provides real-time tracing capabilities through Oracle Advanced Queuing (AQ) with a blocking consumer pattern for reliable message delivery.
@@ -70,7 +111,7 @@ END;
 
 ## Project Structure
 
-```
+```text
 OmniInspect/
 ├── cmd/omniview/              # Main application entry point
 │   └── main.go                 # Application bootstrap and initialization
@@ -119,7 +160,7 @@ OmniInspect/
 ├── scripts/
 │   ├── setup_odpi.py          # ODPI-C library setup script
 │   ├── delete_queues.sql     # Cleanup script
-│   └── restart_ora_listner.sh
+│   └── restart_ora_listener.sh
 ├── third_party/
 │   └── odpi/                  # ODPI-C library (Oracle DB driver for C)
 │       ├── include/
@@ -186,9 +227,9 @@ Download and extract Oracle Instant Client to the appropriate directory:
 
 | Platform | Path | Download URL |
 |----------|------|--------------|
-| macOS ARM64 | `/opt/oracle/instantclient_23_7` | [Link](https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html) |
-| Windows x64 | `C:\oracle_inst\instantclient_23_7` | [Link](https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html) |
-| Linux x64 | `/opt/oracle/instantclient_23_7` | [Link](https://www.oracle.com/database/technologies/instant-client/linux-x64-downloads.html) |
+| macOS ARM64 | `/opt/oracle/instantclient_23_7` | [macOS ARM64 Instant Client download](https://www.oracle.com/database/technologies/instant-client/macos-arm64-downloads.html) |
+| Windows x64 | `C:\oracle_inst\instantclient_23_7` | [Windows x64 Instant Client download](https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html) |
+| Linux x64 | `/opt/oracle/instantclient_23_7` | [Linux x64 Instant Client download](https://www.oracle.com/database/technologies/instant-client/linux-x64-downloads.html) |
 
 #### 2. Set Up ODPI-C Library
 
@@ -265,7 +306,7 @@ If you need to connect to a different database:
 
 OmniView uses a Hexagonal (Ports and Adapters) architecture:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Application Bootstrap                      │
 │                    (cmd/omniview/main.go)                       │
@@ -301,7 +342,7 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 
 ## Message Flow
 
-```
+```text
 ┌─────────────────┐     Trace_Message()      ┌─────────────────┐
 │  Oracle PL/SQL  │ ────────────────────────▶│  OMNI_TRACER    │
 │     Code        │                          │     QUEUE       │
@@ -314,6 +355,24 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 │   (Console)     │                        │   Consumer      │
 └─────────────────┘                        └─────────────────┘
 ```
+
+## Roadmap
+
+### Completed
+
+- [x] Trace Message View in Client
+- [x] Single database sign in
+- [x] Domain Driven Design refactor
+
+### Planned
+
+- [ ] New UI with BubbleteaV2
+- [ ] Trace Message webhook integration
+- [ ] Trace Message to file integration
+- [ ] Multiple database connections and seamless connection switching
+- [ ] Connection health/latency/queue/message per second checking
+
+<p align="right">(<a href="#">back to top</a>)</p>
 
 ## Contributing
 
@@ -340,7 +399,7 @@ If you use OmniView in your research or project, please cite it using the follow
 ### BibTeX
 
 ```bibtex
-@software{Balasiuriya2026OmniView,
+@software{Balasuriya2026OmniView,
   author  = {Basuru Balasuriya},
   title   = {OmniView: Oracle Database Message Passing TUI Application},
   year    = {2026},

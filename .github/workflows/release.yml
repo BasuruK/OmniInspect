@@ -66,11 +66,19 @@ jobs:
           Compress-Archive -Path release/* -DestinationPath omniview-windows-amd64-${{ github.ref_name }}.zip -Force
         shell: pwsh
 
+      - name: Generate SHA256 checksum
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 "omniview-windows-amd64-${{ github.ref_name }}.zip").Hash.ToLower()
+          "$hash  omniview-windows-amd64-${{ github.ref_name }}.zip" | Out-File -Encoding ascii -NoNewline "omniview-windows-amd64-${{ github.ref_name }}.zip.sha256"
+        shell: pwsh
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: omniview-windows-amd64
-          path: omniview-windows-amd64-${{ github.ref_name }}.zip
+          path: |
+            omniview-windows-amd64-${{ github.ref_name }}.zip
+            omniview-windows-amd64-${{ github.ref_name }}.zip.sha256
 
   # =========================================================================
   # macOS arm64 (Apple Silicon) Build
@@ -135,11 +143,18 @@ jobs:
           tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
         shell: bash
 
+      - name: Generate SHA256 checksum
+        run: |
+          shasum -a 256 omniview-darwin-arm64-${{ github.ref_name }}.tar.gz | awk '{print $1 "  " $2}' > omniview-darwin-arm64-${{ github.ref_name }}.tar.gz.sha256
+        shell: bash
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: omniview-darwin-arm64
-          path: omniview-darwin-arm64-${{ github.ref_name }}.tar.gz
+          path: |
+            omniview-darwin-arm64-${{ github.ref_name }}.tar.gz
+            omniview-darwin-arm64-${{ github.ref_name }}.tar.gz.sha256
 
   # =========================================================================
   # Publish GitHub Release
@@ -159,4 +174,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/omniview-windows-amd64/*.zip
+            dist/omniview-windows-amd64/*.sha256
             dist/omniview-darwin-arm64/*.tar.gz
+            dist/omniview-darwin-arm64/*.sha256

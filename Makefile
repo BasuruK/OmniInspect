@@ -223,23 +223,28 @@ ifeq ($(DETECTED_OS),Windows)
 	@cp $(BINARY_NAME).exe release/ 2>/dev/null || cp $(BINARY_NAME) release/
 	@cp odpi.dll release/ 2>/dev/null || true
 	@cd release && zip -r ../omniview-windows-amd64-$(RELEASE_TAG).zip . && cd ..
+	@sha256sum omniview-windows-amd64-$(RELEASE_TAG).zip | awk '{print $$1 "  " $$2}' > omniview-windows-amd64-$(RELEASE_TAG).zip.sha256
 	@rm -rf release
     else
 	@if not exist release $(MKDIR_CMD) release
 	@$(COPY_CMD) $(BINARY_NAME).exe release\ >nul 2>&1 || $(COPY_CMD) $(BINARY_NAME) release\ >nul
 	@$(COPY_CMD) odpi.dll release\ >nul 2>&1
 	@powershell -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(RELEASE_TAG).zip' -Force"
+	@powershell -Command "$$h = (Get-FileHash -Algorithm SHA256 'omniview-windows-amd64-$(RELEASE_TAG).zip').Hash.ToLower(); \"$$h  omniview-windows-amd64-$(RELEASE_TAG).zip\" | Out-File -Encoding ascii -NoNewline 'omniview-windows-amd64-$(RELEASE_TAG).zip.sha256'"
 	@$(RM_CMD) release
     endif
 	@echo "[OK] Created omniview-windows-amd64-$(RELEASE_TAG).zip"
+	@echo "[OK] Created omniview-windows-amd64-$(RELEASE_TAG).zip.sha256"
 else ifeq ($(DETECTED_OS),MacOS)
 	@echo "[RELEASE] Creating macOS arm64 archive..."
 	@mkdir -p release
 	@cp $(BINARY_NAME) release/
 	@cp $(ODPI_BASE)/lib/libodpi.dylib release/ 2>/dev/null || true
 	@tar -czf omniview-darwin-arm64-$(RELEASE_TAG).tar.gz -C release .
+	@shasum -a 256 omniview-darwin-arm64-$(RELEASE_TAG).tar.gz | awk '{print $$1 "  " $$2}' > omniview-darwin-arm64-$(RELEASE_TAG).tar.gz.sha256
 	@rm -rf release
 	@echo "[OK] Created omniview-darwin-arm64-$(RELEASE_TAG).tar.gz"
+	@echo "[OK] Created omniview-darwin-arm64-$(RELEASE_TAG).tar.gz.sha256"
 endif
 
 # Publish: Build release, create git tag and push to remote

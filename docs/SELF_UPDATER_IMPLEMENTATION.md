@@ -93,15 +93,20 @@ This handles all realistic scenarios without a semver library.
 
 ### 2.5 Binary Replacement Strategy (Rename-Then-Write)
 
-**Decision: Rename the running binary to `.old`, write the new binary, clean up `.old` on next startup.**
+**Decision: Rename loaded files (executable and shared libraries) to `.old`, write the new versions, clean up `.old` on next startup.**
 
-On Windows, a running `.exe` **cannot be deleted or overwritten** but **can be renamed**. On macOS, a running binary can be overwritten directly, but using the same rename strategy keeps the code unified.
+On Windows, a running `.exe` or loaded `.dll` **cannot be deleted or overwritten** but **can be renamed**. On macOS, the same applies to the executable and `.dylib` files. The updater uses a unified rename strategy across both platforms.
 
 The sequence:
-1. `os.Rename("omniview.exe", "omniview.exe.old")` — works even while the process is running
-2. Write the new `omniview.exe` to the same path
-3. Restart the process (the new binary is now at the original path)
-4. On next startup, `CleanupOldBinary()` deletes `omniview.exe.old`
+1. For each file being extracted, check if the destination already exists and is a potentially locked file (the executable, any `.dll` on Windows, any `.dylib` on macOS)
+2. If so, `os.Rename("odpi.dll", "odpi.dll.old")` — works even while the DLL is loaded
+3. Write the new file to the original path
+4. Restart the process (the new binary + new DLL are now at the original paths)
+5. On next startup, `CleanupOldBinary()` deletes all `.old` files (exe + DLLs/dylibs)
+
+**Why this works on Windows:** The Windows PE loader memory-maps DLLs and executables into the process address space. While the file handle is held, Windows prevents _overwriting_ or _deleting_ the file, but _renaming_ (which only changes the directory entry, not the file data) is allowed. After renaming, a new file can be written to the original path. When the process exits, the OS releases the handle on the renamed `.old` file, allowing it to be deleted on the next startup.
+
+**Note:** Prior to this fix, only the executable was renamed before overwriting. Shared libraries like `odpi.dll` were written directly, which caused "The process cannot access the file because it is being used by another process" errors on Windows. The generalized `renameIfLocked()` helper now handles all potentially locked file types.
 
 ### 2.6 RELEASE_NOTES.md Location
 
@@ -206,9 +211,15 @@ This ensures:
 - `parseVersion(v)` — Strips `v` prefix, splits on `.`, returns `[3]int`
 - `expectedAssetName(tag)` — Builds the expected archive filename for `runtime.GOOS`/`runtime.GOARCH`
 - `downloadToTemp(url)` — Downloads to `os.TempDir()`, returns path
+- `verifyChecksum(tmpFile, release, assetName)` — Verifies SHA256 checksum against sidecar `.sha256` file or `checksums.txt`; always enforced — update is aborted if no checksum file is found
+- `downloadChecksumFile(url)` — Downloads checksum file and returns content
+- `parseChecksum(checksumData, assetName)` — Extracts checksum for asset from checksum file content (supports raw, sha256sum, and multi-file formats)
+- `computeSHA256(filePath)` — Computes SHA256 hash of a file
+- `isValidHex(s)` — Validates hexadecimal string
 - `extractArchive(archivePath, destDir, selfPath)` — Dispatches to zip or tar.gz extractor
-- `extractZip(...)` — Extracts `.zip` archives (Windows)
-- `extractTarGz(...)` — Extracts `.tar.gz` archives (macOS)
+- `extractZip(...)` — Extracts `.zip` archives (Windows), renames locked files to `.old` first
+- `extractTarGz(...)` — Extracts `.tar.gz` archives (macOS), renames locked files to `.old` first
+- `renameIfLocked(destPath, name, selfName)` — Renames a file to `.old` if it may be locked (exe, .dll, .dylib)
 - `writeFileFromReader(...)` — Writes a single file from a zip entry
 - `writeFileFromReaderDirect(...)` — Writes a single file from any `io.Reader`
 - `writeReleaseNotes(dir, release)` — Creates `RELEASE_NOTES.md`
@@ -335,9 +346,10 @@ User runs: omniview.exe (version v1.0.0)
            │     ├─ downloadToTemp(url) → C:\Users\...\Temp\omniview-update-123456
            │     │
            │     ├─ extractZip(tmpFile, "C:\path\to\", "C:\path\to\omniview.exe")
-           │     │   ├─ Rename: omniview.exe → omniview.exe.old
+           │     │   ├─ Rename: omniview.exe → omniview.exe.old  (locked by PE loader)
            │     │   ├─ Write:  new omniview.exe (from archive)
-           │     │   └─ Write:  new odpi.dll (from archive, if present)
+           │     │   ├─ Rename: odpi.dll → odpi.dll.old  (locked by PE loader)
+           │     │   └─ Write:  new odpi.dll (from archive)
            │     │
            │     ├─ writeReleaseNotes("C:\path\to\", release)
            │     │   → Creates C:\path\to\RELEASE_NOTES.md
@@ -351,6 +363,7 @@ New process: omniview.exe (version v1.1.0)
            │
            ├─ 1. CleanupOldBinary()
            │     → Finds "omniview.exe.old" → deletes it ✓
+           │     → Finds "odpi.dll.old" → deletes it ✓
            │
            ├─ 2. CheckAndUpdate("v1.1.0")
            │     → GET /releases/latest → tag_name: "v1.1.0"
@@ -371,6 +384,8 @@ New process: omniview.exe (version v1.1.0)
 | Update available, user types `Y` or Enter | Downloads, extracts, replaces, writes release notes, restarts |
 | No matching asset for platform | Returns error "no matching release asset found" (logged, non-fatal) |
 | Download fails mid-stream | Returns error "download failed" (logged, non-fatal; old binary untouched) |
+| Checksum mismatch | Returns error "checksum mismatch" (logged, non-fatal; old binary untouched) |
+| No checksum file in release assets | Returns error, update aborted — all releases must include a `.sha256` sidecar |
 | Extraction fails | Returns error "extraction failed" (logged; `.old` may exist, cleaned up next run) |
 
 ---
@@ -656,7 +671,9 @@ func CheckAndUpdate(currentVersion string) error {
 	return restartSelf(selfPath)
 }
 
-// CleanupOldBinary removes the ".old" leftover from a previous update, if it exists.
+// CleanupOldBinary removes the ".old" leftovers from a previous update, if they exist.
+// This includes the executable itself and any shared libraries (.dll / .dylib) that were
+// renamed during extraction because they were locked by the running process.
 // Call this at the very top of main().
 func CleanupOldBinary() {
 	selfPath, err := os.Executable()
@@ -664,9 +681,29 @@ func CleanupOldBinary() {
 		return
 	}
 	selfPath, _ = filepath.EvalSymlinks(selfPath)
+	selfDir := filepath.Dir(selfPath)
+
+	// Clean up the old executable
 	oldPath := selfPath + ".old"
 	if _, err := os.Stat(oldPath); err == nil {
 		os.Remove(oldPath)
+	}
+
+	// Clean up any old shared libraries (.dll on Windows, .dylib on macOS)
+	var patterns []string
+	if runtime.GOOS == "windows" {
+		patterns = []string{"*.dll.old"}
+	} else {
+		patterns = []string{"*.dylib.old"}
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(selfDir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			os.Remove(match)
+		}
 	}
 }
 
@@ -784,8 +821,10 @@ func extractArchive(archivePath, destDir, selfPath string) error {
 	return extractTarGz(archivePath, destDir, selfPath)
 }
 
-// extractZip extracts a .zip archive. If a file matches the running binary name,
-// the current binary is renamed to .old first.
+// extractZip extracts a .zip archive. Files that may be locked by the running
+// process (the executable itself and any .dll shared libraries) are renamed to
+// .old before the new version is written. This works on Windows because the OS
+// allows renaming a loaded DLL/EXE — it only prevents deletion or overwriting.
 func extractZip(archivePath, destDir, selfPath string) error {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
@@ -804,11 +843,9 @@ func extractZip(archivePath, destDir, selfPath string) error {
 		name := filepath.Base(f.Name)
 		destPath := filepath.Join(destDir, name)
 
-		// If we're about to overwrite ourselves, rename the running binary first
-		if strings.EqualFold(name, selfName) {
-			if err := os.Rename(selfPath, selfPath+".old"); err != nil {
-				return fmt.Errorf("failed to rename current binary: %w", err)
-			}
+		// Rename any file that may be locked by the running process
+		if err := renameIfLocked(destPath, name, selfName); err != nil {
+			return err
 		}
 
 		if err := writeFileFromReader(f.Open, destPath, f.Mode()); err != nil {
@@ -818,8 +855,9 @@ func extractZip(archivePath, destDir, selfPath string) error {
 	return nil
 }
 
-// extractTarGz extracts a .tar.gz archive. If a file matches the running binary name,
-// the current binary is renamed to .old first.
+// extractTarGz extracts a .tar.gz archive. Files that may be locked by the
+// running process (the executable itself and any .dylib shared libraries) are
+// renamed to .old before the new version is written.
 func extractTarGz(archivePath, destDir, selfPath string) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
@@ -852,16 +890,45 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 		name := filepath.Base(header.Name)
 		destPath := filepath.Join(destDir, name)
 
-		// If we're about to overwrite ourselves, rename the running binary first
-		if name == selfName {
-			if err := os.Rename(selfPath, selfPath+".old"); err != nil {
-				return fmt.Errorf("failed to rename current binary: %w", err)
-			}
+		// Rename any file that may be locked by the running process
+		if err := renameIfLocked(destPath, name, selfName); err != nil {
+			return err
 		}
 
-		mode := os.FileMode(header.Mode)
+		mode := os.FileMode(header.Mode) & os.ModePerm // strip setuid/setgid/sticky
 		if err := writeFileFromReaderDirect(tr, destPath, mode); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// renameIfLocked renames a file to .old if it may be locked by the running process.
+// On Windows, this applies to the running executable and any .dll files.
+// On macOS, this applies to the running executable and any .dylib files.
+func renameIfLocked(destPath, name, selfName string) error {
+	if _, err := os.Stat(destPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	needRename := false
+	lowerName := strings.ToLower(name)
+
+	if strings.EqualFold(name, selfName) {
+		needRename = true
+	}
+	if runtime.GOOS == "windows" && strings.HasSuffix(lowerName, ".dll") {
+		needRename = true
+	}
+	if runtime.GOOS == "darwin" && strings.HasSuffix(lowerName, ".dylib") {
+		needRename = true
+	}
+
+	if needRename {
+		oldPath := destPath + ".old"
+		os.Remove(oldPath)
+		if err := os.Rename(destPath, oldPath); err != nil {
+			return fmt.Errorf("failed to rename locked file %s: %w", name, err)
 		}
 	}
 	return nil

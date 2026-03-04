@@ -106,7 +106,7 @@ The sequence:
 
 **Why this works on Windows:** The Windows PE loader memory-maps DLLs and executables into the process address space. While the file handle is held, Windows prevents _overwriting_ or _deleting_ the file, but _renaming_ (which only changes the directory entry, not the file data) is allowed. After renaming, a new file can be written to the original path. When the process exits, the OS releases the handle on the renamed `.old` file, allowing it to be deleted on the next startup.
 
-**Key improvement (v0.1.7):** Prior to v0.1.7, only the executable was renamed before overwriting. Shared libraries like `odpi.dll` were written directly, which caused "The process cannot access the file because it is being used by another process" errors on Windows. The generalized `renameIfLocked()` helper now handles all potentially locked file types.
+**Note:** Prior to this fix, only the executable was renamed before overwriting. Shared libraries like `odpi.dll` were written directly, which caused "The process cannot access the file because it is being used by another process" errors on Windows. The generalized `renameIfLocked()` helper now handles all potentially locked file types.
 
 ### 2.6 RELEASE_NOTES.md Location
 
@@ -211,7 +211,7 @@ This ensures:
 - `parseVersion(v)` — Strips `v` prefix, splits on `.`, returns `[3]int`
 - `expectedAssetName(tag)` — Builds the expected archive filename for `runtime.GOOS`/`runtime.GOARCH`
 - `downloadToTemp(url)` — Downloads to `os.TempDir()`, returns path
-- `verifyChecksum(tmpFile, release, assetName)` — Verifies SHA256 checksum against sidecar `.sha256` file or `checksums.txt`; enforced for releases >= v0.1.7
+- `verifyChecksum(tmpFile, release, assetName)` — Verifies SHA256 checksum against sidecar `.sha256` file or `checksums.txt`; always enforced — update is aborted if no checksum file is found
 - `downloadChecksumFile(url)` — Downloads checksum file and returns content
 - `parseChecksum(checksumData, assetName)` — Extracts checksum for asset from checksum file content (supports raw, sha256sum, and multi-file formats)
 - `computeSHA256(filePath)` — Computes SHA256 hash of a file
@@ -385,8 +385,7 @@ New process: omniview.exe (version v1.1.0)
 | No matching asset for platform | Returns error "no matching release asset found" (logged, non-fatal) |
 | Download fails mid-stream | Returns error "download failed" (logged, non-fatal; old binary untouched) |
 | Checksum mismatch | Returns error "checksum mismatch" (logged, non-fatal; old binary untouched) |
-| No checksum file (release < v0.1.7) | Warning printed, update continues (backward compatible) |
-| No checksum file (release >= v0.1.7) | Returns error, update aborted (enforced integrity) |
+| No checksum file in release assets | Returns error, update aborted — all releases must include a `.sha256` sidecar |
 | Extraction fails | Returns error "extraction failed" (logged; `.old` may exist, cleaned up next run) |
 
 ---

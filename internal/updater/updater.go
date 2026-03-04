@@ -104,7 +104,7 @@ func CheckAndUpdate(currentVersion string) error {
 	if verified {
 		fmt.Println("[updater] Checksum verified successfully.")
 	} else {
-		fmt.Println("[updater] Warning: no checksum file found in release assets; skipping checksum verification.")
+		return fmt.Errorf("checksum verification failed: no checksum file (.sha256) found in release %s assets", release.TagName)
 	}
 
 	// Resolve our own executable path
@@ -139,7 +139,9 @@ func CheckAndUpdate(currentVersion string) error {
 	return restartSelf(selfPath)
 }
 
-// CleanupOldBinary removes the ".old" leftover from a previous update, if it exists.
+// CleanupOldBinary removes the ".old" leftovers from a previous update, if they exist.
+// This includes the executable itself and any shared libraries (.dll / .dylib) that were
+// renamed during extraction because they were locked by the running process.
 // Call this at the very top of main().
 func CleanupOldBinary() {
 	selfPath, err := os.Executable()
@@ -147,9 +149,29 @@ func CleanupOldBinary() {
 		return
 	}
 	selfPath, _ = filepath.EvalSymlinks(selfPath)
+	selfDir := filepath.Dir(selfPath)
+
+	// Clean up the old executable
 	oldPath := selfPath + ".old"
 	if _, err := os.Stat(oldPath); err == nil {
 		os.Remove(oldPath)
+	}
+
+	// Clean up any old shared libraries (.dll on Windows, .dylib on macOS)
+	var patterns []string
+	if runtime.GOOS == "windows" {
+		patterns = []string{"*.dll.old"}
+	} else {
+		patterns = []string{"*.dylib.old"}
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(selfDir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			os.Remove(match)
+		}
 	}
 }
 
@@ -428,8 +450,10 @@ func extractArchive(archivePath, destDir, selfPath string) error {
 	return extractTarGz(archivePath, destDir, selfPath)
 }
 
-// extractZip extracts a .zip archive. If a file matches the running binary name,
-// the current binary is renamed to .old first.
+// extractZip extracts a .zip archive. Files that may be locked by the running
+// process (the executable itself and any .dll shared libraries) are renamed to
+// .old before the new version is written. This works on Windows because the OS
+// allows renaming a loaded DLL/EXE — it only prevents deletion or overwriting.
 func extractZip(archivePath, destDir, selfPath string) error {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
@@ -448,11 +472,9 @@ func extractZip(archivePath, destDir, selfPath string) error {
 		name := filepath.Base(f.Name)
 		destPath := filepath.Join(destDir, name)
 
-		// If we're about to overwrite ourselves, rename the running binary first
-		if strings.EqualFold(name, selfName) {
-			if err := os.Rename(selfPath, selfPath+".old"); err != nil {
-				return fmt.Errorf("failed to rename current binary: %w", err)
-			}
+		// Rename any file that may be locked by the running process
+		if err := renameIfLocked(destPath, name, selfName); err != nil {
+			return err
 		}
 
 		if err := writeFileFromReader(f.Open, destPath, f.Mode()); err != nil {
@@ -462,8 +484,9 @@ func extractZip(archivePath, destDir, selfPath string) error {
 	return nil
 }
 
-// extractTarGz extracts a .tar.gz archive. If a file matches the running binary name,
-// the current binary is renamed to .old first.
+// extractTarGz extracts a .tar.gz archive. Files that may be locked by the
+// running process (the executable itself and any .dylib shared libraries) are
+// renamed to .old before the new version is written.
 func extractTarGz(archivePath, destDir, selfPath string) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
@@ -496,11 +519,9 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 		name := filepath.Base(header.Name)
 		destPath := filepath.Join(destDir, name)
 
-		// If we're about to overwrite ourselves, rename the running binary first
-		if name == selfName {
-			if err := os.Rename(selfPath, selfPath+".old"); err != nil {
-				return fmt.Errorf("failed to rename current binary: %w", err)
-			}
+		// Rename any file that may be locked by the running process
+		if err := renameIfLocked(destPath, name, selfName); err != nil {
+			return err
 		}
 
 		mode := os.FileMode(header.Mode) & os.ModePerm // strip setuid/setgid/sticky
@@ -508,6 +529,46 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// renameIfLocked renames a file to .old if it may be locked by the running process.
+// On Windows, this applies to the running executable and any .dll files.
+// On macOS, this applies to the running executable and any .dylib files.
+// The OS allows renaming loaded files — it only prevents deletion/overwriting.
+func renameIfLocked(destPath, name, selfName string) error {
+	// Nothing to rename if the destination doesn't exist yet
+	if _, err := os.Stat(destPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	needRename := false
+	lowerName := strings.ToLower(name)
+
+	// Always rename the running executable
+	if strings.EqualFold(name, selfName) {
+		needRename = true
+	}
+
+	// On Windows, rename any .dll files (they may be loaded by the PE loader)
+	if runtime.GOOS == "windows" && strings.HasSuffix(lowerName, ".dll") {
+		needRename = true
+	}
+
+	// On macOS, rename any .dylib files (they may be loaded by dyld)
+	if runtime.GOOS == "darwin" && strings.HasSuffix(lowerName, ".dylib") {
+		needRename = true
+	}
+
+	if needRename {
+		oldPath := destPath + ".old"
+		// Remove any previous .old file first (in case of repeated update attempts)
+		os.Remove(oldPath)
+		if err := os.Rename(destPath, oldPath); err != nil {
+			return fmt.Errorf("failed to rename locked file %s: %w", name, err)
+		}
+	}
+
 	return nil
 }
 

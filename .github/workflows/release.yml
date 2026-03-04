@@ -95,7 +95,7 @@ jobs:
 
           # Mount and extract basic
           hdiutil attach instantclient-basic.dmg -mountpoint /Volumes/instantclient-basic
-          sudo mkdir -p /opt/oracle
+          sudo mkdir -p /opt/oracle/instantclient_23_7
           # Files are directly at root of DMG, copy everything
           sudo cp -R /Volumes/instantclient-basic/* /opt/oracle/instantclient_23_7/
           hdiutil detach /Volumes/instantclient-basic

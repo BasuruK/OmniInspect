@@ -44,11 +44,9 @@ type githubRelease struct {
 func CheckAndUpdate(currentVersion string) error {
 	// Skip update check for development builds
 	if currentVersion == "dev" || currentVersion == "" {
-		fmt.Println("[updater] Development build detected — skipping update check.")
+		// In development mode, we assume the user is actively working on the code and doesn't want update prompts.
 		return nil
 	}
-
-	fmt.Println("[updater] Checking for updates...")
 
 	// Fetch the latest release from GitHub
 	release, err := fetchLatestRelease()
@@ -59,7 +57,6 @@ func CheckAndUpdate(currentVersion string) error {
 
 	// Compare versions
 	if !isNewer(release.TagName, currentVersion) {
-		fmt.Printf("[updater] You are on the latest version (%s).\n", currentVersion)
 		return nil
 	}
 

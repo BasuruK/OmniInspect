@@ -72,7 +72,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		if m.isComplete {
-			return m, nil
+			// Animation done - return quit command to exit the program
+			return m, tea.Quit
 		}
 
 		m.frame++

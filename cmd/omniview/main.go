@@ -23,6 +23,7 @@ func main() {
 	omniApp := app.New()
 
 	// Start the Bubble Tea UI welcome screen
+	// After animation completes (~3 seconds), execution continues below
 	uiAdapter := ui.NewUIAdapter(omniApp.GetVersion())
 	if err := uiAdapter.StartWelcome(omniApp); err != nil {
 		log.Printf("[ui] Welcome screen error: %v\n", err)

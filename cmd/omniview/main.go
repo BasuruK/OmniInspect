@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/adapter/config"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
+	"OmniView/internal/adapter/ui"
 	"OmniView/internal/app"
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
@@ -18,10 +19,16 @@ import (
 )
 
 func main() {
-	// Initialize the application and display logo and version info
+	// Initialize the application
 	omniApp := app.New()
-	// Print LOGO version info and start the server
-	fmt.Println(omniApp.GetLogoASCII())
+
+	// Start the Bubble Tea UI welcome screen
+	uiAdapter := ui.NewUIAdapter(omniApp.GetVersion())
+	if err := uiAdapter.StartWelcome(omniApp); err != nil {
+		log.Printf("[ui] Welcome screen error: %v\n", err)
+		// Fall back to simple ASCII logo
+		fmt.Println(omniApp.GetLogoASCII())
+	}
 
 	// Clean up leftover binary from a previous update (safe no-op if nothing to clean)
 	updater.CleanupOldBinary()

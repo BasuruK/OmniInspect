@@ -280,6 +280,43 @@ case QueueMessageMsg:
 > This doesn't work — `return` inside the loop exits immediately, making the loop pointless.
 > The correct pattern is: read one message, return it, re-subscribe in `Update()`.
 
+### 4.7 Textinput (Bubbles)
+
+For interactive text input (e.g., settings forms), use the `textinput` component from Bubbles:
+
+```go
+import (
+    "charm.land/bubbletea/v2"
+    "charm.land/bubbles/v2/textinput"
+)
+
+// Create textinput (v2 functional options pattern)
+ti := textinput.New(
+    textinput.WithPlaceholder("Enter value"),
+    textinput.WithPrompt("> "),
+    textinput.WithCharLimit(50),
+)
+ti.Focus() // enable the input
+
+// In Update():
+case tea.KeyPressMsg:
+    // Handle special keys
+    switch msg.String() {
+    case "enter":
+        value := ti.Value()
+        // Process input
+    }
+m.input, cmd = m.input.Update(msg)
+
+// In View():
+return m.input.View()
+```
+
+**Textinput v2 API Notes:**
+- `DefaultKeyMap` is now a function: `textinput.DefaultKeyMap()` (not a variable)
+- Styles use `Styles` struct: `textinput.DefaultStyles(isDark)` then `ti.SetStyles(s)`
+- Width via `ti.SetWidth(n)` method (not `ti.Width = n`)
+
 ---
 
 ## 5. Target Architecture
@@ -312,7 +349,7 @@ Everything else runs as screens with async commands:
 12. Display real-time logs         ← screen: "main"
 ```
 
-**Why two phases?** The `ConfigLoader` reads from `os.Stdin` via `bufio.Reader` when no saved config exists. Bubble Tea takes exclusive control of stdin, so interactive prompts must happen before the TUI starts. A future enhancement could replace this with a TUI-based settings form using `textinput` bubbles.
+**Why two phases?** The `ConfigLoader` reads from `os.Stdin` via `bufio.Reader` when no saved config exists. Bubble Tea takes exclusive control of stdin, so interactive prompts must happen before the TUI starts. A future enhancement could replace this with a TUI-based settings form using `textinput` bubbles (see [Section 4.7](#47-textinput-bubbles)).
 
 ### 5.2 Screen State Machine
 
@@ -763,9 +800,10 @@ type ModelOpts struct {
 func NewModel(opts ModelOpts) *Model {
     ctx, cancel := context.WithCancel(context.Background())
 
-    // Initialize spinner for loading screen
-    s := spinner.New()
-    s.Spinner = spinner.Dots
+    // Initialize spinner for loading screen (v2 functional options pattern)
+    s := spinner.New(
+        spinner.WithSpinner(spinner.Dot),
+    )
 
     return &Model{
         screen:            screenWelcome,

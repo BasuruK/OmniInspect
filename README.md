@@ -415,13 +415,14 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 - [x] Trace Message View in Client
 - [x] Single database sign in
 - [x] Domain Driven Design refactor
+- [x] Trace Message webhook integration
 
 ### Planned
 
-- [ ] New UI with BubbleteaV2
-- [ ] Trace Message webhook integration
-- [ ] Trace Message to file integration
+- [ ] New UI with BubbleteaV2/Lipgloss
+- [ ] multi-subscriber support with dynamic subscription management and targeted message delivery
 - [ ] Multiple database connections and seamless connection switching
+- [ ] Trace Message to file integration
 - [ ] Connection health/latency/queue/message per second checking
 
 <p align="right">(<a href="#">back to top</a>)</p>
@@ -432,7 +433,7 @@ Contributions are welcome. Please feel free to submit a Pull Request.
 
 ## License
 
-Copyright (c) 2025 Basuru Balasuriya. All Rights Reserved.
+Copyright (c) 2026 Basuru Balasuriya. All Rights Reserved.
 
 This software is the exclusive property of Basuru Balasuriya ("the Author"). See the [LICENSE](LICENSE) file for full terms and conditions.
 

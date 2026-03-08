@@ -24,14 +24,18 @@ type webhookDispatcher struct {
 	service *webhook.WebhookService
 	queue   chan webhookJob
 	wg      sync.WaitGroup
+	stopped bool
+	mu      sync.RWMutex
 }
 
+// webhookJob represents a single webhook delivery task
 type webhookJob struct {
 	payload []byte
 	url     string
 	meta    webhook.WebhookMetadata
 }
 
+// newWebhookDispatcher creates and starts a new webhookDispatcher with a worker pool
 func newWebhookDispatcher() *webhookDispatcher {
 	d := &webhookDispatcher{
 		service: webhook.NewWebhookService(),
@@ -45,6 +49,7 @@ func newWebhookDispatcher() *webhookDispatcher {
 	return d
 }
 
+// worker processes webhook jobs from the queue
 func (d *webhookDispatcher) worker() {
 	defer d.wg.Done()
 	for job := range d.queue {
@@ -54,7 +59,16 @@ func (d *webhookDispatcher) worker() {
 	}
 }
 
+// Enqueue adds a webhook job to the dispatcher's queue if not stopped
 func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.WebhookMetadata) {
+	d.mu.RLock()
+	if d.stopped {
+		d.mu.RUnlock()
+		log.Printf("[Tracer] Webhook dispatcher stopped, dropping message")
+		return
+	}
+	d.mu.RUnlock()
+
 	select {
 	case d.queue <- webhookJob{payload: payload, url: url, meta: meta}:
 		// Job queued successfully
@@ -64,7 +78,11 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 	}
 }
 
+// Stop signals the dispatcher to stop accepting new jobs and waits for in-flight deliveries to complete
 func (d *webhookDispatcher) Stop() {
+	d.mu.Lock()
+	d.stopped = true
+	d.mu.Unlock()
 	close(d.queue)
 	d.wg.Wait()
 }
@@ -103,6 +121,7 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 	}
 }
 
+// StartEventListener starts a goroutine that listens for new tracer messages for the given subscriber and processes them
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
@@ -123,6 +142,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	return nil
 }
 
+// blockingConsumerLoop continuously waits for new messages for the subscriber and processes them until the context is cancelled
 func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
 	const errorDelay = 5 * time.Second
 	for {

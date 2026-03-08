@@ -42,13 +42,13 @@ var reservedIPNets []*net.IPNet
 
 func init() {
 	// Pre-parse all CIDRs at package load time
-	reservedIPNets = make([]*net.IPNet, len(reservedCIDRStrings))
-	for i, cidr := range reservedCIDRStrings {
+	reservedIPNets = make([]*net.IPNet, 0, len(reservedCIDRStrings))
+	for _, cidr := range reservedCIDRStrings {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
 			continue
 		}
-		reservedIPNets[i] = network
+		reservedIPNets = append(reservedIPNets, network)
 	}
 }
 

@@ -101,6 +101,7 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     -- Core Methods
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN CLOB, log_level_ IN VARCHAR2 DEFAULT 'INFO');
+    PROCEDURE Trace_Message_To_Webhook(message_ IN CLOB, log_level_ IN VARCHAR2 DEFAULT 'INFO');
     PROCEDURE Dequeue_Array_Events(
         subscriber_name_ IN  VARCHAR2,
         batch_size_      IN  INTEGER,
@@ -201,17 +202,20 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
 
     PROCEDURE Enqueue_Event___ (
-        process_name_   IN VARCHAR2,
-        log_level_      IN VARCHAR2,
-        payload         IN CLOB )
+        process_name_       IN VARCHAR2,
+        log_level_          IN VARCHAR2,
+        payload             IN CLOB,
+        additional_props_   IN CLOB DEFAULT NULL )
     IS
         message_            JSON_OBJECT_T;
+        additional_props_obj_ JSON_OBJECT_T;
+        additional_prop_keys_ JSON_KEY_LIST;
         enqueue_options_    DBMS_AQ.ENQUEUE_OPTIONS_T;
         message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
         message_handle_     RAW(16);
         json_payload_       CLOB;
-        temp_blob_          BLOB; 
-        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;        
+        temp_blob_          BLOB;
+        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message visible immediately without waiting for commit
 
@@ -221,6 +225,31 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+
+        -- Merge additional properties if provided (for extensibility)
+        IF additional_props_ IS NOT NULL AND DBMS_LOB.GETLENGTH(additional_props_) > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('Merging additional properties: ' || additional_props_);
+            additional_props_obj_ := JSON_OBJECT_T.parse(additional_props_);
+            additional_prop_keys_ := additional_props_obj_.get_keys;
+
+            IF additional_prop_keys_.COUNT = 2
+               AND additional_props_obj_.has('key')
+               AND additional_props_obj_.has('value') THEN
+                DBMS_OUTPUT.PUT_LINE('Adding additional property: ' || additional_props_obj_.get_string('key'));
+                message_.PUT(
+                    additional_props_obj_.get_string('key'),
+                    additional_props_obj_.get('value')
+                );
+            ELSE
+                FOR i_ IN 1 .. additional_prop_keys_.COUNT LOOP
+                    DBMS_OUTPUT.PUT_LINE('Adding additional property: ' || additional_prop_keys_(i_));
+                    message_.PUT(
+                        additional_prop_keys_(i_),
+                        additional_props_obj_.get(additional_prop_keys_(i_))
+                    );
+                END LOOP;
+            END IF;
+        END IF;
 
         json_payload_ := message_.TO_CLOB();
         temp_blob_ := Clob_To_Blob___(json_payload_);
@@ -257,17 +286,37 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
     PROCEDURE Trace_Message (
         message_    IN CLOB,
-        log_level_  IN VARCHAR2 DEFAULT 'INFO') 
+        log_level_  IN VARCHAR2 DEFAULT 'INFO')
     IS
         calling_process_ VARCHAR2(100);
     BEGIN
         calling_process_ := 'OMNI_TRACER_API';
         Enqueue_Event___(
-            process_name_   => calling_process_,
-            log_level_      => log_level_,
-            payload         => message_
+            process_name_       => calling_process_,
+            log_level_          => log_level_,
+            payload             => message_,
+            additional_props_   => NULL
         );
     END Trace_Message;
+
+
+    -- @DOC: Trace_Message_To_Webhook
+    -- Traces a message and signals the Go client to forward it to the configured webhook URL.
+    -- The webhook URL is stored in BoltDB on the Go client side.
+    PROCEDURE Trace_Message_To_Webhook (
+        message_    IN CLOB,
+        log_level_  IN VARCHAR2 DEFAULT 'INFO')
+    IS
+        calling_process_ VARCHAR2(100);
+    BEGIN
+        calling_process_ := 'OMNI_TRACER_API';
+        Enqueue_Event___(
+            process_name_       => calling_process_,
+            log_level_          => log_level_,
+            payload             => message_,
+            additional_props_   => '{"SEND_TO_WEBHOOK":"TRUE"}'
+        );
+    END Trace_Message_To_Webhook;
 
 
     PROCEDURE Dequeue_Array_Events(

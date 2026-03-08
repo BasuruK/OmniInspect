@@ -4,10 +4,14 @@ import (
 	"OmniView/assets"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"OmniView/internal/service/webhook"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -84,6 +88,7 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 	defer ts.processMu.Unlock()
 
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+
 	if err != nil {
 		return err
 	}
@@ -97,6 +102,7 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 	}
 
 	for i := 0; i < count; i++ {
+		println(messages[i])
 		msg := &domain.QueueMessage{}
 		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
 			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
@@ -111,6 +117,47 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 // handleTracerMessage processes a single tracer message
 func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 	fmt.Println(msg.Format())
+
+	// Check if webhook is enabled and message has flag
+	if msg.SendToWebhook() {
+		webhookService := webhook.NewWebhookService()
+		// Get webhook config from BoltDB
+		config, err := ts.bolt.GetWebhookConfig()
+
+		// If webhook not configured or URL missing, prompt user
+		if err != nil || config == nil || config.URL == "" {
+			fmt.Println("You called Trace_Message_To_Webhook but no webhook URL is configured.")
+			fmt.Print("Enter webhook URL: ")
+
+			reader := bufio.NewReader(os.Stdin)
+			url, err := reader.ReadString('\n')
+			if err != nil {
+				log.Printf("[Tracer] Failed to read webhook URL: %v", err)
+				return
+			}
+			url = strings.TrimSpace(url)
+
+			if url != "" {
+				// Save webhook config
+				webhookConfig := domain.NewWebhookConfig(domain.DefaultWebhookID, url, true)
+				if err := ts.bolt.SaveWebhookConfig(webhookConfig); err != nil {
+					log.Printf("[Tracer] Failed to save webhook config: %v", err)
+					return
+				}
+				config = webhookConfig
+				fmt.Println("Webhook URL saved!")
+			}
+		}
+
+		if config != nil && config.Enabled && config.URL != "" {
+			// Send to webhook asynchronously to not block tracer processing
+			go func() {
+				if err := webhookService.SendToWebhook([]byte(msg.RawPayload()), config.URL); err != nil {
+					log.Printf("[Tracer] Failed to send webhook: %v", err)
+				}
+			}()
+		}
+	}
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

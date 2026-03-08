@@ -12,12 +12,14 @@ import (
 
 const (
 	// Buckets
-	DatabaseConfigBucket = "DatabaseConfigurations"
+	DatabaseConfigBucket  = "DatabaseConfigurations"
 	ClientConfigBucket   = "ClientConfigurations"
+	WebhookConfigBucket  = "WebhookConfigurations"
 	// Bucket Keys
 	DefaultDatabaseConfigKey = "db:default"
 	RunCycleStatusKey        = "run:status"
 	DatabaseConfigKeyPrefix  = "db:config:"
+	DefaultWebhookKey        = "webhook:default"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -55,6 +57,9 @@ func (ba *BoltAdapter) Initialize() error {
 			return fmt.Errorf("failed to create bucket: %v", err)
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(PermissionsBucket)); err != nil {
+			return fmt.Errorf("failed to create bucket: %v", err)
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(WebhookConfigBucket)); err != nil {
 			return fmt.Errorf("failed to create bucket: %v", err)
 		}
 
@@ -210,5 +215,89 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error
 		}
 
 		return nil
+	})
+}
+
+// SaveWebhookConfig saves a webhook configuration to BoltDB
+func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	if config == nil {
+		return fmt.Errorf("webhook config cannot be nil")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(WebhookConfigBucket))
+
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+		}
+
+		// Marshal the config to JSON
+		jsonData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal webhook config: %v", err)
+		}
+
+		// Save Config with the ID as key
+		if err := b.Put([]byte(config.ID), jsonData); err != nil {
+			return fmt.Errorf("failed to save webhook config: %v", err)
+		}
+
+		// If this is the default webhook, update default key
+		if config.ID == "default" {
+			if err := b.Put([]byte(DefaultWebhookKey), []byte(config.ID)); err != nil {
+				return fmt.Errorf("failed to set default webhook: %v", err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// GetWebhookConfig retrieves the webhook configuration from BoltDB (uses default ID)
+func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
+	if ba.db == nil {
+		return nil, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var config *domain.WebhookConfig
+
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(WebhookConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+		}
+
+		// Use default webhook ID
+		configData := b.Get([]byte(domain.DefaultWebhookID))
+		if configData == nil {
+			return fmt.Errorf("webhook config not found")
+		}
+
+		return json.Unmarshal(configData, &config)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+// DeleteWebhookConfig deletes a webhook configuration from BoltDB
+func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(WebhookConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+		}
+
+		return b.Delete([]byte(id))
 	})
 }

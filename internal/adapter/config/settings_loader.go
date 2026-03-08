@@ -14,14 +14,16 @@ import (
 // Adapter: Loads configurations from database
 type ConfigLoader struct {
 	dbSettingsRepo ports.DatabaseSettingsRepository
-	reader        *bufio.Reader
+	configRepo     ports.ConfigRepository
+	reader         *bufio.Reader
 }
 
 // NewConfigLoader creates a new instance of ConfigLoader
-func NewConfigLoader(dbSettingsRepo ports.DatabaseSettingsRepository) *ConfigLoader {
+func NewConfigLoader(dbSettingsRepo ports.DatabaseSettingsRepository, configRepo ports.ConfigRepository) *ConfigLoader {
 	return &ConfigLoader{
 		dbSettingsRepo: dbSettingsRepo,
-		reader:        bufio.NewReader(os.Stdin),
+		configRepo:     configRepo,
+		reader:         bufio.NewReader(os.Stdin),
 	}
 }
 
@@ -48,6 +50,9 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 		return nil, fmt.Errorf("failed to save database config to boltDB: %w", err)
 	}
 	fmt.Println("✓ saved database config to boltDB")
+
+	// Prompt for webhook configuration
+	cl.PromptForWebhookConfig()
 
 	return config, nil
 }
@@ -127,5 +132,35 @@ func (cl *ConfigLoader) promptUserRequired(prompt string) (string, error) {
 		} else {
 			return input, nil
 		}
+	}
+}
+
+// PromptForWebhookConfig prompts user for webhook URL if not configured
+func (cl *ConfigLoader) PromptForWebhookConfig() {
+	// Check if webhook already configured
+	config, err := cl.configRepo.GetWebhookConfig()
+	if err == nil && config != nil && config.URL != "" {
+		fmt.Println("✓ webhook already configured")
+		return
+	}
+
+	// Prompt for webhook URL (optional - user can skip by pressing enter)
+	fmt.Print("(Optional) Enter webhook URL (or press Enter to skip): ")
+	input, err := cl.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed to read input, skipping webhook configuration")
+		return
+	}
+	url := strings.TrimSpace(input)
+
+	if url != "" {
+		webhookConfig := domain.NewWebhookConfig(domain.DefaultWebhookID, url, true)
+		if err := cl.configRepo.SaveWebhookConfig(webhookConfig); err != nil {
+			fmt.Printf("Failed to save webhook config: %v\n", err)
+			return
+		}
+		fmt.Println("✓ webhook URL saved!")
+	} else {
+		fmt.Println("Webhook configuration skipped")
 	}
 }

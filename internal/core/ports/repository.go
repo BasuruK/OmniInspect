@@ -117,4 +117,13 @@ type ConfigRepository interface {
 
 	// SetFirstRunCycleStatus saves the run cycle status
 	SetFirstRunCycleStatus(status RunCycleStatus) error
+
+	// SaveWebhookConfig saves a webhook configuration
+	SaveWebhookConfig(config *domain.WebhookConfig) error
+
+	// GetWebhookConfig retrieves the webhook configuration (uses default ID)
+	GetWebhookConfig() (*domain.WebhookConfig, error)
+
+	// DeleteWebhookConfig deletes a webhook configuration
+	DeleteWebhookConfig(id string) error
 }

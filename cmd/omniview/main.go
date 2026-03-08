@@ -112,6 +112,6 @@ func main() {
 		cancel()
 	}
 
-	// Graceful shutdown: stop webhook dispatcher
-	tracer.StopWebhookDispatcher()
+	// Graceful shutdown: stop webhook dispatcher and event listeners, then wait for completion
+	tracer.StopAll(tracerService)
 }

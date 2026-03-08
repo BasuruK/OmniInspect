@@ -98,19 +98,29 @@ func getWebhookDispatcher() *webhookDispatcher {
 	return globalWebhookDispatcher
 }
 
-// StopWebhookDispatcher stops the webhook dispatcher and waits for in-flight deliveries
-func StopWebhookDispatcher() {
+// StopAll stops the webhook dispatcher and event listener goroutines, then waits for them to complete
+func StopAll(tracerService *TracerService) {
+	// Stop webhook dispatcher first to stop accepting new webhook jobs
 	if globalWebhookDispatcher != nil {
 		globalWebhookDispatcher.Stop()
+	}
+
+	// Cancel the event listener context and wait for goroutines to finish
+	if tracerService != nil && tracerService.listenerCancel != nil {
+		tracerService.listenerCancel()
+		tracerService.listenerWg.Wait()
 	}
 }
 
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db        ports.DatabaseRepository
-	bolt      ports.ConfigRepository
-	processMu sync.Mutex
+	db           ports.DatabaseRepository
+	bolt         ports.ConfigRepository
+	processMu    sync.Mutex
+	listenerCtx  context.Context
+	listenerCancel context.CancelFunc
+	listenerWg   sync.WaitGroup
 }
 
 // Constructor: NewTracerService Constructor for TracerService
@@ -121,29 +131,37 @@ func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) 
 	}
 }
 
-// StartEventListener starts a goroutine that listens for new tracer messages for the given subscriber and processes them
+// StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
+	// Create a cancellable context for event listeners
+	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)
+
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
+	ts.listenerWg.Add(1)
 	go func() {
-		if err := ts.processBatch(ctx, subscriber); err != nil {
+		defer ts.listenerWg.Done()
+		if err := ts.processBatch(ts.listenerCtx, subscriber); err != nil {
 			log.Printf("initial batch processing failed for subscriber %s: %v", subscriber.Name(), err)
 		}
 	}()
 
 	// Start the goroutine to listen for notifications
-	go ts.blockingConsumerLoop(ctx, subscriber)
+	ts.listenerWg.Add(1)
+	go ts.blockingConsumerLoop(ts.listenerCtx, subscriber)
 
 	return nil
 }
 
 // blockingConsumerLoop continuously waits for new messages for the subscriber and processes them until the context is cancelled
 func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
+	defer ts.listenerWg.Done()
+
 	const errorDelay = 5 * time.Second
 	for {
 		// Check if context is cancelled before blocking

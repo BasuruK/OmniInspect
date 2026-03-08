@@ -12,23 +12,23 @@ import (
 )
 
 // Reserved IP ranges to block for security
-var reservedCIDRs = []string{
-	"127.0.0.0/8",       // Loopback
-	"::1/128",           // Loopback IPv6
-	"10.0.0.0/8",        // Private RFC1918
-	"172.16.0.0/12",     // Private RFC1918
-	"192.168.0.0/16",    // Private RFC1918
-	"169.254.0.0/16",    // Link-local
-	"fe80::/10",         // Link-local IPv6
-	"fc00::/7",          // Unique local IPv6
-	"224.0.0.0/4",       // Multicast
-	"ff00::/8",          // Multicast IPv6
-	"0.0.0.0/8",         // Current network
-	"100.64.0.0/10",     // Carrier-grade NAT
-	"192.0.0.0/24",      // IETF Protocol
-	"192.0.2.0/24",      // TEST-NET-1
-	"198.51.100.0/24",   // TEST-NET-2
-	"203.0.113.0/24",    // TEST-NET-3
+var reservedCIDRStrings = []string{
+	"127.0.0.0/8",     // Loopback
+	"::1/128",         // Loopback IPv6
+	"10.0.0.0/8",      // Private RFC1918
+	"172.16.0.0/12",   // Private RFC1918
+	"192.168.0.0/16",  // Private RFC1918
+	"169.254.0.0/16",  // Link-local
+	"fe80::/10",       // Link-local IPv6
+	"fc00::/7",        // Unique local IPv6
+	"224.0.0.0/4",     // Multicast
+	"ff00::/8",        // Multicast IPv6
+	"0.0.0.0/8",       // Current network
+	"100.64.0.0/10",   // Carrier-grade NAT
+	"192.0.0.0/24",    // IETF Protocol
+	"192.0.2.0/24",    // TEST-NET-1
+	"198.51.100.0/24", // TEST-NET-2
+	"203.0.113.0/24",  // TEST-NET-3
 }
 
 // Known metadata endpoints to block
@@ -37,12 +37,23 @@ var metadataEndpoints = []string{
 	"metadata.google.internal",
 }
 
-func isReservedIP(ip net.IP) bool {
-	for _, cidr := range reservedCIDRs {
+// Pre-parsed reserved IP networks for efficiency
+var reservedIPNets []*net.IPNet
+
+func init() {
+	// Pre-parse all CIDRs at package load time
+	reservedIPNets = make([]*net.IPNet, len(reservedCIDRStrings))
+	for i, cidr := range reservedCIDRStrings {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
 			continue
 		}
+		reservedIPNets[i] = network
+	}
+}
+
+func isReservedIP(ip net.IP) bool {
+	for _, network := range reservedIPNets {
 		if network.Contains(ip) {
 			return true
 		}

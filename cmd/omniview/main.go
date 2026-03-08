@@ -110,4 +110,7 @@ func main() {
 	case <-signalChan:
 		cancel()
 	}
+
+	// Graceful shutdown: stop webhook dispatcher
+	tracer.StopWebhookDispatcher()
 }

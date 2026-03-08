@@ -306,6 +306,14 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
 		}
 
+		// Check if DefaultWebhookKey points to this webhook and clear it
+		defaultKey := b.Get([]byte(DefaultWebhookKey))
+		if string(defaultKey) == id {
+			if err := b.Delete([]byte(DefaultWebhookKey)); err != nil {
+				return fmt.Errorf("failed to clear default webhook key: %v", err)
+			}
+		}
+
 		return b.Delete([]byte(id))
 	})
 }

@@ -72,15 +72,19 @@ func (d *webhookDispatcher) Stop() {
 // Global webhook dispatcher (initialized on first use)
 var globalWebhookDispatcher *webhookDispatcher
 var dispatcherOnce sync.Once
-var dispatcherMu sync.Mutex
 
 func getWebhookDispatcher() *webhookDispatcher {
 	dispatcherOnce.Do(func() {
-		dispatcherMu.Lock()
 		globalWebhookDispatcher = newWebhookDispatcher()
-		dispatcherMu.Unlock()
 	})
 	return globalWebhookDispatcher
+}
+
+// StopWebhookDispatcher stops the webhook dispatcher and waits for in-flight deliveries
+func StopWebhookDispatcher() {
+	if globalWebhookDispatcher != nil {
+		globalWebhookDispatcher.Stop()
+	}
 }
 
 // Service: Manages package deployments

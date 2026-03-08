@@ -13,6 +13,76 @@ import (
 	"time"
 )
 
+const (
+	// Webhook worker pool settings
+	webhookWorkers   = 4
+	webhookQueueSize = 100
+)
+
+// webhookDispatcher handles bounded webhook delivery
+type webhookDispatcher struct {
+	service *webhook.WebhookService
+	queue   chan webhookJob
+	wg      sync.WaitGroup
+}
+
+type webhookJob struct {
+	payload []byte
+	url     string
+	meta    webhook.WebhookMetadata
+}
+
+func newWebhookDispatcher() *webhookDispatcher {
+	d := &webhookDispatcher{
+		service: webhook.NewWebhookService(),
+		queue:   make(chan webhookJob, webhookQueueSize),
+	}
+	// Start worker pool
+	for i := 0; i < webhookWorkers; i++ {
+		d.wg.Add(1)
+		go d.worker()
+	}
+	return d
+}
+
+func (d *webhookDispatcher) worker() {
+	defer d.wg.Done()
+	for job := range d.queue {
+		if err := d.service.SendToWebhook(job.payload, job.url, job.meta); err != nil {
+			log.Printf("[Tracer] Failed to send webhook: %v", err)
+		}
+	}
+}
+
+func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.WebhookMetadata) {
+	select {
+	case d.queue <- webhookJob{payload: payload, url: url, meta: meta}:
+		// Job queued successfully
+	default:
+		// Queue full - drop the message
+		log.Printf("[Tracer] Webhook queue full, dropping message")
+	}
+}
+
+func (d *webhookDispatcher) Stop() {
+	close(d.queue)
+	d.wg.Wait()
+}
+
+// Global webhook dispatcher (initialized on first use)
+var globalWebhookDispatcher *webhookDispatcher
+var dispatcherOnce sync.Once
+var dispatcherMu sync.Mutex
+
+func getWebhookDispatcher() *webhookDispatcher {
+	dispatcherOnce.Do(func() {
+		dispatcherMu.Lock()
+		globalWebhookDispatcher = newWebhookDispatcher()
+		dispatcherMu.Unlock()
+	})
+	return globalWebhookDispatcher
+}
+
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
@@ -116,23 +186,26 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 
 	// Check if webhook is enabled and message has flag
 	if msg.SendToWebhook() {
-		webhookService := webhook.NewWebhookService()
 		// Get webhook config from BoltDB
 		config, err := ts.bolt.GetWebhookConfig()
+		if err != nil {
+			log.Printf("[Tracer] Failed to load webhook config: %v", err)
+			return
+		}
 
-		// If webhook not configured or URL missing, prompt user
-		if err != nil || config == nil || config.URL == "" {
+		if config == nil || config.URL == "" {
 			log.Printf("[Tracer] Message flagged for webhook but no webhook URL configured.")
 			return
 		}
 
-		if config != nil && config.Enabled && config.URL != "" {
-			// Send to webhook asynchronously to not block tracer processing
-			go func() {
-				if err := webhookService.SendToWebhook([]byte(msg.RawPayload()), config.URL); err != nil {
-					log.Printf("[Tracer] Failed to send webhook: %v", err)
-				}
-			}()
+		if config.Enabled {
+			// Use bounded dispatcher instead of per-message goroutine
+			dispatcher := getWebhookDispatcher()
+			meta := webhook.WebhookMetadata{
+				LogLevel:  msg.LogLevel().String(),
+				Timestamp: msg.Timestamp().Format("2006-01-02T15:04:05Z07:00"),
+			}
+			dispatcher.Enqueue([]byte(msg.Payload()), config.URL, meta)
 		}
 	}
 }

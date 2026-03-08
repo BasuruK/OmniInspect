@@ -36,6 +36,8 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 	config, err := cl.dbSettingsRepo.GetDefault(ctx)
 	if err == nil && config != nil {
 		fmt.Println("✓ loaded database from boltDB")
+		// Check for webhook config on every startup (for upgrades/missing config)
+		cl.PromptForWebhookConfig()
 		return config, nil
 	}
 
@@ -152,24 +154,32 @@ func (cl *ConfigLoader) PromptForWebhookConfig() {
 		fmt.Println("Failed to read input, skipping webhook configuration")
 		return
 	}
-	parsedURL, err := url.ParseRequestURI(strings.TrimSpace(input))
+	input = strings.TrimSpace(input)
+	if input == "" {
+		fmt.Println("Webhook configuration skipped")
+		return
+	}
+
+	parsedURL, err := url.Parse(input)
 	if err != nil {
 		fmt.Printf("Invalid URL format: %v\n", err)
 		return
 	}
 
-	if parsedURL != nil {
-		if _, err := url.ParseRequestURI(parsedURL.String()); err != nil {
-			fmt.Printf("Invalid URL format: %v\n", err)
-			return
-		}
-		webhookConfig := domain.NewWebhookConfig(domain.DefaultWebhookID, parsedURL.String(), true)
-		if err := cl.configRepo.SaveWebhookConfig(webhookConfig); err != nil {
-			fmt.Printf("Failed to save webhook config: %v\n", err)
-			return
-		}
-		fmt.Println("✓ webhook URL saved!")
-	} else {
-		fmt.Println("Webhook configuration skipped")
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if (scheme != "http" && scheme != "https") || parsedURL.Host == "" {
+		fmt.Println("Webhook URL must be a full http(s) URL with a host")
+		return
 	}
+
+	webhookConfig, err := domain.NewWebhookConfig(domain.DefaultWebhookID, parsedURL.String(), true)
+	if err != nil {
+		fmt.Printf("Invalid webhook URL: %v\n", err)
+		return
+	}
+	if err := cl.configRepo.SaveWebhookConfig(webhookConfig); err != nil {
+		fmt.Printf("Failed to save webhook config: %v\n", err)
+		return
+	}
+	fmt.Println("✓ webhook URL saved!")
 }

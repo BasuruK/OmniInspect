@@ -109,6 +109,55 @@ BEGIN
 END;
 ```
 
+### Webhook Integration
+
+OmniInspect supports forwarding trace messages to external HTTP endpoints via webhooks. This enables integration with external monitoring systems, log aggregators, or custom alerting pipelines.
+
+```sql
+OMNI_TRACER_API.Trace_Message_To_Webhook(
+    message_    IN CLOB,
+    log_level_  IN VARCHAR2 DEFAULT 'INFO'
+);
+```
+
+This procedure sends a trace message with a flag that signals the OmniView application to forward it to the configured webhook URL. The webhook URL must be configured in the OmniView application (prompted on first run).
+
+**Parameters:**
+- `message_` - The trace message content (CLOB)
+- `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
+
+**Prerequisites:**
+- A webhook URL must be configured in OmniView (the application prompts for this on first run)
+- The receiving endpoint must accept POST requests with JSON payload
+
+**Example Usage:**
+```sql
+-- Send a trace message to webhook
+BEGIN
+    OMNI_TRACER_API.Trace_Message_To_Webhook('Alert: High latency detected', 'WARN');
+END;
+
+-- Send JSON data to webhook
+BEGIN
+    OMNI_TRACER_API.Trace_Message_To_Webhook(
+        '{"alert": "cpu_high", "value": 95, "threshold": 90}',
+        'ERROR'
+    );
+END;
+```
+
+> **Important Security Notice**: The `Trace_Message_To_Webhook` function includes basic SSRF (Server-Side Request Forgery) protection that blocks localhost, private IP ranges (RFC1918), link-local addresses, and common cloud metadata endpoints. However, this protection is limited and may not cover all potential security risks. Users are advised to ensure that webhook requests are sent only to secure, trusted endpoints. The maintainers of this open-source project accept no responsibility for any damages or security issues that may arise from the use of this feature. Please exercise caution and validate all webhook URLs before use in production environments.
+>
+>| Category | Blocked |
+>|----------|---------|
+>| Localhost | `localhost`, `0.0.0.0`, `::` |
+>| Private IPs | `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x` |
+>| Link-local | `169.254.x.x` |
+>| Cloud metadata | `169.254.169.254`, `metadata.google.internal` |
+>| IPv6 equivalents | `::1`, `fe80::/10`, `fc00::/7` |
+>
+> **Note**: VPN ranges, proxy chains, DNS rebinding attacks, and other advanced SSRF vectors are **not** covered.
+
 ## Project Structure
 
 ```text

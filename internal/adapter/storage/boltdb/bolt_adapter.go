@@ -257,7 +257,7 @@ func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
 	})
 }
 
-// GetWebhookConfig retrieves the webhook configuration from BoltDB (uses default ID)
+// GetWebhookConfig retrieves the webhook configuration from BoltDB (uses default key)
 func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	if ba.db == nil {
 		return nil, fmt.Errorf("boltAdapter not initialized")
@@ -271,8 +271,16 @@ func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
 		}
 
-		// Use default webhook ID
-		configData := b.Get([]byte(domain.DefaultWebhookID))
+		// First get the default key (which points to the actual config ID)
+		defaultKey := b.Get([]byte(DefaultWebhookKey))
+		configKey := string(defaultKey)
+		if configKey == "" {
+			// Fallback to default ID if no pointer exists
+			configKey = domain.DefaultWebhookID
+		}
+
+		// Read the config using the resolved key
+		configData := b.Get([]byte(configKey))
 		if configData == nil {
 			return fmt.Errorf("webhook config not found")
 		}

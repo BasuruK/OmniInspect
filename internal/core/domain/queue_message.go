@@ -130,14 +130,6 @@ func (m *QueueMessage) String() string {
 	return m.Format()
 }
 
-// RawPayload returns the raw payload.
-// This can be used for more complex formatting logic in the future
-func (m *QueueMessage) RawPayload() string {
-	// For now, just return the raw payload.
-	// In the future, we could add logic here to pretty-print JSON, XML, etc. based on content type.
-	return m.payload
-}
-
 // ==========================================
 // JSON Marshaling
 // ==========================================

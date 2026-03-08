@@ -92,7 +92,14 @@ type WebhookService struct {
 // NewWebhookService creates a new WebhookService
 func NewWebhookService() *WebhookService {
 	return &WebhookService{
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+			// Disable redirects to prevent bypassing SSRF protection
+			// If a redirect occurs, the request will fail with ErrUseLastResponse
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 

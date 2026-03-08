@@ -463,11 +463,11 @@ If you use OmniView in your research or project, please cite it using the follow
 
 ### APA Style
 
-Balasuriya, B. (2026). *OmniView: Oracle Database Message Passing TUI Application* (Version 1.0.0) [Software]. Retrieved from https://github.com/BasuruK/OmniInspect
+Balasuriya, B. (2026). *OmniView: Oracle Database Message Passing TUI Application* (Version 0.1.1) [Software]. Retrieved from https://github.com/BasuruK/OmniInspect
 
 ### Chicago Style
 
-Balasuriya, Basuru. 2026. *OmniView: Oracle Database Message Passing TUI Application*. Software. https://github.com/BasuruK/OmniInspect.
+Balasuriya, Basuru. 2026. *OmniView: Oracle Database Message Passing TUI Application* (Version 0.1.1). Software. https://github.com/BasuruK/OmniInspect.
 
 ---
 

@@ -66,7 +66,8 @@ func main() {
 	if err := dbAdapter.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect to Oracle DB: %v", err)
 	}
-	fmt.Printf("[DB] Connected to %s\n", appConfig.Database())
+	// Show the connection info to the user
+	fmt.Printf("[DB] Connected on %s:%s\n", appConfig.Host(), appConfig.Database())
 	defer dbAdapter.Close(context.Background())
 
 	// 2. Create DDD Repositories

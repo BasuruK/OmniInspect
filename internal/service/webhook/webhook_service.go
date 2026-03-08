@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -20,12 +22,24 @@ func NewWebhookService() *WebhookService {
 }
 
 // SendToWebhook sends a payload to the specified webhook URL
-func (ws *WebhookService) SendToWebhook(payload []byte, url string) error {
-	if url == "" {
+func (ws *WebhookService) SendToWebhook(payload []byte, webhookURL string) error {
+	if webhookURL == "" {
 		return fmt.Errorf("webhook URL cannot be empty")
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	parsedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		return fmt.Errorf("invalid webhook URL: %w", err)
+	}
+
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("webhook URL must use http or https scheme")
+	}
+
+	// Consider additional checks: block localhost, private IPs, link-local addresses
+
+	req, err := http.NewRequest("POST", parsedURL.String(), bytes.NewBuffer(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create webhook request: %w", err)
 	}

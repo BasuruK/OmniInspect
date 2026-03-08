@@ -228,21 +228,18 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
         -- Merge additional properties if provided (for extensibility)
         IF additional_props_ IS NOT NULL AND DBMS_LOB.GETLENGTH(additional_props_) > 0 THEN
-            DBMS_OUTPUT.PUT_LINE('Merging additional properties: ' || additional_props_);
             additional_props_obj_ := JSON_OBJECT_T.parse(additional_props_);
             additional_prop_keys_ := additional_props_obj_.get_keys;
 
             IF additional_prop_keys_.COUNT = 2
                AND additional_props_obj_.has('key')
                AND additional_props_obj_.has('value') THEN
-                DBMS_OUTPUT.PUT_LINE('Adding additional property: ' || additional_props_obj_.get_string('key'));
                 message_.PUT(
                     additional_props_obj_.get_string('key'),
                     additional_props_obj_.get('value')
                 );
             ELSE
                 FOR i_ IN 1 .. additional_prop_keys_.COUNT LOOP
-                    DBMS_OUTPUT.PUT_LINE('Adding additional property: ' || additional_prop_keys_(i_));
                     message_.PUT(
                         additional_prop_keys_(i_),
                         additional_props_obj_.get(additional_prop_keys_(i_))

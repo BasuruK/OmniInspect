@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -151,10 +152,18 @@ func (cl *ConfigLoader) PromptForWebhookConfig() {
 		fmt.Println("Failed to read input, skipping webhook configuration")
 		return
 	}
-	url := strings.TrimSpace(input)
+	parsedURL, err := url.ParseRequestURI(strings.TrimSpace(input))
+	if err != nil {
+		fmt.Printf("Invalid URL format: %v\n", err)
+		return
+	}
 
-	if url != "" {
-		webhookConfig := domain.NewWebhookConfig(domain.DefaultWebhookID, url, true)
+	if parsedURL != nil {
+		if _, err := url.ParseRequestURI(parsedURL.String()); err != nil {
+			fmt.Printf("Invalid URL format: %v\n", err)
+			return
+		}
+		webhookConfig := domain.NewWebhookConfig(domain.DefaultWebhookID, parsedURL.String(), true)
 		if err := cl.configRepo.SaveWebhookConfig(webhookConfig); err != nil {
 			fmt.Printf("Failed to save webhook config: %v\n", err)
 			return

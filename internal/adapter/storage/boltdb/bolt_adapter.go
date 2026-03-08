@@ -12,7 +12,7 @@ import (
 
 const (
 	// Buckets
-	DatabaseConfigBucket  = "DatabaseConfigurations"
+	DatabaseConfigBucket = "DatabaseConfigurations"
 	ClientConfigBucket   = "ClientConfigurations"
 	WebhookConfigBucket  = "WebhookConfigurations"
 	// Bucket Keys
@@ -247,7 +247,7 @@ func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
 		}
 
 		// If this is the default webhook, update default key
-		if config.ID == "default" {
+		if config.ID == domain.DefaultWebhookID {
 			if err := b.Put([]byte(DefaultWebhookKey), []byte(config.ID)); err != nil {
 				return fmt.Errorf("failed to set default webhook: %v", err)
 			}

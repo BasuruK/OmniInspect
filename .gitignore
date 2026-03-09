@@ -3,3 +3,6 @@
 .claude/settings.local.json
 .vscode/tasks.json
 omniview.bolt
+.vscode/launch.json
+omniview
+.letta

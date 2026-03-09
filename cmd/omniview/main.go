@@ -54,8 +54,8 @@ func main() {
 	// Create repositories
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
-	// Load Configurations
-	cfgLoader := config.NewConfigLoader(dbSettingsRepo)
+	// Load Configurations (pass both repos for DB and webhook config)
+	cfgLoader := config.NewConfigLoader(dbSettingsRepo, boltAdapter)
 	appConfig, err := cfgLoader.LoadClientConfigurations()
 	if err != nil {
 		log.Fatalf("failed to load configurations: %v", err)
@@ -66,6 +66,8 @@ func main() {
 	if err := dbAdapter.Connect(ctx); err != nil {
 		log.Fatalf("failed to connect to Oracle DB: %v", err)
 	}
+	// Show the connection info to the user
+	fmt.Printf("[DB] Connected on %s:%s\n", appConfig.Host(), appConfig.Database())
 	defer dbAdapter.Close(context.Background())
 
 	// 2. Create DDD Repositories
@@ -109,4 +111,7 @@ func main() {
 	case <-signalChan:
 		cancel()
 	}
+
+	// Graceful shutdown: stop webhook dispatcher and event listeners, then wait for completion
+	tracer.StopAll(tracerService)
 }

@@ -109,6 +109,55 @@ BEGIN
 END;
 ```
 
+### Webhook Integration
+
+OmniInspect supports forwarding trace messages to external HTTP endpoints via webhooks. This enables integration with external monitoring systems, log aggregators, or custom alerting pipelines.
+
+```sql
+OMNI_TRACER_API.Trace_Message_To_Webhook(
+    message_    IN CLOB,
+    log_level_  IN VARCHAR2 DEFAULT 'INFO'
+);
+```
+
+This procedure sends a trace message with a flag that signals the OmniView application to forward it to the configured webhook URL. The webhook URL must be configured in the OmniView application (prompted on first run).
+
+**Parameters:**
+- `message_` - The trace message content (CLOB)
+- `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
+
+**Prerequisites:**
+- A webhook URL must be configured in OmniView (the application prompts for this on first run)
+- The receiving endpoint must accept POST requests with JSON payload
+
+**Example Usage:**
+```sql
+-- Send a trace message to webhook
+BEGIN
+    OMNI_TRACER_API.Trace_Message_To_Webhook('Alert: High latency detected', 'WARN');
+END;
+
+-- Send JSON data to webhook
+BEGIN
+    OMNI_TRACER_API.Trace_Message_To_Webhook(
+        '{"alert": "cpu_high", "value": 95, "threshold": 90}',
+        'ERROR'
+    );
+END;
+```
+
+> **Important Security Notice**: The `Trace_Message_To_Webhook` function includes basic SSRF (Server-Side Request Forgery) protection that blocks localhost, private IP ranges (RFC1918), link-local addresses, and common cloud metadata endpoints. However, this protection is limited and may not cover all potential security risks. Users are advised to ensure that webhook requests are sent only to secure, trusted endpoints. The maintainers of this open-source project accept no responsibility for any damages or security issues that may arise from the use of this feature. Please exercise caution and validate all webhook URLs before use in production environments.
+>
+>| Category | Blocked |
+>|----------|---------|
+>| Localhost | `localhost`, `0.0.0.0`, `::` |
+>| Private IPs | `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x` |
+>| Link-local | `169.254.x.x` |
+>| Cloud metadata | `169.254.169.254`, `metadata.google.internal` |
+>| IPv6 equivalents | `::1`, `fe80::/10`, `fc00::/7` |
+>
+> **Note**: VPN ranges, proxy chains, DNS rebinding attacks, and other advanced SSRF vectors are **not** covered.
+
 ## Project Structure
 
 ```text
@@ -366,13 +415,14 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 - [x] Trace Message View in Client
 - [x] Single database sign in
 - [x] Domain Driven Design refactor
+- [x] Trace Message webhook integration
 
 ### Planned
 
-- [ ] New UI with BubbleteaV2
-- [ ] Trace Message webhook integration
-- [ ] Trace Message to file integration
+- [ ] New UI with BubbleteaV2/Lipgloss
+- [ ] multi-subscriber support with dynamic subscription management and targeted message delivery
 - [ ] Multiple database connections and seamless connection switching
+- [ ] Trace Message to file integration
 - [ ] Connection health/latency/queue/message per second checking
 
 <p align="right">(<a href="#">back to top</a>)</p>
@@ -383,7 +433,7 @@ Contributions are welcome. Please feel free to submit a Pull Request.
 
 ## License
 
-Copyright (c) 2025 Basuru Balasuriya. All Rights Reserved.
+Copyright (c) 2026 Basuru Balasuriya. All Rights Reserved.
 
 This software is the exclusive property of Basuru Balasuriya ("the Author"). See the [LICENSE](LICENSE) file for full terms and conditions.
 
@@ -413,11 +463,11 @@ If you use OmniView in your research or project, please cite it using the follow
 
 ### APA Style
 
-Balasuriya, B. (2026). *OmniView: Oracle Database Message Passing TUI Application* (Version 1.0.0) [Software]. Retrieved from https://github.com/BasuruK/OmniInspect
+Balasuriya, B. (2026). *OmniView: Oracle Database Message Passing TUI Application* (Version 0.1.1) [Software]. Retrieved from https://github.com/BasuruK/OmniInspect
 
 ### Chicago Style
 
-Balasuriya, Basuru. 2026. *OmniView: Oracle Database Message Passing TUI Application*. Software. https://github.com/BasuruK/OmniInspect.
+Balasuriya, Basuru. 2026. *OmniView: Oracle Database Message Passing TUI Application* (Version 0.1.1). Software. https://github.com/BasuruK/OmniInspect.
 
 ---
 

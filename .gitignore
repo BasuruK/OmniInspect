@@ -1,8 +1,8 @@
 # macOS metadata files
 .DS_Store
 .claude/settings.local.json
-.vscode/tasks.json
 omniview.bolt
 .letta
 .serena
+.vscode
 omniview

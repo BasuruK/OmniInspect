@@ -15,16 +15,22 @@ import (
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db        ports.DatabaseRepository
-	bolt      ports.ConfigRepository
-	processMu sync.Mutex
+	db           ports.DatabaseRepository
+	bolt         ports.ConfigRepository
+	processMu    sync.Mutex
+	eventChannel chan<- *domain.QueueMessage
 }
 
 // Constructor: NewTracerService Constructor for TracerService
-func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
+func NewTracerService(
+	db ports.DatabaseRepository,
+	bolt ports.ConfigRepository,
+	eventChannel chan<- *domain.QueueMessage,
+) *TracerService {
 	return &TracerService{
-		db:   db,
-		bolt: bolt,
+		db:           db,
+		bolt:         bolt,
+		eventChannel: eventChannel,
 	}
 }
 
@@ -110,7 +116,11 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 
 // handleTracerMessage processes a single tracer message
 func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
-	fmt.Println(msg.Format())
+	if ts.eventChannel != nil {
+		ts.eventChannel <- msg // Send the message to TUI
+	} else {
+		fmt.Println(msg.Format())
+	}
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

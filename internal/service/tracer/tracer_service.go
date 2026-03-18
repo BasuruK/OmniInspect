@@ -115,10 +115,13 @@ func StopAll(tracerService *TracerService) {
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db           ports.DatabaseRepository
-	bolt         ports.ConfigRepository
-	processMu    sync.Mutex
-	eventChannel chan<- *domain.QueueMessage
+	db             ports.DatabaseRepository
+	bolt           ports.ConfigRepository
+	processMu      sync.Mutex
+	eventChannel   chan<- *domain.QueueMessage
+	listenerCtx    context.Context
+	listenerCancel context.CancelFunc
+	listenerWg     sync.WaitGroup
 }
 
 // Constructor: NewTracerService Constructor for TracerService
@@ -195,33 +198,49 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
-	// Lock for processing to avoid concurrent dequeues
-	ts.processMu.Lock()
-	defer ts.processMu.Unlock()
 
-	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+	// Local slice to hold messages for processing after releasing the lock
+	var queueMessages []*domain.QueueMessage
+
+	// Use a closure to ensure the lock is released properly
+	err := func() error {
+		// Lock for processing to avoid concurrent dequeues
+		ts.processMu.Lock()
+		defer ts.processMu.Unlock()
+
+		messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+		if err != nil {
+			return err
+		}
+
+		if count == 0 {
+			return nil
+		}
+
+		if len(messages) < count || len(msgIDs) < count {
+			return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
+		}
+
+		for i := 0; i < count; i++ {
+			msg := &domain.QueueMessage{}
+			if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
+				log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
+				continue
+			}
+			queueMessages = append(queueMessages, msg)
+		}
+		return nil
+	}()
 
 	if err != nil {
 		return err
 	}
 
-	if count == 0 {
-		return nil // return
-	}
-
-	if len(messages) < count || len(msgIDs) < count {
-		return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
-	}
-
-	for i := 0; i < count; i++ {
-		msg := &domain.QueueMessage{}
-		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
-			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
-			continue
-		}
-
+	// Process messages outside the lock to avoid deadlocks on channel sends
+	for _, msg := range queueMessages {
 		ts.handleTracerMessage(msg)
 	}
+
 	return nil
 }
 

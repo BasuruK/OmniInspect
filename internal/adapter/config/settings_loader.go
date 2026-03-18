@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -14,14 +15,16 @@ import (
 // Adapter: Loads configurations from database
 type ConfigLoader struct {
 	dbSettingsRepo ports.DatabaseSettingsRepository
-	reader        *bufio.Reader
+	configRepo     ports.ConfigRepository
+	reader         *bufio.Reader
 }
 
 // NewConfigLoader creates a new instance of ConfigLoader
-func NewConfigLoader(dbSettingsRepo ports.DatabaseSettingsRepository) *ConfigLoader {
+func NewConfigLoader(dbSettingsRepo ports.DatabaseSettingsRepository, configRepo ports.ConfigRepository) *ConfigLoader {
 	return &ConfigLoader{
 		dbSettingsRepo: dbSettingsRepo,
-		reader:        bufio.NewReader(os.Stdin),
+		configRepo:     configRepo,
+		reader:         bufio.NewReader(os.Stdin),
 	}
 }
 
@@ -33,6 +36,8 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 	config, err := cl.dbSettingsRepo.GetDefault(ctx)
 	if err == nil && config != nil {
 		fmt.Println("✓ loaded database from boltDB")
+		// Check for webhook config on every startup (for upgrades/missing config)
+		cl.PromptForWebhookConfig()
 		return config, nil
 	}
 
@@ -48,6 +53,9 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 		return nil, fmt.Errorf("failed to save database config to boltDB: %w", err)
 	}
 	fmt.Println("✓ saved database config to boltDB")
+
+	// Prompt for webhook configuration
+	cl.PromptForWebhookConfig()
 
 	return config, nil
 }
@@ -128,4 +136,50 @@ func (cl *ConfigLoader) promptUserRequired(prompt string) (string, error) {
 			return input, nil
 		}
 	}
+}
+
+// PromptForWebhookConfig prompts user for webhook URL if not configured
+func (cl *ConfigLoader) PromptForWebhookConfig() {
+	// Check if webhook already configured
+	config, err := cl.configRepo.GetWebhookConfig()
+	if err == nil && config != nil && config.URL != "" {
+		fmt.Println("✓ webhook already configured")
+		return
+	}
+
+	// Prompt for webhook URL (optional - user can skip by pressing enter)
+	fmt.Print("(Optional) Enter webhook URL (or press Enter to skip): ")
+	input, err := cl.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed to read input, skipping webhook configuration")
+		return
+	}
+	input = strings.TrimSpace(input)
+	if input == "" {
+		fmt.Println("Webhook configuration skipped")
+		return
+	}
+
+	parsedURL, err := url.Parse(input)
+	if err != nil {
+		fmt.Printf("Invalid URL format: %v\n", err)
+		return
+	}
+
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if (scheme != "http" && scheme != "https") || parsedURL.Host == "" {
+		fmt.Println("Webhook URL must be a full http(s) URL with a host")
+		return
+	}
+
+	webhookConfig, err := domain.NewWebhookConfig(domain.DefaultWebhookID, parsedURL.String(), true)
+	if err != nil {
+		fmt.Printf("Invalid webhook URL: %v\n", err)
+		return
+	}
+	if err := cl.configRepo.SaveWebhookConfig(webhookConfig); err != nil {
+		fmt.Printf("Failed to save webhook config: %v\n", err)
+		return
+	}
+	fmt.Println("✓ webhook URL saved!")
 }

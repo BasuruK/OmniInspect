@@ -44,15 +44,16 @@ func (l LogLevel) IsError() bool  { return l == LogLevelError || l == LogLevelCr
 
 // Entity : Represents a message in the tracer queue
 type QueueMessage struct {
-	messageID   string
-	processName string
-	logLevel    LogLevel
-	payload     string
-	timestamp   time.Time
+	messageID     string
+	processName   string
+	logLevel      LogLevel
+	payload       string
+	timestamp     time.Time
+	sendToWebhook bool
 }
 
 // NewQueueMessage creates a new QueueMessage with validation
-func NewQueueMessage(messageID string, processName string, logLevel LogLevel, payload string, timestamp time.Time) (*QueueMessage, error) {
+func NewQueueMessage(messageID string, processName string, logLevel LogLevel, payload string, timestamp time.Time, sendToWebhook ...bool) (*QueueMessage, error) {
 	messageID = strings.TrimSpace(messageID)
 	payload = strings.TrimSpace(payload)
 
@@ -77,12 +78,19 @@ func NewQueueMessage(messageID string, processName string, logLevel LogLevel, pa
 		return nil, ErrInvalidTimestamp
 	}
 
+	// Default sendToWebhook to false
+	sendToWebhookFlag := false
+	if len(sendToWebhook) > 0 {
+		sendToWebhookFlag = sendToWebhook[0]
+	}
+
 	return &QueueMessage{
-		messageID:   messageID,
-		processName: processName,
-		logLevel:    normalizedLevel,
-		payload:     payload,
-		timestamp:   timestamp,
+		messageID:     messageID,
+		processName:   processName,
+		logLevel:      normalizedLevel,
+		payload:       payload,
+		timestamp:     timestamp,
+		sendToWebhook: sendToWebhookFlag,
 	}, nil
 }
 
@@ -95,6 +103,7 @@ func (m *QueueMessage) ProcessName() string  { return m.processName }
 func (m *QueueMessage) LogLevel() LogLevel   { return m.logLevel }
 func (m *QueueMessage) Payload() string      { return m.payload }
 func (m *QueueMessage) Timestamp() time.Time { return m.timestamp }
+func (m *QueueMessage) SendToWebhook() bool  { return m.sendToWebhook }
 
 // ==========================================
 // Business Methods
@@ -128,21 +137,23 @@ func (m *QueueMessage) String() string {
 // queueMessageJSON provides a JSON-friendly intermediate representation
 // Uses json.RawMessage for timestamp to handle both int64 and string formats
 type queueMessageJSON struct {
-	MessageID   string          `json:"message_id"`
-	ProcessName string          `json:"process_name"`
-	LogLevel    string          `json:"log_level"`
-	Payload     string          `json:"payload"`
-	Timestamp   json.RawMessage `json:"timestamp"`
+	MessageID     string          `json:"message_id"`
+	ProcessName   string          `json:"process_name"`
+	LogLevel      string          `json:"log_level"`
+	Payload       string          `json:"payload"`
+	Timestamp     json.RawMessage `json:"timestamp"`
+	SendToWebhook string          `json:"send_to_webhook"`
 }
 
 // MarshalJSON implements custom JSON marshaling for QueueMessage
 func (m *QueueMessage) MarshalJSON() ([]byte, error) {
 	j := queueMessageJSON{
-		MessageID:   m.messageID,
-		ProcessName: m.processName,
-		LogLevel:    string(m.logLevel),
-		Payload:     m.payload,
-		Timestamp:   []byte(fmt.Sprintf(`%d`, m.timestamp.Unix())),
+		MessageID:     m.messageID,
+		ProcessName:   m.processName,
+		LogLevel:      string(m.logLevel),
+		Payload:       m.payload,
+		Timestamp:     []byte(fmt.Sprintf(`%d`, m.timestamp.Unix())),
+		SendToWebhook: fmt.Sprintf(`%t`, m.sendToWebhook),
 	}
 	return json.Marshal(j)
 }
@@ -195,7 +206,10 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	qm, err := NewQueueMessage(j.MessageID, j.ProcessName, normalizedLevel, j.Payload, ts)
+	// Parse sendToWebhook flag - "TRUE" from Oracle JSON becomes true
+	sendToWebhookFlag := strings.ToUpper(j.SendToWebhook) == "TRUE"
+
+	qm, err := NewQueueMessage(j.MessageID, j.ProcessName, normalizedLevel, j.Payload, ts, sendToWebhookFlag)
 	if err != nil {
 		return err
 	}

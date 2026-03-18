@@ -4,6 +4,7 @@ import (
 	"OmniView/assets"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"OmniView/internal/service/webhook"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,105 @@ import (
 	"sync"
 	"time"
 )
+
+const (
+	// Webhook worker pool settings
+	webhookWorkers   = 4
+	webhookQueueSize = 100
+)
+
+// webhookDispatcher handles bounded webhook delivery
+type webhookDispatcher struct {
+	service *webhook.WebhookService
+	queue   chan webhookJob
+	wg      sync.WaitGroup
+	stopped bool
+	mu      sync.RWMutex
+}
+
+// webhookJob represents a single webhook delivery task
+type webhookJob struct {
+	payload []byte
+	url     string
+	meta    webhook.WebhookMetadata
+}
+
+// newWebhookDispatcher creates and starts a new webhookDispatcher with a worker pool
+func newWebhookDispatcher() *webhookDispatcher {
+	d := &webhookDispatcher{
+		service: webhook.NewWebhookService(),
+		queue:   make(chan webhookJob, webhookQueueSize),
+	}
+	// Start worker pool
+	for i := 0; i < webhookWorkers; i++ {
+		d.wg.Add(1)
+		go d.worker()
+	}
+	return d
+}
+
+// worker processes webhook jobs from the queue
+func (d *webhookDispatcher) worker() {
+	defer d.wg.Done()
+	for job := range d.queue {
+		if err := d.service.SendToWebhook(job.payload, job.url, job.meta); err != nil {
+			log.Printf("[Tracer] Failed to send webhook: %v", err)
+		}
+	}
+}
+
+// Enqueue adds a webhook job to the dispatcher's queue if not stopped
+func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.WebhookMetadata) {
+	d.mu.RLock()
+	if d.stopped {
+		d.mu.RUnlock()
+		log.Printf("[Tracer] Webhook dispatcher stopped, dropping message")
+		return
+	}
+	d.mu.RUnlock()
+
+	select {
+	case d.queue <- webhookJob{payload: payload, url: url, meta: meta}:
+		// Job queued successfully
+	default:
+		// Queue full - drop the message
+		log.Printf("[Tracer] Webhook queue full, dropping message")
+	}
+}
+
+// Stop signals the dispatcher to stop accepting new jobs and waits for in-flight deliveries to complete
+func (d *webhookDispatcher) Stop() {
+	d.mu.Lock()
+	d.stopped = true
+	d.mu.Unlock()
+	close(d.queue)
+	d.wg.Wait()
+}
+
+// Global webhook dispatcher (initialized on first use)
+var globalWebhookDispatcher *webhookDispatcher
+var dispatcherOnce sync.Once
+
+func getWebhookDispatcher() *webhookDispatcher {
+	dispatcherOnce.Do(func() {
+		globalWebhookDispatcher = newWebhookDispatcher()
+	})
+	return globalWebhookDispatcher
+}
+
+// StopAll stops the webhook dispatcher and event listener goroutines, then waits for them to complete
+func StopAll(tracerService *TracerService) {
+	// Stop webhook dispatcher first to stop accepting new webhook jobs
+	if globalWebhookDispatcher != nil {
+		globalWebhookDispatcher.Stop()
+	}
+
+	// Cancel the event listener context and wait for goroutines to finish
+	if tracerService != nil && tracerService.listenerCancel != nil {
+		tracerService.listenerCancel()
+		tracerService.listenerWg.Wait()
+	}
+}
 
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
@@ -34,27 +134,37 @@ func NewTracerService(
 	}
 }
 
+// StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them
 func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *domain.Subscriber, schema string) error {
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
+	// Create a cancellable context for event listeners
+	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)
+
 	// Initial processing to handle any existing messages
 	// any remaining messages for the subscriber that was sent before starting the listener will be processed here
+	ts.listenerWg.Add(1)
 	go func() {
-		if err := ts.processBatch(ctx, subscriber); err != nil {
+		defer ts.listenerWg.Done()
+		if err := ts.processBatch(ts.listenerCtx, subscriber); err != nil {
 			log.Printf("initial batch processing failed for subscriber %s: %v", subscriber.Name(), err)
 		}
 	}()
 
 	// Start the goroutine to listen for notifications
-	go ts.blockingConsumerLoop(ctx, subscriber)
+	ts.listenerWg.Add(1)
+	go ts.blockingConsumerLoop(ts.listenerCtx, subscriber)
 
 	return nil
 }
 
+// blockingConsumerLoop continuously waits for new messages for the subscriber and processes them until the context is cancelled
 func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *domain.Subscriber) {
+	defer ts.listenerWg.Done()
+
 	const errorDelay = 5 * time.Second
 	for {
 		// Check if context is cancelled before blocking
@@ -90,6 +200,7 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 	defer ts.processMu.Unlock()
 
 	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+
 	if err != nil {
 		return err
 	}

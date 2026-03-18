@@ -78,4 +78,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Graceful shutdown: stop webhook dispatcher and event listeners, then wait for completion
+	tracer.StopAll(tracerService)
 }

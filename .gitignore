@@ -2,7 +2,6 @@
 .DS_Store
 .claude/settings.local.json
 omniview.bolt
-.letta
-.serena
-.vscode
+.vscode/launch.json
 omniview
+.letta

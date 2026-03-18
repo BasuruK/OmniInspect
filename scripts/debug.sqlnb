@@ -222,5 +222,12 @@ cells:
     value: SELECT name, retention FROM all_queues WHERE name = 'OMNI_TRACER_QUEUE';
     languageId: oracle-sql
   - kind: 2
+    value: |-
+      SET SERVEROUTPUT ON;
+      BEGIN
+          OMNI_TRACER_API.Trace_Message_To_Webhook('Hello world!', 'INFO');
+      END;
+    languageId: oracle-sql
+  - kind: 2
     value: ""
     languageId: oracle-sql

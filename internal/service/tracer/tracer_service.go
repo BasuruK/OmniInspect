@@ -204,12 +204,9 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 
-	// Local slice to hold messages for processing after releasing the lock
-	var queueMessages []*domain.QueueMessage
-
 	// Use a closure to ensure the lock is released properly
 	err := func() error {
-		// Lock for processing to avoid concurrent dequeues
+		// Lock for processing to maintain dequeue+delivery atomicity
 		ts.processMu.Lock()
 		defer ts.processMu.Unlock()
 
@@ -232,30 +229,41 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 				log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
 				continue
 			}
-			queueMessages = append(queueMessages, msg)
+			// Deliver while holding lock to preserve ordering
+			ts.handleTracerMessage(msg)
 		}
 		return nil
 	}()
 
-	if err != nil {
-		return err
-	}
-
-	// Process messages outside the lock to avoid deadlocks on channel sends
-	for _, msg := range queueMessages {
-		ts.handleTracerMessage(msg)
-	}
-
-	return nil
+	return err
 }
 
-// handleTracerMessage processes a single tracer message
+// handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
 func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
+	// Always send to TUI if channel is available
 	if ts.eventChannel != nil {
-		ts.eventChannel <- msg // Send the message to TUI
+		ts.eventChannel <- msg
 	} else {
 		fmt.Println(msg.Format())
 	}
+
+	// Dispatch to webhook if configured
+	webhookConfig, err := ts.bolt.GetWebhookConfig()
+	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {
+		return
+	}
+
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("failed to marshal message for webhook: %v", err)
+		return
+	}
+
+	meta := webhook.WebhookMetadata{
+		LogLevel:  string(msg.LogLevel()),
+		Timestamp: msg.Timestamp().Format(time.RFC3339),
+	}
+	getWebhookDispatcher().Enqueue(payload, webhookConfig.URL, meta)
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

@@ -60,6 +60,17 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			m.loading.err = fmt.Errorf("subscriber registration failed: %w", msg.err)
 			return m, nil
 		}
+		if msg.subscriber == nil {
+			m.loading.err = fmt.Errorf("subscriber registration returned nil subscriber")
+			return m, nil
+		}
+
+		// Start event listener before transitioning to main screen
+		if err := m.tracerService.StartEventListener(m.ctx, msg.subscriber, m.appConfig.Username()); err != nil {
+			m.loading.err = fmt.Errorf("failed to start event listener: %w", err)
+			return m, nil
+		}
+
 		m.subscriber = msg.subscriber
 		m.loading.steps = append(m.loading.steps,
 			"✓ Subscriber registered: "+msg.subscriber.Name())
@@ -69,8 +80,6 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		m.screen = screenMain
 		m.initViewport()
 
-		// Start event listener and wait for first message
-		m.tracerService.StartEventListener(m.ctx, m.subscriber, m.appConfig.Username())
 		return m, waitForEventCmd(m.ctx, m.eventChannel)
 	}
 

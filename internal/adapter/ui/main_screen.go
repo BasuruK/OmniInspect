@@ -4,6 +4,8 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -20,6 +22,33 @@ const headerHeight = 4
 // maxMessages is the maximum number of messages to retain in the ring buffer.
 // Oldest messages are dropped when capacity is reached.
 const maxMessages = 1000
+
+// ansiEscape matches ANSI escape sequences for sanitization.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\x1b[0-9;]*[~^KL]|\x1b[12;[0-9]*[0-9]|[^\x20-\x7E]`)
+
+// sanitizeLogString removes ANSI escapes and control characters from user-controlled
+// log content to prevent terminal injection attacks.
+func sanitizeLogString(s string) string {
+	// Strip ANSI escape sequences
+	s = ansiEscape.ReplaceAllString(s, "")
+	// Replace control characters with visible placeholders
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
+			return '·' // dot placeholder for control chars
+		}
+		if r == 0x7F { // DEL
+			return '·'
+		}
+		return r
+	}, s)
+	// Collapse leading/trailing whitespace and limit length
+	s = strings.TrimSpace(s)
+	const maxLen = 10000
+	if len(s) > maxLen {
+		s = s[:maxLen] + "…"
+	}
+	return s
+}
 
 // ==========================================
 // Main Update
@@ -146,8 +175,8 @@ func formatLogLine(msg *domain.QueueMessage) string {
 		"%s %s %s %s",
 		lipgloss.NewStyle().Foreground(styles.MutedColor).Render(timestamp),
 		levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel())),
-		lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(msg.ProcessName()),
-		msg.Payload(),
+		lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(sanitizeLogString(msg.ProcessName())),
+		sanitizeLogString(msg.Payload()),
 	)
 }
 

@@ -1,0 +1,5 @@
+- After code changes, run the narrowest relevant checks first, then repo-level checks when practical.
+- Default verification commands: `make fmt`, `make lint`, and `make test`.
+- For Oracle/CGO changes, verify `make build` because link settings and Instant Client paths matter.
+- For UI changes, inspect Bubble Tea flow in `internal/adapter/ui` and relevant migration docs before editing.
+- Be aware that the repo currently has little or no automated test coverage, so some changes may still require manual validation.

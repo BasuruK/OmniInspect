@@ -4,7 +4,6 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
-	"strings"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -18,6 +17,10 @@ import (
 // headerHeight is the number of terminal lines reserved for header + help.
 const headerHeight = 4
 
+// maxMessages is the maximum number of messages to retain in the ring buffer.
+// Oldest messages are dropped when capacity is reached.
+const maxMessages = 1000
+
 // ==========================================
 // Main Update
 // ==========================================
@@ -28,13 +31,31 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// New log message from event listener
 	case queueMessageMsg:
+		// Drop oldest message if at capacity to prevent unbounded growth
+		if len(m.main.messages) >= maxMessages {
+			m.main.messages = m.main.messages[1:]
+			// Buffer exceeded — rebuild rendered content from trimmed slice
+			m.main.renderedContent.Reset()
+			for _, msg := range m.main.messages {
+				m.main.renderedContent.WriteString(formatLogLine(msg))
+				m.main.renderedContent.WriteString("\n")
+			}
+		}
 		m.main.messages = append(m.main.messages, msg.message)
-		m.main.viewport.SetContent(m.renderLogContent())
+		// Incrementally append the new message to rendered content
+		m.main.renderedContent.WriteString(formatLogLine(msg.message))
+		m.main.renderedContent.WriteString("\n")
+		m.main.viewport.SetContent(m.main.renderedContent.String())
 		if m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
 		// Re-subscribe to wait for next message
-		return m, waitForEventCmd(m.eventChannel)
+		return m, waitForEventCmd(m.ctx, m.eventChannel)
+
+	// Event channel closed (shutdown)
+	case eventChannelClosedMsg:
+		// Channel is closed — do not re-subscribe; goroutine exits cleanly
+		return m, nil
 
 	// Keyboard input
 	case tea.KeyPressMsg:
@@ -89,18 +110,15 @@ func (m *Model) viewMain() string {
 // Log Rendering
 // ==========================================
 
-// renderLogContent formats all stored messages as a single string for the viewport.
+// renderLogContent returns the current rendered log content.
+// Uses the incrementally-built renderedContent when available,
+// rebuilding only when the buffer is empty.
 func (m *Model) renderLogContent() string {
 	if len(m.main.messages) == 0 {
 		return styles.SubtitleStyle.Render("  Waiting for trace events...")
 	}
-
-	var b strings.Builder
-	for _, msg := range m.main.messages {
-		b.WriteString(formatLogLine(msg))
-		b.WriteString("\n")
-	}
-	return b.String()
+	// Return incrementally built content to avoid O(n²) rebuild on every message
+	return m.main.renderedContent.String()
 }
 
 // formatLogLine applies color styling based on log level.

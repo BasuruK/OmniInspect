@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/core/domain"
+	"context"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -38,12 +39,23 @@ func registerSubscriberCmd(m *Model) tea.Cmd {
 	}
 }
 
+// eventChannelClosedMsg is sent when the event channel is closed.
+type eventChannelClosedMsg struct{}
+
 // waitForEventCmd waits for one message from the event channel.
 // After Update() processes the message, it must re-issue this command
 // to receive the next message. See Section 4.5 for the pattern.
-func waitForEventCmd(ch <-chan *domain.QueueMessage) tea.Cmd {
+// It unblocks immediately if the context is cancelled or the channel is closed.
+func waitForEventCmd(ctx context.Context, ch <-chan *domain.QueueMessage) tea.Cmd {
 	return func() tea.Msg {
-		msg := <-ch // blocks until a message arrives
-		return queueMessageMsg{message: msg}
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return eventChannelClosedMsg{}
+			}
+			return queueMessageMsg{message: msg}
+		case <-ctx.Done():
+			return eventChannelClosedMsg{}
+		}
 	}
 }

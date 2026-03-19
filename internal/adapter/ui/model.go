@@ -8,6 +8,8 @@ import (
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -45,10 +47,11 @@ type loadingState struct {
 }
 
 type mainState struct {
-	messages   []*domain.QueueMessage // Log messages to display
-	viewport   viewport.Model         // Scrollable viewport for messages
-	autoScroll bool                   // Whether to auto-scroll to the latest message
-	ready      bool                   // Whether the main screen is ready to display messages
+	messages         []*domain.QueueMessage // Log messages to display (bounded ring buffer, max 1000)
+	renderedContent  strings.Builder       // Incrementally built rendered content
+	viewport         viewport.Model         // Scrollable viewport for messages
+	autoScroll       bool                  // Whether to auto-scroll to the latest message
+	ready            bool                  // Whether the main screen is ready to display messages
 }
 
 // ==========================================
@@ -95,7 +98,35 @@ type ModelOpts struct {
 	EventChannel      chan *domain.QueueMessage
 }
 
-func NewModel(opts ModelOpts) *Model {
+func NewModel(opts ModelOpts) (*Model, error) {
+	var errs []string
+
+	if opts.App == nil {
+		errs = append(errs, "App is required")
+	}
+	if opts.DBAdapter == nil {
+		errs = append(errs, "DBAdapter is required")
+	}
+	if opts.PermissionService == nil {
+		errs = append(errs, "PermissionService is required")
+	}
+	if opts.TracerService == nil {
+		errs = append(errs, "TracerService is required")
+	}
+	if opts.SubscriberService == nil {
+		errs = append(errs, "SubscriberService is required")
+	}
+	if opts.AppConfig == nil {
+		errs = append(errs, "AppConfig is required")
+	}
+	if opts.EventChannel == nil {
+		errs = append(errs, "EventChannel is required")
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("missing required dependencies: %s", strings.Join(errs, ", "))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := spinner.New(
@@ -121,7 +152,7 @@ func NewModel(opts ModelOpts) *Model {
 		main: mainState{
 			autoScroll: true,
 		},
-	}
+	}, nil
 }
 
 // ==========================================

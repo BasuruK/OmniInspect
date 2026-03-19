@@ -63,7 +63,7 @@ func main() {
 
 	// ── Phase 3: Start TUI ───────────────────────
 
-	model := ui.NewModel(ui.ModelOpts{
+	model, err := ui.NewModel(ui.ModelOpts{
 		App:               omniApp,
 		DBAdapter:         dbAdapter,
 		PermissionService: permissionService,
@@ -72,6 +72,10 @@ func main() {
 		AppConfig:         appConfig,
 		EventChannel:      eventCh,
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {

@@ -414,8 +414,6 @@ BEGIN
             IF v_bound_subscriber IS NOT NULL THEN
                 v_consumer_name := v_bound_subscriber;
             END IF;
-        EXCEPTION
-            WHEN OTHERS THEN NULL;
         END;
     END IF;
 
@@ -683,9 +681,9 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         -- Resolve subscriber using priority
         v_consumer_name := Resolve_Subscriber_(subscriber_);
 
-        -- Set consumer for targeted delivery
+        -- Set consumer for targeted delivery via recipient list
         IF v_consumer_name IS NOT NULL THEN
-            message_properties_.consumer_name := v_consumer_name;
+            message_properties_.recipient_list := SYS.AQ$_AGENT_LIST_T(SYS.AQ$_AGENT(v_consumer_name, NULL, NULL));
         END IF;
 
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE;

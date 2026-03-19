@@ -71,7 +71,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 
 		// Start event listener and wait for first message
 		m.tracerService.StartEventListener(m.ctx, m.subscriber, m.appConfig.Username())
-		return m, waitForEventCmd(m.eventChannel)
+		return m, waitForEventCmd(m.ctx, m.eventChannel)
 	}
 
 	return m, nil

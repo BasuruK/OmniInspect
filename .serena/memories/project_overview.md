@@ -1,0 +1,5 @@
+- OmniInspect/OmniView is a Go TUI for real-time Oracle AQ trace messages.
+- Stack: Go 1.24+, Bubble Tea v2, Lipgloss v2, BoltDB, Oracle Instant Client, ODPI-C, CGO.
+- Architecture: hexagonal/ports-and-adapters. `cmd/omniview/main.go` composes adapters, services, and the Bubble Tea UI.
+- Core boundaries: `internal/core/domain` and `internal/core/ports`; business logic in `internal/service`; Oracle/BoltDB/config/UI in `internal/adapter`.
+- Key docs: `README.md`, `docs/TUI_MIGRATION_SPEC.md`, `docs/ARCHITECTURE_AND_MULTI_SUBSCRIBER_PLAN.md`.

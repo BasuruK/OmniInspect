@@ -793,7 +793,7 @@ type ModelOpts struct {
     TracerService     *tracer.TracerService
     SubscriberService *subscribers.SubscriberService
     AppConfig         *domain.DatabaseSettings
-    EventCh           chan *domain.QueueMessage
+    EventChannel      chan *domain.QueueMessage
 }
 
 // NewModel creates the root model with all dependencies.
@@ -817,7 +817,7 @@ func NewModel(opts ModelOpts) *Model {
         tracerService:     opts.TracerService,
         subscriberService: opts.SubscriberService,
         appConfig:         opts.AppConfig,
-        eventCh:           opts.EventCh,
+        eventCh:           opts.EventChannel,
         loading: loadingState{
             spinner: s,
         },

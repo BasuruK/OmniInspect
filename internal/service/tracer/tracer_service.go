@@ -110,6 +110,11 @@ func StopAll(tracerService *TracerService) {
 		tracerService.listenerCancel()
 		tracerService.listenerWg.Wait()
 	}
+
+	// Close the event channel so waitForEventCmd goroutines unblock and exit
+	if tracerService != nil && tracerService.eventChannel != nil {
+		close(tracerService.eventChannel)
+	}
 }
 
 // Service: Manages package deployments
@@ -118,7 +123,7 @@ type TracerService struct {
 	db             ports.DatabaseRepository
 	bolt           ports.ConfigRepository
 	processMu      sync.Mutex
-	eventChannel   chan<- *domain.QueueMessage
+	eventChannel   chan *domain.QueueMessage
 	listenerCtx    context.Context
 	listenerCancel context.CancelFunc
 	listenerWg     sync.WaitGroup
@@ -128,7 +133,7 @@ type TracerService struct {
 func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
-	eventChannel chan<- *domain.QueueMessage,
+	eventChannel chan *domain.QueueMessage,
 ) *TracerService {
 	return &TracerService{
 		db:           db,

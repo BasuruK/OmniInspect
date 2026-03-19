@@ -17,9 +17,10 @@ import (
 
 const (
 	tickInterval  = 80 * time.Millisecond
-	versionDelay  = 4  // frames to wait after logo before version
-	subtitleDelay = 6  // frames to wait after version
-	completeDelay = 10 // frames to wait before completion
+	logoEndFrame  = 8  // frames required for all logo lines to be revealed (4 lines × 2 frames each)
+	versionDelay  = 4  // frames to wait after logo finishes before version appears
+	subtitleDelay = 6  // frames to wait after version appears before subtitle appears
+	completeDelay = 10 // frames to wait after subtitle appears before animation completes
 )
 
 // Logo frames - each frame reveals more lines
@@ -54,18 +55,23 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 			m.welcome.logoRevealed++
 		}
 
+		// Cumulative thresholds: each stage is relative to the end of the prior stage
+		versionThreshold  := logoEndFrame + versionDelay
+		subtitleThreshold := versionThreshold + subtitleDelay
+		completeThreshold := subtitleThreshold + completeDelay
+
 		// Show version after logo is fully revealed
-		if m.welcome.logoRevealed >= len(logoLines) && m.welcome.frame >= versionDelay {
+		if m.welcome.logoRevealed >= len(logoLines) && m.welcome.frame >= versionThreshold {
 			m.welcome.showVersion = true
 		}
 
 		// Show subtitle after version
-		if m.welcome.showVersion && m.welcome.frame >= subtitleDelay {
+		if m.welcome.showVersion && m.welcome.frame >= subtitleThreshold {
 			m.welcome.showSubtitle = true
 		}
 
 		// Complete animation
-		if m.welcome.showSubtitle && m.welcome.frame >= completeDelay {
+		if m.welcome.showSubtitle && m.welcome.frame >= completeThreshold {
 			m.welcome.complete = true
 		}
 

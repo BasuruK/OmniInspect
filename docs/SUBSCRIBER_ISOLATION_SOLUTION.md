@@ -164,7 +164,7 @@ BEGIN
 
     -- Set consumer for targeted delivery
     IF v_consumer_name IS NOT NULL THEN
-        message_properties.consumer_name := v_consumer_name;
+        message_properties.recipient_list(1) := SYS.AQ$_AGENT(v_consumer_name, NULL, NULL);
     END IF;
 
     -- Build message
@@ -425,7 +425,7 @@ BEGIN
 
     -- Set consumer for targeted delivery
     IF v_consumer_name IS NOT NULL THEN
-        message_properties.consumer_name := v_consumer_name;
+        message_properties.recipient_list(1) := SYS.AQ$_AGENT(v_consumer_name, NULL, NULL);
     END IF;
 
     -- Build comprehensive message
@@ -655,14 +655,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         END IF;
 
         -- Priority 3: Session binding
-        BEGIN
-            v_subscriber := Get_Bound_Subscriber();
-            IF v_subscriber IS NOT NULL THEN
-                RETURN v_subscriber;
-            END IF;
-        EXCEPTION
-            WHEN OTHERS THEN NULL;
-        END;
+        v_subscriber := Get_Bound_Subscriber();
+        IF v_subscriber IS NOT NULL THEN
+            RETURN v_subscriber;
+        END IF;
 
         -- Fallback: Broadcast (return NULL)
         RETURN NULL;

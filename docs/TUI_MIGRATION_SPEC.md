@@ -1453,7 +1453,7 @@ func main() {
 
     // Load configuration (may prompt user via stdin if first run)
     dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
-    cfgLoader := config.NewConfigLoader(dbSettingsRepo)
+    cfgLoader := config.NewConfigLoader(dbSettingsRepo, boltAdapter)
     appConfig, err := cfgLoader.LoadClientConfigurations()
     if err != nil {
         fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)

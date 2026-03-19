@@ -37,7 +37,7 @@ make odpi
 
 Hexagonal (Ports and Adapters) architecture:
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │  cmd/omniview/main.go (Bootstrap)       │
 └─────────────────────────────────────────┘

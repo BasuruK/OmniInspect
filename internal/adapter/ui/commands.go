@@ -33,7 +33,7 @@ func deployTracerCmd(m *Model) tea.Cmd {
 // registerSubscriberCmd registers a queue subscriber.
 func registerSubscriberCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
-		subscriber, err := m.subsciberService.RegisterSubscriber(m.ctx)
+		subscriber, err := m.subscriberService.RegisterSubscriber(m.ctx)
 		return subscriberRegisteredMsg{subscriber: subscriber, err: err}
 	}
 }

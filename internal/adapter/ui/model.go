@@ -73,7 +73,7 @@ type Model struct {
 	dbAdapter         *oracle.OracleAdapter
 	permissionService *permissions.PermissionService
 	tracerService     *tracer.TracerService
-	subsciberService  *subscribers.SubscriberService
+	subscriberService *subscribers.SubscriberService
 	appConfig         *domain.DatabaseSettings
 	subscriber        *domain.Subscriber
 
@@ -112,7 +112,7 @@ func NewModel(opts ModelOpts) *Model {
 		dbAdapter:         opts.DBAdapter,
 		permissionService: opts.PermissionService,
 		tracerService:     opts.TracerService,
-		subsciberService:  opts.SubscriberService,
+		subscriberService: opts.SubscriberService,
 		appConfig:         opts.AppConfig,
 		eventChannel:      opts.EventChannel,
 		loading: loadingState{

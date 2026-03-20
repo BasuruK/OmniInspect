@@ -1,0 +1,6 @@
+- Follow existing Go naming: `New...` constructors, `...Service`, `...Adapter`, `...Repository`.
+- Use dependency injection instead of constructing cross-layer dependencies internally.
+- Keep domain types validated and infrastructure-agnostic; use methods/getters rather than public mutable fields where the domain already does so.
+- Prefer sentinel errors from `internal/core/domain/errors.go` and wrap errors with context.
+- Bubble Tea code must use `charm.land/...` v2 imports, not older `github.com/charmbracelet/...` paths.
+- Match existing section-divider comments only in files that already use them.

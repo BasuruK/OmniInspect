@@ -110,24 +110,35 @@ func StopAll(tracerService *TracerService) {
 		tracerService.listenerCancel()
 		tracerService.listenerWg.Wait()
 	}
+
+	// Close the event channel so waitForEventCmd goroutines unblock and exit
+	if tracerService != nil && tracerService.eventChannel != nil {
+		close(tracerService.eventChannel)
+	}
 }
 
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db           ports.DatabaseRepository
-	bolt         ports.ConfigRepository
-	processMu    sync.Mutex
-	listenerCtx  context.Context
+	db             ports.DatabaseRepository
+	bolt           ports.ConfigRepository
+	processMu      sync.Mutex
+	eventChannel   chan *domain.QueueMessage
+	listenerCtx    context.Context
 	listenerCancel context.CancelFunc
-	listenerWg   sync.WaitGroup
+	listenerWg     sync.WaitGroup
 }
 
 // Constructor: NewTracerService Constructor for TracerService
-func NewTracerService(db ports.DatabaseRepository, bolt ports.ConfigRepository) *TracerService {
+func NewTracerService(
+	db ports.DatabaseRepository,
+	bolt ports.ConfigRepository,
+	eventChannel chan *domain.QueueMessage,
+) *TracerService {
 	return &TracerService{
-		db:   db,
-		bolt: bolt,
+		db:           db,
+		bolt:         bolt,
+		eventChannel: eventChannel,
 	}
 }
 
@@ -192,64 +203,67 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
-	// Lock for processing to avoid concurrent dequeues
-	ts.processMu.Lock()
-	defer ts.processMu.Unlock()
 
-	messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+	// Use a closure to ensure the lock is released properly
+	err := func() error {
+		// Lock for processing to maintain dequeue+delivery atomicity
+		ts.processMu.Lock()
+		defer ts.processMu.Unlock()
 
-	if err != nil {
-		return err
-	}
-
-	if count == 0 {
-		return nil // return
-	}
-
-	if len(messages) < count || len(msgIDs) < count {
-		return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
-	}
-
-	for i := 0; i < count; i++ {
-		msg := &domain.QueueMessage{}
-		if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
-			log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
-			continue
+		messages, msgIDs, count, err := ts.db.BulkDequeueTracerMessages(ctx, *subscriber)
+		if err != nil {
+			return err
 		}
 
-		ts.handleTracerMessage(msg)
-	}
-	return nil
+		if count == 0 {
+			return nil
+		}
+
+		if len(messages) < count || len(msgIDs) < count {
+			return fmt.Errorf("bulk dequeue invariant violated: count=%d messages=%d msgIDs=%d", count, len(messages), len(msgIDs))
+		}
+
+		for i := 0; i < count; i++ {
+			msg := &domain.QueueMessage{}
+			if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
+				log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
+				continue
+			}
+			// Deliver while holding lock to preserve ordering
+			ts.handleTracerMessage(msg)
+		}
+		return nil
+	}()
+
+	return err
 }
 
-// handleTracerMessage processes a single tracer message
+// handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
 func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
-	fmt.Println(msg.Format())
-
-	// Check if webhook is enabled and message has flag
-	if msg.SendToWebhook() {
-		// Get webhook config from BoltDB
-		config, err := ts.bolt.GetWebhookConfig()
-		if err != nil {
-			log.Printf("[Tracer] Failed to load webhook config: %v", err)
-			return
-		}
-
-		if config == nil || config.URL == "" {
-			log.Printf("[Tracer] Message flagged for webhook but no webhook URL configured.")
-			return
-		}
-
-		if config.Enabled {
-			// Use bounded dispatcher instead of per-message goroutine
-			dispatcher := getWebhookDispatcher()
-			meta := webhook.WebhookMetadata{
-				LogLevel:  msg.LogLevel().String(),
-				Timestamp: msg.Timestamp().Format("2006-01-02T15:04:05Z07:00"),
-			}
-			dispatcher.Enqueue([]byte(msg.Payload()), config.URL, meta)
-		}
+	// Always send to TUI if channel is available
+	if ts.eventChannel != nil {
+		ts.eventChannel <- msg
+	} else {
+		fmt.Println(msg.Format())
 	}
+
+	// Dispatch to webhook if configured
+	webhookConfig, err := ts.bolt.GetWebhookConfig()
+	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {
+		return
+	}
+
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("failed to marshal message for webhook: %v", err)
+		return
+	}
+
+	meta := webhook.WebhookMetadata{
+		LogLevel:  string(msg.LogLevel()),
+		Timestamp: msg.Timestamp().Format(time.RFC3339),
+	}
+	getWebhookDispatcher().Enqueue(payload, webhookConfig.URL, meta)
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

@@ -4,112 +4,83 @@ import (
 	"OmniView/internal/adapter/config"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
+	"OmniView/internal/adapter/ui"
 	"OmniView/internal/app"
+	"OmniView/internal/core/domain"
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
 	"OmniView/internal/updater"
-	"context"
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
 func main() {
-	// Initialize the application and display logo and version info
+	// ==========================================
+	// Phase 1: Application Initialization - Pre-TUI setup
+	// ==========================================
 	omniApp := app.New()
-	// Print LOGO version info and start the server
-	fmt.Println(omniApp.GetLogoASCII())
 
-	// Clean up leftover binary from a previous update (safe no-op if nothing to clean)
+	// Self-update check (may replace binary and restart)
 	updater.CleanupOldBinary()
-
-	// Check for updates before anything else (only runs for release builds, skips "dev")
 	if err := updater.CheckAndUpdate(app.Version); err != nil {
 		log.Printf("[updater] Update failed: %v\n", err)
-		// Non-fatal — continue starting the application
 	}
 
-	// Listen to system signals for graceful shutdown
-	signalChan := make(chan os.Signal, 1)
-	done := make(chan struct{})
-
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
-
-	// Shared cancellable context for startup and runtime
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Initialize BoltDB
-	fmt.Println("Initializing BoltDB!")
+	// Initialize BoltDB (fast, no UI needed)
 	boltAdapter := boltdb.NewBoltAdapter("omniview.bolt")
 	if err := boltAdapter.Initialize(); err != nil {
-		log.Fatalf("failed to initialize BoltDB: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to initialize BoltDB: %v\n", err)
+		os.Exit(1)
 	}
 	defer boltAdapter.Close()
 
-	// 1. Infrastructure Setup (Logging, Config, etc.)
-	// Create repositories
+	// Load configuration (may prompt user via stdin if first run)
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
-
-	// Load Configurations (pass both repos for DB and webhook config)
 	cfgLoader := config.NewConfigLoader(dbSettingsRepo, boltAdapter)
 	appConfig, err := cfgLoader.LoadClientConfigurations()
 	if err != nil {
-		log.Fatalf("failed to load configurations: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Initialize Oracle DB Adapter (inject Configurations)
+	// ==========================================
+	// Phase 2: Initialize and Inject Services
+	// ==========================================
+
+	// Event channel: tracer service → TUI
+	eventCh := make(chan *domain.QueueMessage, 100)
+
+	// Create adapters and services
 	dbAdapter := oracle.NewOracleAdapter(appConfig)
-	if err := dbAdapter.Connect(ctx); err != nil {
-		log.Fatalf("failed to connect to Oracle DB: %v", err)
-	}
-	// Show the connection info to the user
-	fmt.Printf("[DB] Connected on %s:%s\n", appConfig.Host(), appConfig.Database())
-	defer dbAdapter.Close(context.Background())
-
-	// 2. Create DDD Repositories
 	subscriberRepo := boltdb.NewSubscriberRepository(boltAdapter)
 	permissionsRepo := boltdb.NewPermissionsRepository(boltAdapter)
 
-	// 3. Services (Inject Repositories)
 	permissionService := permissions.NewPermissionService(dbAdapter, permissionsRepo, boltAdapter)
-	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter)
+	tracerService := tracer.NewTracerService(dbAdapter, boltAdapter, eventCh)
 	subscriberService := subscribers.NewSubscriberService(dbAdapter, subscriberRepo)
 
-	// 4. Application Bootstrap
-	// Run Startup Tasks using Services
-	// 5.1 Ensure Permission Checks Package is Deployed and permissions are granted
-	if _, err := permissionService.DeployAndCheck(ctx, appConfig.Username()); err != nil {
-		log.Fatalf("failed to run permission checks: %v", err)
-	}
+	// ── Phase 3: Start TUI ───────────────────────
 
-	// 5.2. Ensure Tracer Package is Deployed and initialized
-	if err := tracerService.DeployAndCheck(ctx); err != nil {
-		log.Fatalf("failed to deploy tracer package: %v", err)
-	}
-
-	// 5.3. Subscriber Registration
-	subscriber, err := subscriberService.RegisterSubscriber(ctx)
+	model, err := ui.NewModel(ui.ModelOpts{
+		App:               omniApp,
+		DBAdapter:         dbAdapter,
+		PermissionService: permissionService,
+		TracerService:     tracerService,
+		SubscriberService: subscriberService,
+		AppConfig:         appConfig,
+		EventChannel:      eventCh,
+	})
 	if err != nil {
-		log.Fatalf("failed to register subscriber: %v", err)
-	}
-	fmt.Printf("Registered Subscriber: %s\n", subscriber.Name())
-
-	// 6. Show Application Status
-	go omniApp.ShowStatus(done)
-
-	if err := tracerService.StartEventListener(ctx, subscriber, appConfig.Username()); err != nil {
-		log.Fatalf("failed to start tracer event listener: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
-	select {
-	case <-done:
-		cancel()
-	case <-signalChan:
-		cancel()
+	p := ui.NewProgram(model)
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Graceful shutdown: stop webhook dispatcher and event listeners, then wait for completion

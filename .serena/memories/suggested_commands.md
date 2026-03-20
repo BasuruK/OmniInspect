@@ -1,0 +1,9 @@
+- Build: `make build`
+- Run: `make run`
+- Test: `make test`
+- Format: `make fmt`
+- Lint/vet: `make lint`
+- Install deps: `make install`
+- Build ODPI-C only: `make odpi`
+- Clean artifacts: `make clean`
+- Important: do not use `go run cmd/omniview/main.go`; the Makefile sets required CGO flags and Oracle linker paths.

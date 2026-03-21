@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
@@ -22,9 +23,11 @@ import (
 // ==========================================
 
 const (
-	screenWelcome = "welcome"
-	screenLoading = "loading"
-	screenMain    = "main"
+	screenWelcome    = "welcome"
+	screenLoading    = "loading"
+	screenMain       = "main"
+	screenOnboarding = "onboarding"
+	screenSaved      = "saved"
 )
 
 // ==========================================
@@ -54,23 +57,41 @@ type mainState struct {
 	ready            bool                  // Whether the main screen is ready to display messages
 }
 
+// onboardingState holds the state for the database configuration onboarding form.
+type onboardingState struct {
+	step      int    // 0=Host, 1=Port, 2=ServiceName, 3=Username, 4=Password
+	values    [5]string
+	errMsg    string
+	submitted bool
+}
+
+// savedState holds the state for the "configuration saved" confirmation screen.
+type savedState struct {
+	showPrompt bool
+}
+
 // ==========================================
 // Model
 // ==========================================
 
 // Model is the root Bubble Tea model for entire Omniview application
 type Model struct {
-	screen string // Current screen: welcome, loading, or main
+	screen string // Current screen: welcome, loading, main, onboarding, or saved
 	width  int    // Terminal width
 	height int    // Terminal height
 
 	welcome welcomeState
 	loading loadingState
 	main    mainState
+	onboarding onboardingState
+	saved    savedState
 
-	// Cancellable contexts for all backgroun operions
+	// Cancellable contexts for all background operations
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// BoltDB adapter for config read/write (used by onboarding)
+	boltAdapter *boltdb.BoltAdapter
 
 	// Application Services (injected via NewModel)
 	dbAdapter         *oracle.OracleAdapter
@@ -90,11 +111,12 @@ type Model struct {
 // ModelOpts holds the dependencies injected into the Model
 type ModelOpts struct {
 	App               *app.App
+	BoltAdapter       *boltdb.BoltAdapter
 	DBAdapter         *oracle.OracleAdapter
 	PermissionService *permissions.PermissionService
 	TracerService     *tracer.TracerService
 	SubscriberService *subscribers.SubscriberService
-	AppConfig         *domain.DatabaseSettings
+	AppConfig         *domain.DatabaseSettings // Optional — onboarding screen populates this
 	EventChannel      chan *domain.QueueMessage
 }
 
@@ -104,20 +126,8 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	if opts.App == nil {
 		errs = append(errs, "App is required")
 	}
-	if opts.DBAdapter == nil {
-		errs = append(errs, "DBAdapter is required")
-	}
-	if opts.PermissionService == nil {
-		errs = append(errs, "PermissionService is required")
-	}
-	if opts.TracerService == nil {
-		errs = append(errs, "TracerService is required")
-	}
-	if opts.SubscriberService == nil {
-		errs = append(errs, "SubscriberService is required")
-	}
-	if opts.AppConfig == nil {
-		errs = append(errs, "AppConfig is required")
+	if opts.BoltAdapter == nil {
+		errs = append(errs, "BoltAdapter is required")
 	}
 	if opts.EventChannel == nil {
 		errs = append(errs, "EventChannel is required")
@@ -139,6 +149,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		height:            24,
 		ctx:               ctx,
 		cancel:            cancel,
+		boltAdapter:       opts.BoltAdapter,
 		app:               opts.App,
 		dbAdapter:         opts.DBAdapter,
 		permissionService: opts.PermissionService,
@@ -216,6 +227,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateLoading(msg)
 	case screenMain:
 		return m.updateMain(msg)
+	case screenOnboarding:
+		return m.updateOnboarding(msg)
+	case screenSaved:
+		return m.updateSaved(msg)
 	}
 
 	return m, nil
@@ -240,6 +255,10 @@ func (m *Model) View() tea.View {
 		} else {
 			content = m.viewMain()
 		}
+	case screenOnboarding:
+		content = m.viewOnboarding()
+	case screenSaved:
+		content = m.viewSaved()
 	}
 
 	// Create the view with declarative terminal features

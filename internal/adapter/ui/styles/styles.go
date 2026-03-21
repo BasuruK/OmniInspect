@@ -122,3 +122,40 @@ var (
 			BorderForeground(SurfaceColor).
 			Padding(0, 1)
 )
+
+// ==========================================
+// Onboarding styles
+// ==========================================
+
+var (
+	OnboardingPanelStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(SurfaceColor).
+				Padding(1, 2)
+
+	OnboardingTitleStyle = lipgloss.NewStyle().
+				Foreground(PrimaryColor).
+				Bold(true)
+
+	OnboardingFieldLabelStyle = lipgloss.NewStyle().
+				Foreground(TextColor).
+				Bold(true)
+
+	OnboardingFieldValueStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	OnboardingFieldActiveStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(PrimaryColor).
+				Padding(0, 1)
+
+	OnboardingErrorStyle = lipgloss.NewStyle().
+				Foreground(FailureColor)
+
+	OnboardingHintStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	OnboardingSavedStyle = lipgloss.NewStyle().
+				Foreground(SuccessColor).
+				Bold(true)
+)

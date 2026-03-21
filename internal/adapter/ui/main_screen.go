@@ -21,6 +21,7 @@ const headerHeight = 4
 
 // maxMessages is the maximum number of messages to retain in the ring buffer.
 // Oldest messages are dropped when capacity is reached.
+// TODO: Make this configurable if users want to adjust memory usage vs. log history depth, consider when implementing main settings flow.
 const maxMessages = 1000
 
 // ansiEscape matches ANSI escape sequences for sanitization.

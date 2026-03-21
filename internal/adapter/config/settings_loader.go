@@ -36,8 +36,7 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 	config, err := cl.dbSettingsRepo.GetDefault(ctx)
 	if err == nil && config != nil {
 		fmt.Println("✓ loaded database from boltDB")
-		// Check for webhook config on every startup (for upgrades/missing config)
-		cl.PromptForWebhookConfig()
+		// Webhook prompt only runs during fresh setup (see line 58 below)
 		return config, nil
 	}
 

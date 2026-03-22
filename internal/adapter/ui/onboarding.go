@@ -45,7 +45,6 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		m.appConfig = msg.config
 		m.screen = screenSaved
-		m.saved.showPrompt = false
 		return m, nil
 	}
 

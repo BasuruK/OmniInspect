@@ -71,7 +71,6 @@ type onboardingState struct {
 
 // savedState holds the state for the "configuration saved" confirmation screen.
 type savedState struct {
-	showPrompt bool
 }
 
 // ==========================================

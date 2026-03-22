@@ -15,9 +15,9 @@ import (
 
 // onboardingField describes each step in the onboarding form.
 type onboardingField struct {
-	label      string
+	label       string
 	placeholder string
-	isPassword bool
+	isPassword  bool
 }
 
 var onboardingFields = []onboardingField{
@@ -62,6 +62,20 @@ func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 		m.cancel()
 		return m, tea.Quit
 
+	case "shift+tab", "up":
+		if step > 0 {
+			m.onboarding.step--
+		}
+		m.onboarding.errMsg = ""
+		return m, nil
+
+	case "tab", "down":
+		if step < len(onboardingFields)-1 {
+			m.onboarding.step++
+		}
+		m.onboarding.errMsg = ""
+		return m, nil
+
 	case "enter":
 		// Validate current field before advancing
 		if errMsg := validateOnboardingField(step, *value); errMsg != "" {
@@ -79,6 +93,13 @@ func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 		return m, saveOnboardingConfigCmd(m)
 
 	case "backspace":
+		if len(*value) == 0 {
+			if step > 0 {
+				m.onboarding.step--
+			}
+			m.onboarding.errMsg = ""
+			return m, nil
+		}
 		if len(*value) > 0 {
 			*value = (*value)[:len(*value)-1]
 		}
@@ -174,88 +195,97 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 func (m *Model) viewOnboarding() string {
 	panelWidth := min(m.width-8, 56)
 	panelWidth = max(panelWidth, 40)
+	contentWidth := max(panelWidth-4, 10)
+	separatorWidth := max(contentWidth-2, 1)
 
-	var b strings.Builder
+	lines := []string{""}
 
-	// Panel header
-	b.WriteString(styles.OnboardingTitleStyle.Render("Onboarding"))
-	b.WriteString("\n\n")
-
-	// Render each field
 	for i, field := range onboardingFields {
 		isActive := i == m.onboarding.step
 		value := m.onboarding.values[i]
+		pointer := " "
+		labelStyle := styles.OnboardingFieldLabelStyle
+		valueStyle := styles.OnboardingFieldValueStyle
 
 		if isActive {
-			// Active field
-			b.WriteString(styles.OnboardingFieldActiveStyle.Render(
-				styles.OnboardingFieldLabelStyle.Render(field.label)+"\n"+
-					renderFieldValue(field, value),
-			))
-		} else if i < m.onboarding.step || value != "" {
-			// Completed field (already filled)
-			b.WriteString(styles.OnboardingFieldLabelStyle.Render(field.label) + "\n")
-			b.WriteString(styles.OnboardingFieldValueStyle.Render(
-				renderFieldValue(field, value),
-			))
-		} else {
-			// Future field (not yet visited)
-			b.WriteString(styles.OnboardingFieldLabelStyle.Render(field.label) + "\n")
-			b.WriteString(styles.OnboardingFieldValueStyle.Render(field.placeholder))
+			pointer = styles.OnboardingActiveIndicatorStyle.Render(">")
+			labelStyle = styles.OnboardingActiveLabelStyle
+			if value != "" {
+				valueStyle = styles.OnboardingActiveValueStyle
+			}
+		} else if value == "" {
+			pointer = " "
 		}
-		b.WriteString("\n\n")
+
+		lines = append(lines,
+			pointer+" "+labelStyle.Render(field.label),
+			"  "+valueStyle.Render(renderFieldValue(field, value)),
+			"  "+styles.OnboardingSeparatorStyle.Render(strings.Repeat("─", separatorWidth)),
+			"",
+		)
 	}
 
-	// Error message
 	if m.onboarding.errMsg != "" {
-		b.WriteString(styles.OnboardingErrorStyle.Render(m.onboarding.errMsg))
-		b.WriteString("\n\n")
+		lines = append(lines,
+			styles.OnboardingErrorStyle.Render(m.onboarding.errMsg),
+			"",
+		)
 	}
 
-	// Navigation hint
+	hint := "Use ↑/↓ to edit, Enter to continue"
 	if m.onboarding.step < len(onboardingFields)-1 {
-		hint := fmt.Sprintf("Press Enter to continue (%s)", onboardingFields[m.onboarding.step].label)
-		b.WriteString(styles.OnboardingHintStyle.Render(hint))
+		lines = append(lines, styles.OnboardingHintStyle.Width(contentWidth).Align(lipgloss.Center).Render(hint))
 	} else {
-		b.WriteString(styles.OnboardingHintStyle.Render("Press Enter to save configuration"))
+		lines = append(lines, styles.OnboardingHintStyle.Width(contentWidth).Align(lipgloss.Center).Render("Use ↑/↓ to edit, Enter to save configuration"))
 	}
 
-	// Center the panel
-	panelContent := b.String()
+	lines = append(lines, "")
+
+	panelContent := renderOnboardingFrame("Onboarding", panelWidth, lines)
+
 	panel := lipgloss.Place(
 		m.width, m.height,
 		lipgloss.Center, lipgloss.Center,
-		styles.OnboardingPanelStyle.Width(panelWidth).Render(panelContent),
+		panelContent,
 	)
 
 	return panel
+}
+
+func renderOnboardingFrame(title string, width int, lines []string) string {
+	innerWidth := max(width-4, 1)
+	titleText := "[ " + title + " ]"
+	topFill := max(width-lipgloss.Width(titleText)-3, 0)
+
+	var b strings.Builder
+	b.WriteString(styles.OnboardingBorderStyle.Render("┌─"))
+	b.WriteString(styles.OnboardingTitleStyle.Render(titleText))
+	b.WriteString(styles.OnboardingBorderStyle.Render(strings.Repeat("─", topFill) + "┐"))
+	b.WriteString("\n")
+
+	for _, line := range lines {
+		b.WriteString(renderOnboardingFrameLine(line, innerWidth))
+		b.WriteString("\n")
+	}
+
+	b.WriteString(styles.OnboardingBorderStyle.Render("└" + strings.Repeat("─", width-2) + "┘"))
+
+	return b.String()
+}
+
+func renderOnboardingFrameLine(content string, width int) string {
+	padding := max(width-lipgloss.Width(content), 0)
+	return styles.OnboardingBorderStyle.Render("│ ") + content + strings.Repeat(" ", padding) + styles.OnboardingBorderStyle.Render(" │")
 }
 
 // renderFieldValue renders the display value for a field.
 // For password fields, shows bullets; for others shows the actual value.
 func renderFieldValue(field onboardingField, value string) string {
 	if value == "" {
-		return styles.OnboardingFieldValueStyle.Render(field.placeholder)
+		return field.placeholder
 	}
 	if field.isPassword {
-		// Show bullets for password
-		return lipgloss.NewStyle().
-			Foreground(styles.PrimaryColor).
-			Render(strings.Repeat("•", min(len(value), 20)))
+		return strings.Repeat("•", min(len(value), 20))
 	}
-	return styles.OnboardingFieldValueStyle.Render(value)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	return value
 }

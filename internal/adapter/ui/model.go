@@ -166,6 +166,22 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}, nil
 }
 
+func (m *Model) initializeServices() error {
+	if m.appConfig == nil {
+		return fmt.Errorf("database configuration is required")
+	}
+
+	m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+	subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
+	permissionsRepo := boltdb.NewPermissionsRepository(m.boltAdapter)
+
+	m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
+	m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+	m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+
+	return nil
+}
+
 // ==========================================
 // init
 // ==========================================

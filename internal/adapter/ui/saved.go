@@ -1,12 +1,7 @@
 package ui
 
 import (
-	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
-	"OmniView/internal/service/permissions"
-	"OmniView/internal/service/subscribers"
-	"OmniView/internal/service/tracer"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -25,16 +20,15 @@ func (m *Model) updateSaved(msg tea.Msg) (*Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case "enter":
-			// Create services now that we have appConfig
-			m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
-			subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-			permissionsRepo := boltdb.NewPermissionsRepository(m.boltAdapter)
-
-			m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
-			m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
-			m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+			if err := m.initializeServices(); err != nil {
+				m.loading.err = err
+				m.loading.current = ""
+				m.screen = screenLoading
+				return m, nil
+			}
 
 			// Transition to loading screen
+			m.loading.err = nil
 			m.screen = screenLoading
 			return m, tea.Batch(
 				m.loading.spinner.Tick,

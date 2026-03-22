@@ -7,12 +7,8 @@ import (
 	"time"
 
 	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
-	"OmniView/internal/service/permissions"
-	"OmniView/internal/service/subscribers"
-	"OmniView/internal/service/tracer"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -48,17 +44,24 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 	case tickMsg:
 		if m.welcome.complete {
 			// Check if DB config exists in BoltDB to decide where to go next
-			settings, _ := m.checkDBConfig()
+			settings, err := m.checkDBConfig()
+			if err != nil {
+				m.loading.err = fmt.Errorf("failed to load saved database settings: %w", err)
+				m.loading.current = ""
+				m.screen = screenLoading
+				return m, nil
+			}
 			if settings != nil {
 				// Config exists — pre-warm services, then go to loading screen
 				m.appConfig = settings
-				m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
-				subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-				permissionsRepo := boltdb.NewPermissionsRepository(m.boltAdapter)
-				m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
-				m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
-				m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+				if err := m.initializeServices(); err != nil {
+					m.loading.err = fmt.Errorf("failed to initialize services: %w", err)
+					m.loading.current = ""
+					m.screen = screenLoading
+					return m, nil
+				}
 
+				m.loading.err = nil
 				m.screen = screenLoading
 				return m, tea.Batch(
 					m.loading.spinner.Tick,
@@ -111,9 +114,10 @@ func (m *Model) checkDBConfig() (*domain.DatabaseSettings, error) {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 	settings, err := settingsRepo.GetDefault(ctx)
 	if err != nil {
-		// Log the error so we can distinguish "no config" from "DB error"
-		fmt.Printf("[welcome] failed to load DB config from bolt: %v\n", err)
-		return nil, nil // no config found (or DB error — onboarding is safe fallback)
+		if err.Error() == "default database settings not found" {
+			return nil, nil
+		}
+		return nil, err
 	}
 	return settings, nil
 }

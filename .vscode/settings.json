@@ -21,6 +21,8 @@
     "sqldeveloper.plsqlDebugger.host": "127.0.0.1",
     "chat.tools.terminal.autoApprove": {
         "git checkout": true,
-        "git pull": true
+        "git pull": true,
+        "make": true,
+        "gofmt": true
     }
 }

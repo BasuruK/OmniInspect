@@ -67,10 +67,3 @@ type onboardingCompleteMsg struct {
 	config *domain.DatabaseSettings
 	err    error
 }
-
-// savedContinueMsg is sent when the user presses Enter on the saved confirmation screen.
-type savedContinueMsg struct{}
-
-// ==========================================
-// Main Screen messages
-// ==========================================

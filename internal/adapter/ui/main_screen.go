@@ -112,6 +112,11 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewMain renders the main log viewer screen.
 func (m *Model) viewMain() string {
+	bodyHeight := m.height - headerHeight
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+
 	// Header
 	header := styles.HeaderStyle.Render("OmniView — Real-time Traces")
 
@@ -125,14 +130,25 @@ func (m *Model) viewMain() string {
 	)
 
 	// Viewport
-	viewportView := m.main.viewport.View()
+	viewportView := lipgloss.NewStyle().
+		Width(m.width).
+		Height(bodyHeight).
+		Render(m.main.viewport.View())
 
 	// Assemble layout
-	return lipgloss.JoinVertical(
+	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		help,
 		viewportView,
+	)
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Left,
+		lipgloss.Top,
+		content,
 	)
 }
 

@@ -43,6 +43,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 			m.onboarding.submitted = false
 			return m, nil
 		}
+		m.onboarding.submitted = false
 		m.appConfig = msg.config
 		m.screen = screenSaved
 		return m, nil
@@ -52,6 +53,10 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 }
 
 func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
+	if m.onboarding.submitted && msg.String() != "ctrl+c" {
+		return m, nil
+	}
+
 	step := m.onboarding.step
 	value := m.onboarding.fieldValue(step)
 
@@ -88,6 +93,7 @@ func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 		// Last field — submit
+		m.onboarding.submitted = true
 		return m, saveOnboardingConfigCmd(m)
 
 	case "backspace":
@@ -156,7 +162,7 @@ func validateOnboardingField(step int, value string) string {
 // saveOnboardingConfigCmd saves the collected form data to BoltDB.
 func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 	host := m.onboarding.Host
-	portValue := m.onboarding.Port
+	portValue := strings.TrimSpace(m.onboarding.Port)
 	serviceName := m.onboarding.ServiceName
 	username := m.onboarding.Username
 	password := m.onboarding.Password

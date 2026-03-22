@@ -16,6 +16,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ==========================================
@@ -286,6 +287,13 @@ func (m *Model) View() tea.View {
 		content = m.viewOnboarding()
 	case screenSaved:
 		content = m.viewSaved()
+	}
+
+	if m.width > 0 && m.height > 0 {
+		content = lipgloss.NewStyle().
+			Width(m.width).
+			Height(m.height).
+			Render(content)
 	}
 
 	// Create the view with declarative terminal features

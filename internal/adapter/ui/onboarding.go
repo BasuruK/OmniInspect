@@ -4,7 +4,6 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -55,7 +54,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 
 func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 	step := m.onboarding.step
-	value := &m.onboarding.values[step]
+	value := m.onboarding.fieldValue(step)
 
 	switch msg.String() {
 	case "ctrl+c":
@@ -157,9 +156,19 @@ func validateOnboardingField(step int, value string) string {
 
 // saveOnboardingConfigCmd saves the collected form data to BoltDB.
 func saveOnboardingConfigCmd(m *Model) tea.Cmd {
+	host := m.onboarding.Host
+	portValue := m.onboarding.Port
+	serviceName := m.onboarding.ServiceName
+	username := m.onboarding.Username
+	password := m.onboarding.Password
+	ctx := m.ctx
+	boltAdapter := m.boltAdapter
+
 	return func() tea.Msg {
-		values := m.onboarding.values
-		port, _ := strconv.Atoi(values[1])
+		port, err := strconv.Atoi(portValue)
+		if err != nil {
+			return onboardingCompleteMsg{err: fmt.Errorf("invalid port: %w", err)}
+		}
 
 		dbPort, err := domain.NewPort(port)
 		if err != nil {
@@ -167,19 +176,18 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 		}
 
 		settings, err := domain.NewDatabaseSettings(
-			values[2], // serviceName
-			values[0], // host
+			serviceName,
+			host,
 			dbPort,
-			values[3], // username
-			values[4], // password
+			username,
+			password,
 		)
 		if err != nil {
 			return onboardingCompleteMsg{err: fmt.Errorf("failed to create database settings: %w", err)}
 		}
 		settings.SetAsDefault()
 
-		ctx := context.Background()
-		settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+		settingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 		if err := settingsRepo.Save(ctx, *settings); err != nil {
 			return onboardingCompleteMsg{err: fmt.Errorf("failed to save config: %w", err)}
 		}
@@ -202,7 +210,7 @@ func (m *Model) viewOnboarding() string {
 
 	for i, field := range onboardingFields {
 		isActive := i == m.onboarding.step
-		value := m.onboarding.values[i]
+		value := m.onboarding.fieldValueValue(i)
 		pointer := " "
 		labelStyle := styles.OnboardingFieldLabelStyle
 		valueStyle := styles.OnboardingFieldValueStyle
@@ -276,6 +284,27 @@ func renderOnboardingFrame(title string, width int, lines []string) string {
 func renderOnboardingFrameLine(content string, width int) string {
 	padding := max(width-lipgloss.Width(content), 0)
 	return styles.OnboardingBorderStyle.Render("│ ") + content + strings.Repeat(" ", padding) + styles.OnboardingBorderStyle.Render(" │")
+}
+
+func (state *onboardingState) fieldValue(step int) *string {
+	switch step {
+	case 0:
+		return &state.Host
+	case 1:
+		return &state.Port
+	case 2:
+		return &state.ServiceName
+	case 3:
+		return &state.Username
+	case 4:
+		return &state.Password
+	default:
+		panic(fmt.Sprintf("invalid onboarding step: %d", step))
+	}
+}
+
+func (state *onboardingState) fieldValueValue(step int) string {
+	return *state.fieldValue(step)
 }
 
 // renderFieldValue renders the display value for a field.

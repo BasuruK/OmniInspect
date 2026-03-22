@@ -21,13 +21,14 @@ var (
 	ErrInvalidTimestamp = errors.New("invalid timestamp")
 
 	// Database settings errors
-	ErrEmptyDatabase     = errors.New("database name cannot be empty")
-	ErrEmptyHost         = errors.New("host cannot be empty")
-	ErrInvalidPort       = errors.New("invalid port number")
-	ErrEmptyUsername     = errors.New("username cannot be empty")
-	ErrEmptyPassword     = errors.New("password cannot be empty")
-	ErrInvalidConnection = errors.New("invalid connection string")
-	ErrHostUnreachable   = errors.New("host is unreachable")
+	ErrEmptyDatabase           = errors.New("database name cannot be empty")
+	ErrEmptyHost               = errors.New("host cannot be empty")
+	ErrInvalidPort             = errors.New("invalid port number")
+	ErrEmptyUsername           = errors.New("username cannot be empty")
+	ErrEmptyPassword           = errors.New("password cannot be empty")
+	ErrInvalidConnection       = errors.New("invalid connection string")
+	ErrHostUnreachable         = errors.New("host is unreachable")
+	ErrDefaultSettingsNotFound = errors.New("default database settings not found")
 
 	// Permission errors
 	ErrPermissionDenied      = errors.New("permission denied")

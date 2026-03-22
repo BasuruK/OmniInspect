@@ -50,19 +50,23 @@ type loadingState struct {
 }
 
 type mainState struct {
-	messages         []*domain.QueueMessage // Log messages to display (bounded ring buffer, max 1000)
-	renderedContent  strings.Builder       // Incrementally built rendered content
-	viewport         viewport.Model         // Scrollable viewport for messages
-	autoScroll       bool                  // Whether to auto-scroll to the latest message
-	ready            bool                  // Whether the main screen is ready to display messages
+	messages        []*domain.QueueMessage // Log messages to display (bounded ring buffer, max 1000)
+	renderedContent strings.Builder        // Incrementally built rendered content
+	viewport        viewport.Model         // Scrollable viewport for messages
+	autoScroll      bool                   // Whether to auto-scroll to the latest message
+	ready           bool                   // Whether the main screen is ready to display messages
 }
 
 // onboardingState holds the state for the database configuration onboarding form.
 type onboardingState struct {
-	step      int    // 0=Host, 1=Port, 2=ServiceName, 3=Username, 4=Password
-	values    [5]string
-	errMsg    string
-	submitted bool
+	step        int // 0=Host, 1=Port, 2=ServiceName, 3=Username, 4=Password
+	Host        string
+	Port        string
+	ServiceName string
+	Username    string
+	Password    string
+	errMsg      string
+	submitted   bool
 }
 
 // savedState holds the state for the "configuration saved" confirmation screen.
@@ -80,11 +84,11 @@ type Model struct {
 	width  int    // Terminal width
 	height int    // Terminal height
 
-	welcome welcomeState
-	loading loadingState
-	main    mainState
+	welcome    welcomeState
+	loading    loadingState
+	main       mainState
 	onboarding onboardingState
-	saved    savedState
+	saved      savedState
 
 	// Cancellable contexts for all background operations
 	ctx    context.Context
@@ -168,16 +172,24 @@ func NewModel(opts ModelOpts) (*Model, error) {
 
 func (m *Model) initializeServices() error {
 	if m.appConfig == nil {
-		return fmt.Errorf("database configuration is required")
+		return fmt.Errorf("initializeServices: database configuration is required")
 	}
 
-	m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
-	subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-	permissionsRepo := boltdb.NewPermissionsRepository(m.boltAdapter)
+	if m.dbAdapter == nil {
+		m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+	}
 
-	m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
-	m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
-	m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+	if m.permissionService == nil {
+		permissionsRepo := boltdb.NewPermissionsRepository(m.boltAdapter)
+		m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
+	}
+	if m.tracerService == nil {
+		m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+	}
+	if m.subscriberService == nil {
+		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
+		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+	}
 
 	return nil
 }

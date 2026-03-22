@@ -10,7 +10,7 @@ import (
 
 var (
 	// Primary colors
-	PrimaryColor   = lipgloss.Color("127") // Teal green
+	PrimaryColor   = lipgloss.Color("127") // Purple/magenta
 	SecondaryColor = lipgloss.Color("99")  // Light purple
 	AccentColor    = lipgloss.Color("213") // Pink/magenta
 

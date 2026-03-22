@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -81,7 +82,7 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 
 		// Cumulative thresholds: each stage is relative to the end of the prior stage
-		versionThreshold  := logoEndFrame + versionDelay
+		versionThreshold := logoEndFrame + versionDelay
 		subtitleThreshold := versionThreshold + subtitleDelay
 		completeThreshold := subtitleThreshold + completeDelay
 
@@ -114,7 +115,7 @@ func (m *Model) checkDBConfig() (*domain.DatabaseSettings, error) {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 	settings, err := settingsRepo.GetDefault(ctx)
 	if err != nil {
-		if err.Error() == "default database settings not found" {
+		if errors.Is(err, domain.ErrDefaultSettingsNotFound) {
 			return nil, nil
 		}
 		return nil, err

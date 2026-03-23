@@ -219,10 +219,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel() // Cancel all background operations
 			return m, tea.Quit
 		case "q":
-			if m.screen == screenWelcome {
-				m.cancel() // Cancel all background operations
-				return m, tea.Quit
-			}
+			m.cancel() // Cancel all background operations
+			return m, tea.Quit
 		}
 
 	case tea.WindowSizeMsg:

@@ -10,7 +10,7 @@ import (
 
 var (
 	// Primary colors
-	PrimaryColor   = lipgloss.Color("86")  // Teal green
+	PrimaryColor   = lipgloss.Color("127") // Purple/magenta
 	SecondaryColor = lipgloss.Color("99")  // Light purple
 	AccentColor    = lipgloss.Color("213") // Pink/magenta
 
@@ -121,4 +121,58 @@ var (
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(SurfaceColor).
 			Padding(0, 1)
+)
+
+// ==========================================
+// Onboarding styles
+// ==========================================
+
+var (
+	OnboardingBorderStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	OnboardingPanelStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(SurfaceColor).
+				Padding(1, 2)
+
+	OnboardingTitleStyle = lipgloss.NewStyle().
+				Foreground(PrimaryColor).
+				Bold(true)
+
+	OnboardingFieldLabelStyle = lipgloss.NewStyle().
+					Foreground(TextColor).
+					Bold(true)
+
+	OnboardingActiveLabelStyle = lipgloss.NewStyle().
+					Foreground(PrimaryColor).
+					Bold(true)
+
+	OnboardingFieldValueStyle = lipgloss.NewStyle().
+					Foreground(MutedColor)
+
+	OnboardingActiveValueStyle = lipgloss.NewStyle().
+					Foreground(TextColor)
+
+	OnboardingActiveIndicatorStyle = lipgloss.NewStyle().
+					Foreground(PrimaryColor).
+					Bold(true)
+
+	OnboardingSeparatorStyle = lipgloss.NewStyle().
+					Foreground(MutedColor)
+
+	OnboardingFieldActiveStyle = lipgloss.NewStyle().
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(PrimaryColor).
+					Padding(0, 1)
+
+	OnboardingErrorStyle = lipgloss.NewStyle().
+				Foreground(FailureColor)
+
+	OnboardingHintStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	OnboardingSavedStyle = lipgloss.NewStyle().
+				Foreground(SuccessColor).
+				Bold(true)
 )

@@ -56,3 +56,14 @@ type loadingCompleteMsg struct{}
 type queueMessageMsg struct {
 	message *domain.QueueMessage
 }
+
+// ==========================================
+// Onboarding Screen messages
+// ==========================================
+
+// onboardingCompleteMsg is sent after the user submits the onboarding form
+// and the config has been saved to BoltDB.
+type onboardingCompleteMsg struct {
+	config *domain.DatabaseSettings
+	err    error
+}

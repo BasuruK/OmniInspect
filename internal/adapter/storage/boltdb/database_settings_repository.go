@@ -120,7 +120,7 @@ func (dsr *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.
 		// Get the default key
 		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
 		if defaultKey == nil {
-			return fmt.Errorf("default database settings not found")
+			return domain.ErrDefaultSettingsNotFound
 		}
 
 		data := b.Get(defaultKey)

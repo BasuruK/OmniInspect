@@ -1,11 +1,15 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
+	"OmniView/internal/core/domain"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -40,12 +44,34 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg.(type) {
 	case tickMsg:
 		if m.welcome.complete {
-			// Transition to loading screen after animation is complete
-			m.screen = screenLoading
-			return m, tea.Batch(
-				m.loading.spinner.Tick, // start spinner
-				connectDBCmd(m),
-			)
+			// Check if DB config exists in BoltDB to decide where to go next
+			settings, err := m.checkDBConfig()
+			if err != nil {
+				m.loading.err = fmt.Errorf("failed to load saved database settings: %w", err)
+				m.loading.current = ""
+				m.screen = screenLoading
+				return m, nil
+			}
+			if settings != nil {
+				// Config exists — pre-warm services, then go to loading screen
+				m.appConfig = settings
+				if err := m.initializeServices(); err != nil {
+					m.loading.err = fmt.Errorf("failed to initialize services: %w", err)
+					m.loading.current = ""
+					m.screen = screenLoading
+					return m, nil
+				}
+
+				m.loading.err = nil
+				m.screen = screenLoading
+				return m, tea.Batch(
+					m.loading.spinner.Tick,
+					connectDBCmd(m),
+				)
+			}
+			// No config — go to onboarding
+			m.screen = screenOnboarding
+			return m, nil
 		}
 
 		m.welcome.frame++
@@ -56,7 +82,7 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 
 		// Cumulative thresholds: each stage is relative to the end of the prior stage
-		versionThreshold  := logoEndFrame + versionDelay
+		versionThreshold := logoEndFrame + versionDelay
 		subtitleThreshold := versionThreshold + subtitleDelay
 		completeThreshold := subtitleThreshold + completeDelay
 
@@ -81,6 +107,20 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// checkDBConfig returns the database settings if a configuration exists in BoltDB.
+func (m *Model) checkDBConfig() (*domain.DatabaseSettings, error) {
+	ctx := context.Background()
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+	settings, err := settingsRepo.GetDefault(ctx)
+	if err != nil {
+		if errors.Is(err, domain.ErrDefaultSettingsNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return settings, nil
 }
 
 // viewWelcome renders the welcome screen based on the current animation state.

@@ -112,6 +112,8 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewMain renders the main log viewer screen.
 func (m *Model) viewMain() string {
+	bodyHeight := m.viewportHeight()
+
 	// Header
 	header := styles.HeaderStyle.Render("OmniView — Real-time Traces")
 
@@ -125,15 +127,20 @@ func (m *Model) viewMain() string {
 	)
 
 	// Viewport
-	viewportView := m.main.viewport.View()
+	viewportView := lipgloss.NewStyle().
+		Width(m.width).
+		Height(bodyHeight).
+		Render(m.main.viewport.View())
 
 	// Assemble layout
-	return lipgloss.JoinVertical(
+	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		help,
 		viewportView,
 	)
+
+	return content
 }
 
 // ==========================================
@@ -184,10 +191,7 @@ func formatLogLine(msg *domain.QueueMessage) string {
 // initViewport creates and configures the viewport for the main screen.
 // Called when we first receive terminal dimensions or transition to main screen.
 func (m *Model) initViewport() {
-	vpHeight := m.height - headerHeight
-	if vpHeight < 1 {
-		vpHeight = 1
-	}
+	vpHeight := m.viewportHeight()
 
 	m.main.viewport = viewport.New(
 		viewport.WithWidth(m.width),
@@ -195,4 +199,13 @@ func (m *Model) initViewport() {
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
+}
+
+// viewportHeight returns the available height for the viewport, accounting for header.
+func (m *Model) viewportHeight() int {
+	h := m.height - headerHeight
+	if h < 1 {
+		return 1
+	}
+	return h
 }

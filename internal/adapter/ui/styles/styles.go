@@ -175,4 +175,20 @@ var (
 	OnboardingSavedStyle = lipgloss.NewStyle().
 				Foreground(SuccessColor).
 				Bold(true)
+
+	// Database Manager pane styles
+	DBPaneBorderStyle         = lipgloss.NewStyle().Foreground(MutedColor)
+	DBListActiveStyle         = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true)
+	DBListSelectedStyle       = lipgloss.NewStyle().Foreground(PrimaryColor)
+	DBListNormalStyle         = lipgloss.NewStyle().Foreground(TextColor)
+	DBFormFieldActiveStyle    = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(PrimaryColor).
+		Padding(0, 1)
+	DBDialogStyle             = lipgloss.NewStyle().Foreground(FailureColor).Bold(true)
+	DBPaneTitleStyle          = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+	DBPaneHintStyle           = lipgloss.NewStyle().Foreground(MutedColor)
+	DBPaneActiveIndicatorStyle = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+	DBPaneButtonStyle         = lipgloss.NewStyle().Foreground(TextColor)
+	DBPaneButtonActiveStyle   = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
 )

@@ -40,6 +40,9 @@ type DatabaseSettingsRepository interface {
 	// GetDefault retrieves the default database settings
 	GetDefault(ctx context.Context) (*domain.DatabaseSettings, error)
 
+	// GetAll retrieves all stored database settings
+	GetAll(ctx context.Context) ([]domain.DatabaseSettings, error)
+
 	// Delete removes database settings by ID
 	Delete(ctx context.Context, id string) error
 }

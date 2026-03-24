@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -38,12 +39,18 @@ func (p Port) Int() int { return int(p) }
 
 // Entity: Represents database connection settings
 type DatabaseSettings struct {
+	id        string
 	database  string
 	host      string
 	port      Port
 	username  string
 	password  string
 	isDefault bool
+}
+
+// makeSettingsID constructs a stable unique ID from username and database name.
+func makeSettingsID(username, database string) string {
+	return "cfg:" + url.PathEscape(username) + ":" + url.PathEscape(database)
 }
 
 // NewDatabaseSettings creates new database settings with validation
@@ -79,6 +86,7 @@ func NewDatabaseSettings(database string, host string, port Port, username strin
 	}
 
 	return &DatabaseSettings{
+		id:        makeSettingsID(username, database),
 		database:  database,
 		host:      host,
 		port:      port,
@@ -92,6 +100,7 @@ func NewDatabaseSettings(database string, host string, port Port, username strin
 // Getters (Read-Only Accessors)
 // ==========================================
 
+func (dbs *DatabaseSettings) ID() string       { return dbs.id }
 func (dbs *DatabaseSettings) Database() string { return dbs.database }
 func (dbs *DatabaseSettings) Host() string     { return dbs.host }
 func (dbs *DatabaseSettings) Port() Port       { return dbs.port }
@@ -167,6 +176,7 @@ func (dbs *DatabaseSettings) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	cfg.isDefault = dbSettingJson.IsDefault
+	cfg.id = makeSettingsID(dbSettingJson.Username, dbSettingJson.Database)
 	*dbs = *cfg
 
 	return nil

@@ -137,6 +137,41 @@ func (dsr *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.
 	return settings, nil
 }
 
+// GetAll retrieves all stored database settings
+func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.DatabaseSettings, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return nil, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var results []domain.DatabaseSettings
+	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		return b.ForEach(func(k, v []byte) error {
+			key := string(k)
+			if key == DefaultDatabaseConfigKey {
+				return nil // skip the default pointer key
+			}
+			var settings domain.DatabaseSettings
+			if err := json.Unmarshal(v, &settings); err != nil {
+				return nil // skip malformed entries
+			}
+			results = append(results, settings)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // Delete removes database settings by ID
 func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) error {
 	// Check for context cancellation before proceeding

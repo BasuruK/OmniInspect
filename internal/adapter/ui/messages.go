@@ -67,3 +67,30 @@ type onboardingCompleteMsg struct {
 	config *domain.DatabaseSettings
 	err    error
 }
+
+// ==========================================
+// Database Manager Screen messages
+// ==========================================
+
+// openDatabaseManagerMsg signals the user pressed 'd' to open the DB manager.
+type openDatabaseManagerMsg struct{}
+
+// dbManagerCompleteMsg is returned after a DB switch attempt finishes.
+type dbManagerCompleteMsg struct {
+	config *domain.DatabaseSettings
+	err    error
+}
+
+// dbValidationResultMsg is returned after testing a new DB connection.
+type dbValidationResultMsg struct {
+	settings *domain.DatabaseSettings
+	err      error
+}
+
+// dialogDismissedMsg is sent when the user closes a dialog.
+type dialogDismissedMsg struct{}
+
+// dbSwitchResultMsg is returned after attempting to switch the active DB.
+type dbSwitchResultMsg struct {
+	err error
+}

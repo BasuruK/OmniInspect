@@ -24,11 +24,12 @@ import (
 // ==========================================
 
 const (
-	screenWelcome    = "welcome"
-	screenLoading    = "loading"
-	screenMain       = "main"
-	screenOnboarding = "onboarding"
-	screenSaved      = "saved"
+	screenWelcome          = "welcome"
+	screenLoading          = "loading"
+	screenMain             = "main"
+	screenOnboarding       = "onboarding"
+	screenSaved            = "saved"
+	screenDatabaseManager  = "databaseManager"
 )
 
 // ==========================================
@@ -74,6 +75,21 @@ type onboardingState struct {
 type savedState struct {
 }
 
+// databaseManagerState holds the state for the multi-database management screen.
+type databaseManagerState struct {
+	focus        string // "list" or "form"
+	databases    []domain.DatabaseSettings
+	selectedIndex int
+	activeID     string // ID of the currently connected database
+	step         int    // form field: 0=Host, 1=Port, 2=Service, 3=Username, 4=Password
+	host, port, serviceName, username, password string
+	formErr      string
+	submitted    bool
+	dialogMsg    string
+	showDialog   bool
+	dialogType   string // "error"
+}
+
 // ==========================================
 // Model
 // ==========================================
@@ -84,11 +100,12 @@ type Model struct {
 	width  int    // Terminal width
 	height int    // Terminal height
 
-	welcome    welcomeState
-	loading    loadingState
-	main       mainState
-	onboarding onboardingState
-	saved      savedState
+	welcome          welcomeState
+	loading          loadingState
+	main             mainState
+	onboarding       onboardingState
+	saved            savedState
+	databaseManager  databaseManagerState
 
 	// Cancellable contexts for all background operations
 	ctx    context.Context
@@ -257,6 +274,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateOnboarding(msg)
 	case screenSaved:
 		return m.updateSaved(msg)
+	case screenDatabaseManager:
+		return m.updateDatabaseManager(msg)
 	}
 
 	return m, nil
@@ -285,6 +304,8 @@ func (m *Model) View() tea.View {
 		content = m.viewOnboarding()
 	case screenSaved:
 		content = m.viewSaved()
+	case screenDatabaseManager:
+		content = m.viewDatabaseManager()
 	}
 
 	if m.width > 0 && m.height > 0 {

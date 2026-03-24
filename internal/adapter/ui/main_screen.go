@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
@@ -97,6 +98,29 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				m.main.viewport.GotoBottom()
 			}
 			return m, nil
+		case "d":
+			// Open database manager
+			m.databaseManager.focus = "list"
+			m.databaseManager.selectedIndex = 0
+			m.databaseManager.showDialog = false
+			m.databaseManager.formErr = ""
+			m.databaseManager.host = ""
+			m.databaseManager.port = ""
+			m.databaseManager.serviceName = ""
+			m.databaseManager.username = ""
+			m.databaseManager.password = ""
+			m.databaseManager.step = 0
+			m.databaseManager.submitted = false
+			m.databaseManager.activeID = m.appConfig.ID()
+			settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+			databases, err := settingsRepo.GetAll(m.ctx)
+			if err != nil {
+				m.databaseManager.databases = nil
+			} else {
+				m.databaseManager.databases = databases
+			}
+			m.screen = screenDatabaseManager
+			return m, nil
 		}
 	}
 
@@ -123,7 +147,7 @@ func (m *Model) viewMain() string {
 		autoScrollIndicator = "on"
 	}
 	help := styles.HelpStyle.Render(
-		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • q quit", autoScrollIndicator),
+		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • d databases • q quit", autoScrollIndicator),
 	)
 
 	// Viewport

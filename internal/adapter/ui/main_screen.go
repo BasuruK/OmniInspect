@@ -222,6 +222,12 @@ func wrapText(text string, limit int) []string {
 	var lines []string
 	currentLine := []rune(words[0])
 
+	// Hard-wrap if the first word exceeds the limit
+	for len(currentLine) > limit {
+		lines = append(lines, string(currentLine[:limit]))
+		currentLine = currentLine[limit:]
+	}
+
 	for _, word := range words[1:] {
 		wordRunes := []rune(word)
 		if len(currentLine)+1+len(wordRunes) <= limit {

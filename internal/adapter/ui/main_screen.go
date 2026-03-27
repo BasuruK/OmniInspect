@@ -65,15 +65,11 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if len(m.main.messages) >= maxMessages {
 			m.main.messages = m.main.messages[1:]
 			// Buffer exceeded — rebuild rendered content from trimmed slice
-			m.main.renderedContent.Reset()
-			for _, msg := range m.main.messages {
-				m.main.renderedContent.WriteString(formatLogLine(msg))
-				m.main.renderedContent.WriteString("\n")
-			}
+			m.rebuildRenderedContent()
 		}
 		m.main.messages = append(m.main.messages, msg.message)
 		// Incrementally append the new message to rendered content
-		m.main.renderedContent.WriteString(formatLogLine(msg.message))
+		m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
 		m.main.renderedContent.WriteString("\n")
 		m.main.viewport.SetContent(m.main.renderedContent.String())
 		if m.main.autoScroll {
@@ -112,8 +108,6 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewMain renders the main log viewer screen.
 func (m *Model) viewMain() string {
-	bodyHeight := m.viewportHeight()
-
 	// Header
 	header := styles.HeaderStyle.Render("OmniView — Real-time Traces")
 
@@ -123,14 +117,11 @@ func (m *Model) viewMain() string {
 		autoScrollIndicator = "on"
 	}
 	help := styles.HelpStyle.Render(
-		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • q quit", autoScrollIndicator),
+		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • [q] quit", autoScrollIndicator),
 	)
 
-	// Viewport
-	viewportView := lipgloss.NewStyle().
-		Width(m.width).
-		Height(bodyHeight).
-		Render(m.main.viewport.View())
+	// Viewport (SoftWrap handles line breaking at configured width)
+	viewportView := m.main.viewport.View()
 
 	// Assemble layout
 	content := lipgloss.JoinVertical(
@@ -158,9 +149,13 @@ func (m *Model) renderLogContent() string {
 	return m.main.renderedContent.String()
 }
 
-// formatLogLine applies color styling based on log level.
-func formatLogLine(msg *domain.QueueMessage) string {
+// formatLogLine applies color styling based on log level and wraps the payload
+// column to fit within the terminal width. Continuation lines are indented to
+// align with the start of the payload column.
+func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
+	processName := sanitizeLogString(msg.ProcessName())
+	payload := sanitizeLogString(msg.Payload())
 
 	// Choose color based on log level
 	var levelStyle lipgloss.Style
@@ -179,13 +174,79 @@ func formatLogLine(msg *domain.QueueMessage) string {
 		levelStyle = lipgloss.NewStyle().Foreground(styles.MutedColor)
 	}
 
-	return fmt.Sprintf(
-		"%s %s %s %s",
-		lipgloss.NewStyle().Foreground(styles.MutedColor).Render(timestamp),
-		levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel())),
-		lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(sanitizeLogString(msg.ProcessName())),
-		sanitizeLogString(msg.Payload()),
-	)
+	// Build styled prefix parts
+	styledTimestamp := lipgloss.NewStyle().Foreground(styles.MutedColor).Render(timestamp)
+	styledLevel := levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel()))
+	styledProcess := lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(processName)
+
+	// Calculate prefix display width: "timestamp [level   ] processName "
+	// 19 + 1 + 10 + 1 + len(processName) + 1
+	prefixWidth := 19 + 1 + 10 + 1 + len(processName) + 1
+
+	// Available width for the payload column
+	availWidth := m.width - prefixWidth
+	if availWidth < 20 {
+		availWidth = 20
+	}
+
+	// Wrap payload to fit within the available column width
+	payloadLines := wrapText(payload, availWidth)
+
+	// First line: full prefix + first payload segment
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%s %s %s %s", styledTimestamp, styledLevel, styledProcess, payloadLines[0]))
+
+	// Continuation lines: indented to align with payload column
+	indent := strings.Repeat(" ", prefixWidth)
+	for _, line := range payloadLines[1:] {
+		b.WriteString("\n")
+		b.WriteString(indent)
+		b.WriteString(line)
+	}
+	return b.String()
+}
+
+// wrapText splits text into lines that fit within the given width limit.
+// Breaks at word boundaries when possible, hard-wraps when a single word exceeds the limit.
+func wrapText(text string, limit int) []string {
+	if limit <= 0 || len(text) <= limit {
+		return []string{text}
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{text}
+	}
+
+	var lines []string
+	currentLine := words[0]
+
+	for _, word := range words[1:] {
+		if len(currentLine)+1+len(word) <= limit {
+			currentLine += " " + word
+		} else {
+			lines = append(lines, currentLine)
+			currentLine = word
+		}
+		// Hard-wrap if a single token exceeds the limit
+		for len(currentLine) > limit {
+			lines = append(lines, currentLine[:limit])
+			currentLine = currentLine[limit:]
+		}
+	}
+	lines = append(lines, currentLine)
+	return lines
+}
+
+// rebuildRenderedContent re-wraps all messages at the current terminal width.
+// Called when the terminal is resized.
+func (m *Model) rebuildRenderedContent() {
+	m.main.renderedContent.Reset()
+	for _, msg := range m.main.messages {
+		m.main.renderedContent.WriteString(m.formatLogLine(msg))
+		m.main.renderedContent.WriteString("\n")
+	}
+	m.main.viewport.SetContent(m.main.renderedContent.String())
 }
 
 // initViewport creates and configures the viewport for the main screen.

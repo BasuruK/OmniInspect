@@ -248,8 +248,13 @@ func wrapText(text string, limit int) []string {
 }
 
 // rebuildRenderedContent re-wraps all messages at the current terminal width.
-// Called when the terminal is resized.
+// Called when the terminal is resized or the viewport is first initialized.
+// When there are no messages the call is a no-op so the empty-state placeholder
+// already shown in the viewport is preserved.
 func (m *Model) rebuildRenderedContent() {
+	if len(m.main.messages) == 0 {
+		return
+	}
 	m.main.renderedContent.Reset()
 	for _, msg := range m.main.messages {
 		m.main.renderedContent.WriteString(m.formatLogLine(msg))
@@ -269,6 +274,11 @@ func (m *Model) initViewport() {
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
+
+	// Rebuild rendered content with real viewport width in case messages were
+	// buffered before the viewport was initialized (formatted with the fallback
+	// column width). No-op when there are no messages.
+	m.rebuildRenderedContent()
 }
 
 // viewportHeight returns the available height for the viewport, accounting for header.

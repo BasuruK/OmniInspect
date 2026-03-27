@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -35,10 +36,10 @@ func sanitizeLogString(s string) string {
 	// Replace control characters with visible placeholders
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
-			return '·' // dot placeholder for control chars
+			return '?' // ASCII placeholder for control chars
 		}
 		if r == 0x7F { // DEL
-			return '·'
+			return '?' // ASCII placeholder for DEL
 		}
 		return r
 	}, s)
@@ -207,9 +208,9 @@ func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 }
 
 // wrapText splits text into lines that fit within the given width limit.
-// Breaks at word boundaries when possible, hard-wraps when a single word exceeds the limit.
+// Breaks at word boundaries when possible, hard-wraps at rune boundaries when a single word exceeds the limit.
 func wrapText(text string, limit int) []string {
-	if limit <= 0 || len(text) <= limit {
+	if limit <= 0 || utf8.RuneCountInString(text) <= limit {
 		return []string{text}
 	}
 
@@ -219,22 +220,24 @@ func wrapText(text string, limit int) []string {
 	}
 
 	var lines []string
-	currentLine := words[0]
+	currentLine := []rune(words[0])
 
 	for _, word := range words[1:] {
-		if len(currentLine)+1+len(word) <= limit {
-			currentLine += " " + word
+		wordRunes := []rune(word)
+		if len(currentLine)+1+len(wordRunes) <= limit {
+			currentLine = append(currentLine, ' ')
+			currentLine = append(currentLine, wordRunes...)
 		} else {
-			lines = append(lines, currentLine)
-			currentLine = word
+			lines = append(lines, string(currentLine))
+			currentLine = wordRunes
 		}
 		// Hard-wrap if a single token exceeds the limit
 		for len(currentLine) > limit {
-			lines = append(lines, currentLine[:limit])
+			lines = append(lines, string(currentLine[:limit]))
 			currentLine = currentLine[limit:]
 		}
 	}
-	lines = append(lines, currentLine)
+	lines = append(lines, string(currentLine))
 	return lines
 }
 

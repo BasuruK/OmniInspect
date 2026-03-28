@@ -259,6 +259,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
 			m.main.viewport.SetWidth(viewportWidth)
 			m.main.viewport.SetHeight(viewportHeight)
+			// Re-wrap all messages at the new terminal width
+			m.rebuildRenderedContent()
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)

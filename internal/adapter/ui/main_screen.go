@@ -7,6 +7,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -33,10 +34,10 @@ func sanitizeLogString(s string) string {
 	// Replace control characters with visible placeholders
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
-			return '·' // dot placeholder for control chars
+			return '?' // ASCII placeholder for control chars
 		}
 		if r == 0x7F { // DEL
-			return '·'
+			return '?' // ASCII placeholder for DEL
 		}
 		return r
 	}, s)
@@ -68,15 +69,11 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if len(m.main.messages) >= maxMessages {
 			m.main.messages = m.main.messages[1:]
 			// Buffer exceeded — rebuild rendered content from trimmed slice
-			m.main.renderedContent.Reset()
-			for _, msg := range m.main.messages {
-				m.main.renderedContent.WriteString(formatLogLine(msg))
-				m.main.renderedContent.WriteString("\n")
-			}
+			m.rebuildRenderedContent()
 		}
 		m.main.messages = append(m.main.messages, msg.message)
 		// Incrementally append the new message to rendered content
-		m.main.renderedContent.WriteString(formatLogLine(msg.message))
+		m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
 		m.main.renderedContent.WriteString("\n")
 		m.main.viewport.SetContent(m.main.renderedContent.String())
 		if m.main.autoScroll {
@@ -220,9 +217,13 @@ func (m *Model) renderLogContent() string {
 	return m.main.renderedContent.String()
 }
 
-// formatLogLine applies color styling based on log level.
-func formatLogLine(msg *domain.QueueMessage) string {
+// formatLogLine applies color styling based on log level and wraps the payload
+// column to fit within the terminal width. Continuation lines are indented to
+// align with the start of the payload column.
+func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
+	processName := sanitizeLogString(msg.ProcessName())
+	payload := sanitizeLogString(msg.Payload())
 
 	// Choose color based on log level
 	var levelStyle lipgloss.Style
@@ -261,6 +262,11 @@ func (m *Model) initViewport() {
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
+
+	// Rebuild rendered content with real viewport width in case messages were
+	// buffered before the viewport was initialized (formatted with the fallback
+	// column width). No-op when there are no messages.
+	m.rebuildRenderedContent()
 }
 
 func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {

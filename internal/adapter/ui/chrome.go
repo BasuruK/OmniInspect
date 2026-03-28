@@ -1,0 +1,261 @@
+package ui
+
+import (
+	"OmniView/internal/adapter/ui/styles"
+	"strings"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// ==========================================
+// Shared Screen Layout
+// ==========================================
+
+func screenContentSize(termWidth, termHeight int) (int, int) {
+	horizontalFrame, verticalFrame := styles.ScreenStyle.GetFrameSize()
+	contentWidth := max(termWidth-horizontalFrame, 20)
+	contentHeight := max(termHeight-verticalFrame, 8)
+	return contentWidth, contentHeight
+}
+
+func renderScreen(width, height int, sections ...string) string {
+	contentWidth, contentHeight := screenContentSize(width, height)
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+
+	return styles.ScreenStyle.
+		Width(contentWidth).
+		Height(contentHeight).
+		Render(content)
+}
+
+func placeCentered(width, height int, content string) string {
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func renderCenteredOverlay(base, overlay string, width, height int) string {
+	x := max((width-lipgloss.Width(overlay))/2, 0)
+	y := max((height-lipgloss.Height(overlay))/2, 0)
+	overlayWidth := lipgloss.Width(overlay)
+	overlayHeight := lipgloss.Height(overlay)
+
+	baseLines := strings.Split(lipgloss.Place(width, height, lipgloss.Left, lipgloss.Top, base), "\n")
+	overlayLines := strings.Split(overlay, "\n")
+
+	for row := 0; row < overlayHeight && y+row < len(baseLines); row++ {
+		baseLine := lipgloss.NewStyle().Width(width).Render(baseLines[y+row])
+		overlayLine := lipgloss.NewStyle().Width(overlayWidth).Render(overlayLines[row])
+		left := ansi.Cut(baseLine, 0, x)
+		right := ansi.Cut(baseLine, min(x+overlayWidth, width), width)
+		baseLines[y+row] = left + overlayLine + right
+	}
+
+	return strings.Join(baseLines, "\n")
+}
+
+func renderScreenHeader(width int, title, subtitle, meta string) string {
+	left := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.HeaderTitleStyle.Render(title),
+		styles.HeaderSubtitleStyle.Render(subtitle),
+	)
+
+	if strings.TrimSpace(meta) == "" {
+		return lipgloss.NewStyle().Width(width).Render(left)
+	}
+
+	right := lipgloss.NewStyle().
+		Foreground(styles.SecondaryColor).
+		Bold(true).
+		Align(lipgloss.Right).
+		Render(meta)
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		lipgloss.NewStyle().Width(max(width-lipgloss.Width(right)-1, 1)).Render(left),
+		right,
+	)
+}
+
+func renderInfoBar(width int, text string) string {
+	return applyTotalWidth(styles.InfoBarStyle, width).Render(text)
+}
+
+func renderFooterBar(width int, text string) string {
+	return applyTotalWidth(styles.FooterStyle, width).Render(text)
+}
+
+func renderPanel(title string, width int, body string) string {
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.SectionTitleStyle.Render(title),
+		"",
+		body,
+	)
+
+	return applyTotalWidth(styles.PrimaryPanelStyle, width).Render(content)
+}
+
+func renderFramedPanel(title string, width int, blocks ...string) string {
+	innerWidth := max(width-4, 1)
+	titleText := " " + title + " "
+	topFill := max(width-lipgloss.Width(titleText)-3, 0)
+
+	var lines []string
+	for _, block := range blocks {
+		for _, line := range strings.Split(block, "\n") {
+			wrapped := lipgloss.NewStyle().Width(innerWidth).Render(line)
+			lines = append(lines, strings.Split(wrapped, "\n")...)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(styles.FieldBorderStyle.Render("╭─"))
+	b.WriteString(styles.SectionTitleStyle.Render(titleText))
+	b.WriteString(styles.FieldBorderStyle.Render(strings.Repeat("─", topFill) + "╮"))
+	b.WriteString("\n")
+
+	for _, line := range lines {
+		padding := max(innerWidth-lipgloss.Width(line), 0)
+		b.WriteString(styles.FieldBorderStyle.Render("│ "))
+		b.WriteString(line)
+		b.WriteString(strings.Repeat(" ", padding))
+		b.WriteString(styles.FieldBorderStyle.Render(" │"))
+		b.WriteString("\n")
+	}
+
+	b.WriteString(styles.FieldBorderStyle.Render("╰" + strings.Repeat("─", width-2) + "╯"))
+	return b.String()
+}
+
+func applyTotalWidth(style lipgloss.Style, totalWidth int) lipgloss.Style {
+	horizontalFrame, _ := style.GetFrameSize()
+	return style.Width(max(totalWidth-horizontalFrame, 1))
+}
+
+func applyTotalSize(style lipgloss.Style, totalWidth, totalHeight int) lipgloss.Style {
+	horizontalFrame, verticalFrame := style.GetFrameSize()
+	return style.
+		Width(max(totalWidth-horizontalFrame, 1)).
+		Height(max(totalHeight-verticalFrame, 1))
+}
+
+// ==========================================
+// Embedded Label Fields
+// ==========================================
+
+type embeddedFieldOptions struct {
+	Label       string
+	Value       string
+	Width       int
+	Focused     bool
+	Required    bool
+	BorderColor string
+	FooterText  string
+}
+
+func renderEmbeddedField(opts embeddedFieldOptions) string {
+	width := max(opts.Width, lipgloss.Width(opts.Label)+8)
+	innerWidth := max(width-4, 1)
+
+	borderStyle := styles.FieldBorderStyle
+	labelStyle := styles.OnboardingFieldLabelStyle
+	if opts.Required {
+		borderStyle = styles.FieldRequiredBorderStyle
+		labelStyle = styles.OnboardingRequiredLabelStyle
+	}
+	if opts.Focused {
+		borderStyle = styles.FieldFocusedBorderStyle
+		labelStyle = styles.OnboardingActiveLabelStyle
+	}
+	if opts.BorderColor != "" {
+		borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(opts.BorderColor))
+	}
+
+	label := labelStyle.Render(opts.Label)
+	if opts.Required {
+		label += " " + styles.OnboardingRequiredLabelStyle.Render("(*)")
+	}
+
+	var b strings.Builder
+	b.WriteString(borderStyle.Render("╭─ "))
+	b.WriteString(label)
+	b.WriteString(borderStyle.Render(" "))
+	b.WriteString(borderStyle.Render(strings.Repeat("─", max(width-lipgloss.Width(label)-5, 0))))
+	b.WriteString(borderStyle.Render("╮"))
+	b.WriteString("\n")
+	valueBlock := lipgloss.NewStyle().Width(innerWidth).Render(opts.Value)
+	for _, line := range strings.Split(valueBlock, "\n") {
+		padding := max(innerWidth-lipgloss.Width(line), 0)
+		b.WriteString(borderStyle.Render("│ "))
+		b.WriteString(line)
+		b.WriteString(strings.Repeat(" ", padding))
+		b.WriteString(borderStyle.Render(" │"))
+		b.WriteString("\n")
+	}
+	b.WriteString(borderStyle.Render("╰"))
+	b.WriteString(borderStyle.Render(strings.Repeat("─", width-2)))
+	b.WriteString(borderStyle.Render("╯"))
+
+	if strings.TrimSpace(opts.FooterText) != "" {
+		b.WriteString("\n")
+		footerWidth := max(width, lipgloss.Width(opts.FooterText))
+		b.WriteString(styles.FieldFooterStyle.Width(footerWidth).Align(lipgloss.Right).Render(opts.FooterText))
+	}
+
+	return b.String()
+}
+
+// ==========================================
+// Buttons
+// ==========================================
+
+type buttonVariant int
+
+const (
+	buttonVariantPrimary buttonVariant = iota
+	buttonVariantSecondary
+)
+
+func actionButtonTotalWidth(style lipgloss.Style, label string, minimumWidth int) int {
+	horizontalFrame, _ := style.GetFrameSize()
+	return max(minimumWidth, lipgloss.Width(label)+horizontalFrame+2)
+}
+
+func renderActionButton(label string, width int, focused bool, variant buttonVariant) string {
+	style := styles.PrimaryButtonStyle
+	if variant == buttonVariantSecondary {
+		style = styles.DestructiveButtonStyle
+	}
+
+	if focused {
+		focusBackground := styles.PrimaryButtonFocusColor
+		if variant == buttonVariantSecondary {
+			focusBackground = styles.SecondaryButtonFocusColor
+		}
+		style = style.
+			Background(focusBackground).
+			Inherit(styles.FocusedButtonStyle)
+	}
+
+	totalWidth := actionButtonTotalWidth(style, label, width)
+	return applyTotalWidth(style, totalWidth).Render(label)
+}
+
+func renderCenteredActionButtons(totalWidth int, primaryLabel string, primaryFocused bool, secondaryLabel string, secondaryFocused bool) string {
+	primaryStyle := styles.PrimaryButtonStyle
+	secondaryStyle := styles.DestructiveButtonStyle
+	buttonWidth := max(
+		actionButtonTotalWidth(primaryStyle, primaryLabel, 20),
+		actionButtonTotalWidth(secondaryStyle, secondaryLabel, 20),
+	)
+
+	row := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		renderActionButton(primaryLabel, buttonWidth, primaryFocused, buttonVariantPrimary),
+		"  ",
+		renderActionButton(secondaryLabel, buttonWidth, secondaryFocused, buttonVariantSecondary),
+	)
+
+	return lipgloss.PlaceHorizontal(totalWidth, lipgloss.Left, row)
+}

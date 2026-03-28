@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -16,9 +16,6 @@ import (
 // ==========================================
 // Constants
 // ==========================================
-
-// headerHeight is the number of terminal lines reserved for header + help.
-const headerHeight = 4
 
 // maxMessages is the maximum number of messages to retain in the ring buffer.
 // Oldest messages are dropped when capacity is reached.
@@ -59,6 +56,11 @@ func sanitizeLogString(s string) string {
 // updateMain handles messages when screen == "main".
 func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case dbValidationResultMsg, dbSwitchResultMsg:
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
+		return m, nil
 
 	// New log message from event listener
 	case queueMessageMsg:
@@ -90,6 +92,9 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// Keyboard input
 	case tea.KeyPressMsg:
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
 		switch msg.String() {
 		case "a":
 			// Toggle auto-scroll
@@ -99,27 +104,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "d":
-			// Open database manager
-			m.databaseManager.focus = "list"
-			m.databaseManager.selectedIndex = 0
-			m.databaseManager.showDialog = false
-			m.databaseManager.formErr = ""
-			m.databaseManager.host = ""
-			m.databaseManager.port = ""
-			m.databaseManager.serviceName = ""
-			m.databaseManager.username = ""
-			m.databaseManager.password = ""
-			m.databaseManager.step = 0
-			m.databaseManager.submitted = false
-			m.databaseManager.activeID = m.appConfig.ID()
-			settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
-			databases, err := settingsRepo.GetAll(m.ctx)
-			if err != nil {
-				m.databaseManager.databases = nil
-			} else {
-				m.databaseManager.databases = databases
+			// Open database settings
+			activeID := ""
+			if m.appConfig != nil {
+				activeID = m.appConfig.ID()
 			}
-			m.screen = screenDatabaseManager
+			databases, err := m.dbSettingsRepo.GetAll(m.ctx)
+			if err != nil {
+				log.Printf("[UI] Failed to load database settings: %v", err)
+				databases = []domain.DatabaseSettings{}
+			}
+			m.initDatabaseSettings(databases, activeID)
 			return m, nil
 		}
 	}
@@ -134,37 +129,80 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 // Main View
 // ==========================================
 
+// mainLayoutParts holds the computed layout pieces for the main screen.
+type mainLayoutParts struct {
+	header         string
+	statusBar      string
+	footer         string
+	panelHeight    int
+	panelWidth     int
+	viewportWidth  int
+	viewportHeight int
+}
+
+// computeMainLayout computes all layout pieces for the main screen.
+// Centralizes the height calculations and layout logic in one place.
+func (m *Model) computeMainLayout() mainLayoutParts {
+	contentWidth, contentHeight := screenContentSize(m.width, m.height)
+	header := renderScreenHeader(
+		contentWidth,
+		"OmniView Trace Console",
+		m.mainSubtitle(),
+		m.mainConnectionMeta(),
+	)
+	statusBar := renderInfoBar(contentWidth, m.mainStatusText())
+	footer := renderFooterBar(contentWidth, m.mainFooterText())
+
+	panelHeight := max(
+		contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
+		minPanelHeight,
+	)
+	panelWidth, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
+
+	return mainLayoutParts{
+		header:         header,
+		statusBar:      statusBar,
+		footer:         footer,
+		panelHeight:    panelHeight,
+		panelWidth:     panelWidth,
+		viewportWidth:  viewportWidth,
+		viewportHeight: viewportHeight,
+	}
+}
+
+// ==========================================
+// Main View
+// ==========================================
+
 // viewMain renders the main log viewer screen.
 func (m *Model) viewMain() string {
-	bodyHeight := m.viewportHeight()
+	layout := m.computeMainLayout()
 
-	// Header
-	header := styles.HeaderStyle.Render("OmniView — Real-time Traces")
-
-	// Help bar
-	autoScrollIndicator := "off"
-	if m.main.autoScroll {
-		autoScrollIndicator = "on"
-	}
-	help := styles.HelpStyle.Render(
-		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • d databases • q quit", autoScrollIndicator),
-	)
-
-	// Viewport
-	viewportView := lipgloss.NewStyle().
-		Width(m.width).
-		Height(bodyHeight).
+	viewportView := styles.ViewportStyle.
+		Width(layout.viewportWidth).
+		Height(layout.viewportHeight).
 		Render(m.main.viewport.View())
 
-	// Assemble layout
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		help,
-		viewportView,
-	)
+	logPanel := applyTotalSize(styles.PrimaryPanelStyle, layout.panelWidth, layout.panelHeight).
+		Render(lipgloss.JoinVertical(
+			lipgloss.Left,
+			styles.SectionTitleStyle.Render("Live Trace Feed"),
+			styles.SubtitleStyle.Render("Awaiting Trace Messages..."),
+			"",
+			viewportView,
+		))
 
-	return content
+	return renderScreen(
+		m.width,
+		m.height,
+		layout.header,
+		"",
+		layout.statusBar,
+		"",
+		logPanel,
+		"",
+		layout.footer,
+	)
 }
 
 // ==========================================
@@ -176,7 +214,7 @@ func (m *Model) viewMain() string {
 // rebuilding only when the buffer is empty.
 func (m *Model) renderLogContent() string {
 	if len(m.main.messages) == 0 {
-		return styles.SubtitleStyle.Render("  Waiting for trace events...")
+		return styles.EmptyStateStyle.Render("Waiting for trace events from Oracle AQ...")
 	}
 	// Return incrementally built content to avoid O(n²) rebuild on every message
 	return m.main.renderedContent.String()
@@ -190,24 +228,24 @@ func formatLogLine(msg *domain.QueueMessage) string {
 	var levelStyle lipgloss.Style
 	switch msg.LogLevel() {
 	case domain.LogLevelDebug:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.DebugColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.DebugColor)
 	case domain.LogLevelInfo:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.InfoColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.InfoColor)
 	case domain.LogLevelWarning:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.WarningColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.WarningColor)
 	case domain.LogLevelError:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.ErrorColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.ErrorColor)
 	case domain.LogLevelCritical:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.CriticalColor).Bold(true)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.CriticalColor)
 	default:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.MutedColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.MutedColor)
 	}
 
 	return fmt.Sprintf(
 		"%s %s %s %s",
-		lipgloss.NewStyle().Foreground(styles.MutedColor).Render(timestamp),
+		styles.LogTimestampStyle.Render(timestamp),
 		levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel())),
-		lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(sanitizeLogString(msg.ProcessName())),
+		styles.LogProcessStyle.Render(sanitizeLogString(msg.ProcessName())),
 		sanitizeLogString(msg.Payload()),
 	)
 }
@@ -215,21 +253,71 @@ func formatLogLine(msg *domain.QueueMessage) string {
 // initViewport creates and configures the viewport for the main screen.
 // Called when we first receive terminal dimensions or transition to main screen.
 func (m *Model) initViewport() {
-	vpHeight := m.viewportHeight()
+	layout := m.computeMainLayout()
 
 	m.main.viewport = viewport.New(
-		viewport.WithWidth(m.width),
-		viewport.WithHeight(vpHeight),
+		viewport.WithWidth(layout.viewportWidth),
+		viewport.WithHeight(layout.viewportHeight),
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
 }
 
-// viewportHeight returns the available height for the viewport, accounting for header.
-func (m *Model) viewportHeight() int {
-	h := m.height - headerHeight
-	if h < 1 {
-		return 1
+func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {
+	panelWidth := max(contentWidth, 20)
+	panelHorizontalFrame, panelVerticalFrame := styles.PrimaryPanelStyle.GetFrameSize()
+	panelTextHeight := lipgloss.Height(styles.SectionTitleStyle.Render("Live Trace Feed")) +
+		lipgloss.Height(styles.SubtitleStyle.Render("Awaiting Trace Messages...")) +
+		1
+
+	viewportWidth := max(panelWidth-panelHorizontalFrame, 10)
+	viewportHeight := max(panelHeight-panelVerticalFrame-panelTextHeight, 1)
+
+	return panelWidth, viewportWidth, viewportHeight
+}
+
+func (m *Model) mainSubtitle() string {
+	if m.appConfig == nil {
+		return "Live Oracle trace viewer"
 	}
-	return h
+
+	return fmt.Sprintf(
+		"%s@%s • %s:%d",
+		m.appConfig.Username(),
+		m.appConfig.Database(),
+		m.appConfig.Host(),
+		m.appConfig.Port().Int(),
+	)
+}
+
+// mainConnectionMeta returns a string with connection details for the status bar. TODO: Add connection health details here in the future.
+func (m *Model) mainConnectionMeta() string {
+	return ""
+}
+
+func (m *Model) mainStatusText() string {
+	autoScroll := styles.WarningColor
+	autoScrollText := "manual"
+	if m.main.autoScroll {
+		autoScroll = styles.SuccessColor
+		autoScrollText = "on"
+	}
+
+	subscriberName := "pending"
+	if m.subscriber != nil {
+		subscriberName = truncate(m.subscriber.Name(), 20)
+	}
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		styles.BodyTextStyle.Render("Sub "+subscriberName),
+		styles.SubtitleStyle.Render("  •  "),
+		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll "+autoScrollText),
+		styles.SubtitleStyle.Render("  •  "),
+		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
+	)
+}
+
+func (m *Model) mainFooterText() string {
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  D Database Settings  •  Q Quit"
 }

@@ -3,7 +3,6 @@ package ui
 import (
 	"OmniView/internal/adapter/ui/styles"
 	"fmt"
-	"strings"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -92,43 +91,34 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewLoading renders the loading screen with spinner and step progress.
 func (m *Model) viewLoading() string {
-	var b strings.Builder
-
-	// Title
-	b.WriteString(styles.LoadingTitleStyle.Render("⚙ Initializing OmniView"))
-	b.WriteString("\n\n")
-
-	// Completed steps (green checkmarks)
-	for _, step := range m.loading.steps {
-		b.WriteString(styles.LoadingStepStyle.Render(step))
-		b.WriteString("\n")
+	panelWidth := max(min(m.width-8, 72), 44)
+	lines := []string{
+		styles.LoadingTitleStyle.Render("Initializing OmniView"),
+		styles.SubtitleStyle.Render("Preparing the Oracle trace session and live event pipeline."),
+		"",
 	}
 
-	// Error state
+	for _, step := range m.loading.steps {
+		lines = append(lines, styles.LoadingStepStyle.Render(step))
+	}
+
 	if m.loading.err != nil {
-		b.WriteString("\n")
-		b.WriteString(styles.LoadingErrorStyle.Render("✗ " + m.loading.err.Error()))
-		b.WriteString("\n\n")
-		b.WriteString(styles.SubtitleStyle.Render("Press q to exit"))
-		return lipgloss.Place(
-			m.width, m.height,
-			lipgloss.Center, lipgloss.Center,
-			b.String(),
+		lines = append(
+			lines,
+			"",
+			styles.LoadingErrorStyle.Render("Startup blocked"),
+			styles.SubtitleStyle.Width(panelWidth-4).Render(m.loading.err.Error()),
+			"",
+			styles.SubtitleStyle.Render("Press q to exit."),
+		)
+	} else if m.loading.current != "" {
+		lines = append(
+			lines,
+			"",
+			styles.LoadingCurrentStyle.Render(m.loading.spinner.View()+" "+m.loading.current),
 		)
 	}
 
-	// Current step with spinner
-	if m.loading.current != "" {
-		spinnerView := m.loading.spinner.View()
-		b.WriteString(styles.LoadingCurrentStyle.Render(
-			spinnerView + " " + m.loading.current,
-		))
-		b.WriteString("\n")
-	}
-
-	return lipgloss.Place(
-		m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		b.String(),
-	)
+	panel := renderPanel("Startup Status", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return placeCentered(m.width, m.height, panel)
 }

@@ -21,6 +21,7 @@ var (
 	ErrInvalidTimestamp = errors.New("invalid timestamp")
 
 	// Database settings errors
+	ErrEmptyDatabaseID         = errors.New("database ID cannot be empty")
 	ErrEmptyDatabase           = errors.New("database name cannot be empty")
 	ErrEmptyHost               = errors.New("host cannot be empty")
 	ErrInvalidPort             = errors.New("invalid port number")

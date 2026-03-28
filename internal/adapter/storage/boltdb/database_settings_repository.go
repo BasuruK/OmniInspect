@@ -4,11 +4,14 @@ import (
 	"OmniView/internal/core/domain"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net/url"
+	"log"
 
 	bolt "go.etcd.io/bbolt"
 )
+
+var ErrAdapterNotInitialized = errors.New("boltAdapter not initialized")
 
 // DatabaseSettingsRepository implements ports.DatabaseSettingsRepository
 type DatabaseSettingsRepository struct {
@@ -30,7 +33,7 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
+		return ErrAdapterNotInitialized
 	}
 
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
@@ -44,7 +47,7 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 			return fmt.Errorf("failed to marshal database settings: %w", err)
 		}
 
-		key := makeDatabaseSettingsKey(settings.Username(), settings.Database())
+		key := settings.ID()
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save database settings: %w", err)
 		}
@@ -75,7 +78,7 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
+		return nil, ErrAdapterNotInitialized
 	}
 
 	var settings *domain.DatabaseSettings
@@ -107,7 +110,7 @@ func (dsr *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
+		return nil, ErrAdapterNotInitialized
 	}
 
 	var settings *domain.DatabaseSettings
@@ -143,7 +146,7 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 		return nil, err
 	}
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
+		return nil, ErrAdapterNotInitialized
 	}
 
 	var results []domain.DatabaseSettings
@@ -160,6 +163,7 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 			}
 			var settings domain.DatabaseSettings
 			if err := json.Unmarshal(v, &settings); err != nil {
+				log.Printf("[DatabaseSettings] Warning: failed to unmarshal database settings entry with key %q: %v", key, err)
 				return nil // skip malformed entries
 			}
 			results = append(results, settings)
@@ -180,7 +184,7 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
+		return ErrAdapterNotInitialized
 	}
 
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
@@ -202,9 +206,4 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 		}
 		return nil
 	})
-}
-
-// makeDatabaseSettingsKey constructs a unique key for database settings based on username and database name
-func makeDatabaseSettingsKey(username, database string) string {
-	return "cfg:" + url.PathEscape(username) + ":" + url.PathEscape(database)
 }

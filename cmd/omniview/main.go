@@ -41,10 +41,13 @@ func main() {
 	// ── Phase 3: Start TUI ───────────────────────
 	// BoltDB is already initialized; TUI handles config loading via onboarding screen
 
+	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
+
 	model, err := ui.NewModel(ui.ModelOpts{
-		App:               omniApp,
-		BoltAdapter:       boltAdapter,
-		EventChannel:      eventCh,
+		App:            omniApp,
+		BoltAdapter:    boltAdapter,
+		DBSettingsRepo: dbSettingsRepo,
+		EventChannel:   eventCh,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

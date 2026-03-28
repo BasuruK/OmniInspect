@@ -62,6 +62,12 @@ func (cl *ConfigLoader) LoadClientConfigurations() (*domain.DatabaseSettings, er
 func (cl *ConfigLoader) GetDatabaseDetailsFromUser() (*domain.DatabaseSettings, error) {
 	var err error
 
+	// Database ID
+	databaseID, err := cl.promptUserRequired("Database ID (display label)")
+	if err != nil {
+		return nil, err
+	}
+
 	// Host
 	host, err := cl.promptUserRequired("Database Host (e.g., localhost)")
 	if err != nil {
@@ -101,7 +107,7 @@ func (cl *ConfigLoader) GetDatabaseDetailsFromUser() (*domain.DatabaseSettings, 
 	}
 
 	// Use domain factory to create DatabaseSettings
-	config, err := domain.NewDatabaseSettings(database, host, dbPort, username, password)
+	config, err := domain.NewDatabaseSettings(databaseID, database, host, dbPort, username, password)
 	if err != nil {
 		return nil, err
 	}

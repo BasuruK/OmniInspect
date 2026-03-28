@@ -125,35 +125,35 @@ func (m *Model) checkDBConfig() (*domain.DatabaseSettings, error) {
 
 // viewWelcome renders the welcome screen based on the current animation state.
 func (m *Model) viewWelcome() string {
-	var b strings.Builder
+	var logo strings.Builder
 
 	// Render logo
 	for i := 0; i < m.welcome.logoRevealed && i < len(logoLines); i++ {
 		if i > 0 {
-			b.WriteString("\n")
+			logo.WriteString("\n")
 		}
-		b.WriteString(styles.LogoStyle.Render(logoLines[i]))
+		logo.WriteString(styles.LogoStyle.Render(logoLines[i]))
 	}
 
-	// Version text
+	lines := []string{logo.String()}
+
 	if m.welcome.showVersion {
-		b.WriteString("\n\n")
-		versionText := fmt.Sprintf("Version: %s", m.app.GetVersion())
-		b.WriteString(styles.VersionStyle.Render(versionText))
+		versionText := fmt.Sprintf("Version %s", m.app.GetVersion())
+		lines = append(lines, "", styles.VersionStyle.Render(versionText))
 	}
 
-	// Subtitle
 	if m.welcome.showSubtitle {
-		b.WriteString("\n")
-		subtitleText := fmt.Sprintf("Created with ❤️ by %s", m.app.GetAuthor())
-		b.WriteString(styles.LogoSubtleStyle.Render("\n" + subtitleText))
+		lines = append(
+			lines,
+			styles.LogoSubtleStyle.Render("Real-time Oracle AQ trace console"),
+			styles.VersionStyle.Render("Author "+m.app.GetAuthor()),
+		)
 	}
 
-	// Center in terminal
-	content := b.String()
-	return lipgloss.Place(
-		m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		content,
-	)
+	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	content = lipgloss.NewStyle().
+		Align(lipgloss.Center).
+		Render(content)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }

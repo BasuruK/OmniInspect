@@ -6,6 +6,7 @@ import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/service/tracer"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -256,6 +257,7 @@ func (m *Model) reloadDatabaseList() {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 	databases, err := settingsRepo.GetAll(m.ctx)
 	if err != nil {
+		log.Printf("[UI] Failed to reload database settings: %v", err)
 		m.dbSettings.databases = nil
 	} else {
 		m.dbSettings.databases = databases

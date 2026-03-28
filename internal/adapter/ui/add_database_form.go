@@ -198,11 +198,8 @@ func (f AddDatabaseForm) Update(msg tea.KeyPressMsg) (AddDatabaseForm, tea.Cmd) 
 
 	// Character input — only when a field is focused
 	if f.cursor < formFieldCount && len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModCtrl) {
-		r := []rune(msg.Text)
-		if len(r) == 1 && r[0] >= 0x20 && r[0] < 0x7F {
-			f.fields[f.cursor].Value += msg.Text
-			f.errMsg = ""
-		}
+		f.fields[f.cursor].Value += msg.Text
+		f.errMsg = ""
 	}
 
 	return f, nil

@@ -7,7 +7,6 @@ import (
 	"log"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -69,12 +68,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if len(m.main.messages) >= maxMessages {
 			m.main.messages = m.main.messages[1:]
 			// Buffer exceeded — rebuild rendered content from trimmed slice
-			m.rebuildRenderedContent()
+			m.main.renderedContent.Reset()
+			for _, queuedMsg := range m.main.messages {
+				m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+				m.main.renderedContent.WriteString("\n")
+			}
+		} else {
+			// Incrementally append the new message to rendered content
+			m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
+			m.main.renderedContent.WriteString("\n")
 		}
 		m.main.messages = append(m.main.messages, msg.message)
-		// Incrementally append the new message to rendered content
-		m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
-		m.main.renderedContent.WriteString("\n")
 		m.main.viewport.SetContent(m.main.renderedContent.String())
 		if m.main.autoScroll {
 			m.main.viewport.GotoBottom()
@@ -222,8 +226,6 @@ func (m *Model) renderLogContent() string {
 // align with the start of the payload column.
 func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
-	processName := sanitizeLogString(msg.ProcessName())
-	payload := sanitizeLogString(msg.Payload())
 
 	// Choose color based on log level
 	var levelStyle lipgloss.Style
@@ -266,7 +268,14 @@ func (m *Model) initViewport() {
 	// Rebuild rendered content with real viewport width in case messages were
 	// buffered before the viewport was initialized (formatted with the fallback
 	// column width). No-op when there are no messages.
-	m.rebuildRenderedContent()
+	if len(m.main.messages) > 0 {
+		m.main.renderedContent.Reset()
+		for _, queuedMsg := range m.main.messages {
+			m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+			m.main.renderedContent.WriteString("\n")
+		}
+		m.main.viewport.SetContent(m.main.renderedContent.String())
+	}
 }
 
 func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {

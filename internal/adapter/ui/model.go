@@ -260,7 +260,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.main.viewport.SetWidth(viewportWidth)
 			m.main.viewport.SetHeight(viewportHeight)
 			// Re-wrap all messages at the new terminal width
-			m.rebuildRenderedContent()
+			if len(m.main.messages) > 0 {
+				m.main.renderedContent.Reset()
+				for _, queuedMsg := range m.main.messages {
+					m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+					m.main.renderedContent.WriteString("\n")
+				}
+				m.main.viewport.SetContent(m.main.renderedContent.String())
+			}
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)

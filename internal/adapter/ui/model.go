@@ -235,6 +235,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.main.viewport.SetWidth(m.width)
 			m.main.viewport.SetHeight(viewportHeight)
+			// Re-wrap all messages at the new terminal width
+			m.rebuildRenderedContent()
 		}
 
 		// Initialize viewport on first size message if we are on the main screen

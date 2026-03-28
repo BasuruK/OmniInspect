@@ -261,6 +261,9 @@ func (m *Model) rebuildRenderedContent() {
 		m.main.renderedContent.WriteString("\n")
 	}
 	m.main.viewport.SetContent(m.main.renderedContent.String())
+	if m.main.autoScroll {
+		m.main.viewport.GotoBottom()
+	}
 }
 
 // initViewport creates and configures the viewport for the main screen.

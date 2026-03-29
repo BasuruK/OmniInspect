@@ -54,7 +54,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 				m.update.prompting = false
 				m.update.applying = true
 				m.update.stage = "Starting update..."
-				return m, applyUpdateCmd(m, m.update.info)
+				return m, tea.Batch(applyUpdateCmd(m, m.update.info), waitForUpdateEventCmd(m.ctx, m.updateEventChannel))
 			case "n", "N", "escape":
 				// User declined update — proceed to database connection
 				m.update.prompting = false
@@ -80,7 +80,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	// Update progress
 	case updateProgressMsg:
 		m.update.stage = msg.stage
-		return m, nil
+		return m, waitForUpdateEventCmd(m.ctx, m.updateEventChannel)
 
 	// Update complete — defensive fallback if updater doesn't exit
 	case updateCompleteMsg:

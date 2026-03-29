@@ -61,6 +61,24 @@ func waitForEventCmd(ctx context.Context, ch <-chan *domain.QueueMessage) tea.Cm
 	}
 }
 
+// waitForUpdateEventCmd waits for one message from the update event channel.
+// After Update() processes the message, it must re-issue this command
+// to receive the next message. This keeps the progress loop alive.
+// It unblocks immediately if the context is cancelled or the channel is closed.
+func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return updateCompleteMsg{}
+			}
+			return msg
+		case <-ctx.Done():
+			return updateCompleteMsg{}
+		}
+	}
+}
+
 // ==========================================
 // Updater Commands
 // ==========================================

@@ -160,12 +160,16 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	if opts.DBSettingsRepo == nil {
 		errs = append(errs, "DBSettingsRepo is required")
 	}
-	if opts.EventChannel == nil {
-		errs = append(errs, "EventChannel is required")
+
+	// Determine channel values — use injected channels if provided, otherwise create default buffered channels
+	eventChannel := opts.EventChannel
+	if eventChannel == nil {
+		eventChannel = make(chan *domain.QueueMessage, 16)
 	}
 
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("missing required dependencies: %s", strings.Join(errs, ", "))
+	updateEventChannel := opts.UpdateEventChannel
+	if updateEventChannel == nil {
+		updateEventChannel = make(chan tea.Msg, 16)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,8 +193,8 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		subscriberService:  opts.SubscriberService,
 		updaterService:     opts.UpdaterService,
 		appConfig:          opts.AppConfig,
-		eventChannel:       opts.EventChannel,
-		updateEventChannel: make(chan tea.Msg, 16),
+		eventChannel:       eventChannel,
+		updateEventChannel: updateEventChannel,
 		loading: loadingState{
 			spinner: s,
 		},

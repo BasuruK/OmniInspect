@@ -48,6 +48,7 @@ type UpdateInfo struct {
 	ReleaseNotes   string
 	DownloadURL    string
 	PublishedAt    string
+	Assets         []releaseAsset
 }
 
 // CheckForUpdate checks the latest GitHub release and returns update information.
@@ -93,6 +94,7 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateInfo, er
 		ReleaseNotes:   release.Body,
 		DownloadURL:    downloadURL,
 		PublishedAt:    release.PublishedAt,
+		Assets:         release.Assets,
 	}, nil
 }
 

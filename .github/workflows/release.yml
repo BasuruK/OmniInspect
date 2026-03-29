@@ -93,9 +93,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download Oracle Instant Client (macOS arm64) - Basic only
+      - name: Download Oracle Instant Client (macOS arm64) - Basic + SDK for build
         run: |
           curl -L -o instantclient-basic.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-basic-macos.arm64-23.3.0.23.09.dmg
+          curl -L -o instantclient-sdk.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-sdk-macos.arm64-23.3.0.23.09.dmg
 
           # Clean up any previous installation (in case of re-run)
           sudo rm -rf /opt/oracle
@@ -106,6 +107,12 @@ jobs:
           # Files are directly at root of DMG, copy everything
           sudo cp -R /Volumes/instantclient-basic/* /opt/oracle/instantclient_23_7/
           hdiutil detach /Volumes/instantclient-basic
+
+          # Mount and extract SDK (needed for building ODPI-C, headers like oci.h)
+          hdiutil attach instantclient-sdk.dmg -mountpoint /Volumes/instantclient-sdk
+          sudo mkdir -p /opt/oracle/instantclient_23_7/sdk
+          sudo cp -R /Volumes/instantclient-sdk/* /opt/oracle/instantclient_23_7/sdk/
+          hdiutil detach /Volumes/instantclient-sdk
 
       - name: Run install_ic.sh to make Instant Client relocatable
         run: |
@@ -141,17 +148,9 @@ jobs:
           mkdir -p release/instantclient_23_7
           cp omniview release/
           cp third_party/odpi/lib/libodpi.dylib release/third_party/odpi/lib/
-          # Copy only essential Oracle Instant Client dylibs (after install_ic.sh makes them relocatable)
-          for lib in libclntsh.dylib libnnz23.dylib libociei.dylib libons.dylib \
-                     libssl.dylib libcrypto.dylib libnss3.dylib; do
-            if [ -f /opt/oracle/instantclient_23_7/$lib ]; then
-              cp /opt/oracle/instantclient_23_7/$lib release/instantclient_23_7/
-            fi
-          done
-          # Also copy any dependent dylibs that might be in subdirectories
-          find /opt/oracle/instantclient_23_7 -name '*.dylib' -type f | while read lib; do
-            cp "$lib" release/instantclient_23_7/
-          done
+          # Copy all Oracle Instant Client dylibs (install_ic.sh makes them relocatable)
+          # Note: SDK is not copied - it's only needed for building ODPI-C, not at runtime
+          find /opt/oracle/instantclient_23_7 -name '*.dylib' -type f -exec cp {} release/instantclient_23_7/ \;
           # Fix libodpi.dylib to reference Oracle dylibs at @executable_path/instantclient_23_7/
           # This is needed because libodpi.dylib is built with @rpath/libclntsh references
           install_name_tool -change @rpath/libclntsh.dylib @executable_path/instantclient_23_7/libclntsh.dylib release/third_party/odpi/lib/libodpi.dylib || true

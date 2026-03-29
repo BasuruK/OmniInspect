@@ -58,9 +58,6 @@
       <a href="#ui-structure">UI Structure</a>
       <ul>
         <li><a href="#screen-flow">Screen Flow</a></li>
-        <li><a href="#screens">Screens</a></li>
-        <li><a href="#ui-components">UI Components</a></li>
-        <li><a href="#navigation">Navigation</a></li>
       </ul>
     </li>
     <li>

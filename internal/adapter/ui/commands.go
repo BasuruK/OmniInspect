@@ -2,7 +2,10 @@ package ui
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/updater"
 	"context"
+	"errors"
+	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -57,5 +60,66 @@ func waitForEventCmd(ctx context.Context, ch <-chan *domain.QueueMessage) tea.Cm
 		case <-ctx.Done():
 			return eventChannelClosedMsg{}
 		}
+	}
+}
+
+// waitForUpdateEventCmd waits for one message from the update event channel.
+// After Update() processes the message, it must re-issue this command
+// to receive the next message. This keeps the progress loop alive.
+// It unblocks immediately if the context is cancelled or the channel is closed.
+func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return updateCompleteMsg{}
+			}
+			return msg
+		case <-ctx.Done():
+			return updateCompleteMsg{}
+		}
+	}
+}
+
+// ==========================================
+// Updater Commands
+// ==========================================
+
+// checkForUpdateCmd checks for available updates and returns the result.
+func checkForUpdateCmd(m *Model) tea.Cmd {
+	return func() tea.Msg {
+		if m.updaterService == nil {
+			return updateCheckResultMsg{info: nil, err: errors.New("updater service not available")}
+		}
+		info, err := m.updaterService.CheckForUpdate(m.ctx)
+		if err != nil {
+			return updateCheckResultMsg{info: nil, err: fmt.Errorf("checkForUpdate: %w", err)}
+		}
+		return updateCheckResultMsg{info: info, err: nil}
+	}
+}
+
+// applyUpdateCmd downloads and applies the update, reporting progress via updateProgressMsg.
+// Progress updates are sent through the updateEventChannel which must be processed by the Update loop.
+func applyUpdateCmd(m *Model, info *updater.UpdateInfo) tea.Cmd {
+	return func() tea.Msg {
+		// DownloadAndApply blocks and calls progressFn at each stage.
+		// We send progress messages through the channel for the Update loop to process.
+		err := m.updaterService.ApplyUpdate(m.ctx, info, func(stage string) {
+			if m.updateEventChannel != nil {
+				select {
+				case m.updateEventChannel <- updateProgressMsg{stage: stage}:
+					// sent successfully
+				default:
+					// channel full, drop the message
+				case <-m.ctx.Done():
+					// context cancelled, stop
+				}
+			}
+		})
+		if err != nil {
+			return updateErrorMsg{err: fmt.Errorf("applyUpdate: %w", err)}
+		}
+		return updateCompleteMsg{}
 	}
 }

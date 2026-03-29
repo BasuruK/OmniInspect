@@ -66,7 +66,7 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 				m.screen = screenLoading
 				return m, tea.Batch(
 					m.loading.spinner.Tick,
-					connectDBCmd(m),
+					checkForUpdateCmd(m),
 				)
 			}
 			// No config — go to onboarding

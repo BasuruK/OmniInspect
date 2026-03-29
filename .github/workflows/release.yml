@@ -93,7 +93,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download Oracle Instant Client (macOS arm64)
+      - name: Download Oracle Instant Client (macOS arm64) - Basic + SDK for build
         run: |
           curl -L -o instantclient-basic.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-basic-macos.arm64-23.3.0.23.09.dmg
           curl -L -o instantclient-sdk.dmg https://download.oracle.com/otn_software/mac/instantclient/233023/instantclient-sdk-macos.arm64-23.3.0.23.09.dmg
@@ -108,11 +108,18 @@ jobs:
           sudo cp -R /Volumes/instantclient-basic/* /opt/oracle/instantclient_23_7/
           hdiutil detach /Volumes/instantclient-basic
 
-          # Mount and extract SDK
+          # Mount and extract SDK (needed for building ODPI-C, headers like oci.h)
           hdiutil attach instantclient-sdk.dmg -mountpoint /Volumes/instantclient-sdk
           sudo mkdir -p /opt/oracle/instantclient_23_7/sdk
           sudo cp -R /Volumes/instantclient-sdk/* /opt/oracle/instantclient_23_7/sdk/
           hdiutil detach /Volumes/instantclient-sdk
+
+      - name: Run install_ic.sh to make Instant Client relocatable
+        run: |
+          cd /opt/oracle/instantclient_23_7
+          sudo chmod +x install_ic.sh
+          sudo ./install_ic.sh
+        shell: bash
 
       - name: Download and setup ODPI-C
         run: python scripts/setup_odpi.py
@@ -135,13 +142,19 @@ jobs:
           CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -L/opt/oracle/instantclient_23_7 -lclntsh -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/third_party/odpi/lib -Wl,-rpath,@executable_path/instantclient_23_7
           INSTANT_CLIENT_DIR: /opt/oracle/instantclient_23_7
 
-      - name: Package release archive
+      - name: Package release archive (minimal - only required dylibs)
         run: |
           mkdir -p release/third_party/odpi/lib
           mkdir -p release/instantclient_23_7
           cp omniview release/
           cp third_party/odpi/lib/libodpi.dylib release/third_party/odpi/lib/
-          cp -R /opt/oracle/instantclient_23_7/. release/instantclient_23_7/
+          # Copy all Oracle Instant Client dylibs (install_ic.sh makes them relocatable)
+          # Note: SDK is not copied - it's only needed for building ODPI-C, not at runtime
+          find /opt/oracle/instantclient_23_7 -name '*.dylib' -type f -exec cp {} release/instantclient_23_7/ \;
+          # Fix libodpi.dylib to reference Oracle dylibs at @executable_path/instantclient_23_7/
+          # This is needed because libodpi.dylib is built with @rpath/libclntsh references
+          install_name_tool -change @rpath/libclntsh.dylib @executable_path/instantclient_23_7/libclntsh.dylib release/third_party/odpi/lib/libodpi.dylib || true
+          install_name_tool -change @rpath/libclntsh.dylib.23.1 @executable_path/instantclient_23_7/libclntsh.dylib.23.1 release/third_party/odpi/lib/libodpi.dylib || true
           tar -czf omniview-darwin-arm64-${{ github.ref_name }}.tar.gz -C release .
         shell: bash
 

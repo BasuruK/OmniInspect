@@ -35,4 +35,8 @@ var (
 	ErrPermissionDenied      = errors.New("permission denied")
 	ErrMissingPermissions    = errors.New("missing required permissions")
 	ErrPermissionCheckFailed = errors.New("permission check failed")
+
+	// Updater errors
+	ErrNoMatchingReleaseAsset = errors.New("no matching release asset")
+	ErrNoUpdateInfo           = errors.New("no update info provided")
 )

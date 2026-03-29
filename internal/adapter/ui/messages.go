@@ -67,3 +67,18 @@ type onboardingCompleteMsg struct {
 	config *domain.DatabaseSettings
 	err    error
 }
+
+// ==========================================
+// Database Settings Screen messages
+// ==========================================
+
+// dbValidationResultMsg is returned after testing a new DB connection.
+type dbValidationResultMsg struct {
+	settings *domain.DatabaseSettings
+	err      error
+}
+
+// dbSwitchResultMsg is returned after attempting to switch the active DB.
+type dbSwitchResultMsg struct {
+	err error
+}

@@ -5,37 +5,92 @@ import (
 )
 
 // ==========================================
-// Color palette based on OmniView branding
+// Core Color Tokens
 // ==========================================
 
 var (
-	// Primary colors
-	PrimaryColor   = lipgloss.Color("127") // Purple/magenta
-	SecondaryColor = lipgloss.Color("99")  // Light purple
-	AccentColor    = lipgloss.Color("213") // Pink/magenta
-
-	// Background colors
-	BackgroundColor = lipgloss.Color("0")   // Black
-	SurfaceColor    = lipgloss.Color("235") // Dark gray
-
-	// Text colors
-	TextColor  = lipgloss.Color("255") // White
-	MutedColor = lipgloss.Color("244") // Gray
-
-	// Log level colors
-	DebugColor    = lipgloss.Color("244") // Gray
-	InfoColor     = lipgloss.Color("86")  // Teal (matches primary)
-	WarningColor  = lipgloss.Color("214") // Orange
-	ErrorColor    = lipgloss.Color("196") // Red
-	CriticalColor = lipgloss.Color("199") // Hot pink
-
-	// Status colors
-	SuccessColor = lipgloss.Color("82")  // Green
-	FailureColor = lipgloss.Color("196") // Red
+	TextColor                 = lipgloss.Color("#E6EDF3")
+	MutedColor                = lipgloss.Color("#9FB3C8")
+	PrimaryColor              = lipgloss.Color("#00BFFF")
+	SecondaryColor            = lipgloss.Color("#4FD1C5")
+	AccentColor               = lipgloss.Color("#38BDF8")
+	SelectionColor            = lipgloss.Color("#95C798")
+	ConnectionBorderColor     = lipgloss.Color("#F0C802")
+	BackgroundColor           = lipgloss.Color("#0B1118")
+	SurfaceBackgroundColor    = lipgloss.Color("#0F1720")
+	SurfaceColor              = lipgloss.Color("#2A3A4A")
+	FocusColor                = lipgloss.Color("#38BDF8")
+	SuccessColor              = lipgloss.Color("#006E05")
+	WarningColor              = lipgloss.Color("#F59E0B")
+	ErrorColor                = lipgloss.Color("#B50000")
+	FailureColor              = ErrorColor
+	DebugColor                = lipgloss.Color("#7D93AA")
+	InfoColor                 = SecondaryColor
+	CriticalColor             = lipgloss.Color("#FF8A8A")
+	PrimaryButtonFocusColor   = lipgloss.Color("#0A8A11")
+	SecondaryButtonFocusColor = lipgloss.Color("#CC1414")
 )
 
 // ==========================================
-// Brand Styles
+// Screen Chrome
+// ==========================================
+
+var (
+	AppStyle = lipgloss.NewStyle().
+			Foreground(TextColor)
+
+	ScreenStyle = lipgloss.NewStyle().
+			Foreground(TextColor).
+			Padding(1, 2)
+
+	PrimaryPanelStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(SurfaceColor).
+				Padding(1, 2)
+
+	FocusedPanelStyle = PrimaryPanelStyle.
+				BorderForeground(FocusColor)
+
+	HeaderTitleStyle = lipgloss.NewStyle().
+				Foreground(TextColor).
+				Bold(true)
+
+	HeaderMetaStyle = lipgloss.NewStyle().
+			Foreground(SecondaryColor).
+			Bold(true)
+
+	HeaderSubtitleStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	InfoBarStyle = lipgloss.NewStyle().
+			Foreground(MutedColor).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(SurfaceColor).
+			Padding(0, 1)
+
+	FooterStyle = lipgloss.NewStyle().
+			Foreground(MutedColor).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(SurfaceColor).
+			Padding(0, 1)
+
+	SectionTitleStyle = lipgloss.NewStyle().
+				Foreground(SecondaryColor).
+				Bold(true)
+
+	BodyTextStyle = lipgloss.NewStyle().
+			Foreground(TextColor)
+
+	SubtitleStyle = lipgloss.NewStyle().
+			Foreground(MutedColor)
+
+	EmptyStateStyle = lipgloss.NewStyle().
+			Foreground(MutedColor).
+			Italic(true)
+)
+
+// ==========================================
+// Welcome And Loading Styles
 // ==========================================
 
 var (
@@ -47,56 +102,21 @@ var (
 			Foreground(SecondaryColor)
 
 	VersionStyle = lipgloss.NewStyle().
-			Foreground(MutedColor).
-			Italic(true)
-
-	TitleStyle = lipgloss.NewStyle().
-			Foreground(TextColor).
-			Bold(true).
-			Underline(true)
-
-	SubtitleStyle = lipgloss.NewStyle().
 			Foreground(MutedColor)
 
 	LoadingStyle = lipgloss.NewStyle().
 			Foreground(SecondaryColor)
 
-	ProgressBarStyle = lipgloss.NewStyle().
-				Foreground(PrimaryColor)
-
-	ProgressBarEmptyStyle = lipgloss.NewStyle().
-				Foreground(SurfaceColor)
-)
-
-// ==========================================
-// Layout styles
-// ==========================================
-
-var (
-	CenteredStyle = lipgloss.NewStyle().
-			Width(80).
-			Align(lipgloss.Center)
-
-	ContainerStyle = lipgloss.NewStyle().
-			Width(60).
-			Align(lipgloss.Center).
-			Padding(1, 2)
-)
-
-// ==========================================
-// Loading styles
-// ==========================================
-
-var (
 	LoadingTitleStyle = lipgloss.NewStyle().
-				Foreground(PrimaryColor).
+				Foreground(TextColor).
 				Bold(true)
 
 	LoadingStepStyle = lipgloss.NewStyle().
 				Foreground(SuccessColor)
 
 	LoadingCurrentStyle = lipgloss.NewStyle().
-				Foreground(SecondaryColor)
+				Foreground(PrimaryColor).
+				Bold(true)
 
 	LoadingErrorStyle = lipgloss.NewStyle().
 				Foreground(FailureColor).
@@ -104,70 +124,83 @@ var (
 )
 
 // ==========================================
-// Main Screen styles
+// Main Screen Styles
 // ==========================================
 
 var (
 	HeaderStyle = lipgloss.NewStyle().
-			Foreground(PrimaryColor).
-			Bold(true).
-			Padding(0, 1)
+			Foreground(TextColor).
+			Bold(true)
 
 	HelpStyle = lipgloss.NewStyle().
-			Foreground(MutedColor).
-			Padding(0, 1)
+			Foreground(MutedColor)
 
 	ViewportStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(SurfaceColor).
-			Padding(0, 1)
+			Foreground(TextColor)
+
+	LogTimestampStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	LogProcessStyle = lipgloss.NewStyle().
+			Foreground(SecondaryColor)
+
+	LogLevelStyle = lipgloss.NewStyle().
+			Foreground(TextColor).
+			Bold(true)
 )
 
 // ==========================================
-// Onboarding styles
+// Form Styles
 // ==========================================
 
 var (
 	OnboardingBorderStyle = lipgloss.NewStyle().
-				Foreground(MutedColor)
+				Foreground(SurfaceColor)
 
 	OnboardingPanelStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(SurfaceColor).
-				Padding(1, 2)
+				Inherit(PrimaryPanelStyle)
 
 	OnboardingTitleStyle = lipgloss.NewStyle().
-				Foreground(PrimaryColor).
+				Foreground(TextColor).
 				Bold(true)
 
+	OnboardingBannerStyle = lipgloss.NewStyle().
+				Foreground(WarningColor).
+				Italic(true)
+
 	OnboardingFieldLabelStyle = lipgloss.NewStyle().
-					Foreground(TextColor).
+					Foreground(SecondaryColor).
 					Bold(true)
 
 	OnboardingActiveLabelStyle = lipgloss.NewStyle().
-					Foreground(PrimaryColor).
+					Foreground(TextColor).
+					Bold(true)
+
+	OnboardingRequiredLabelStyle = lipgloss.NewStyle().
+					Foreground(ErrorColor).
 					Bold(true)
 
 	OnboardingFieldValueStyle = lipgloss.NewStyle().
-					Foreground(MutedColor)
+					Foreground(TextColor)
 
 	OnboardingActiveValueStyle = lipgloss.NewStyle().
 					Foreground(TextColor)
 
 	OnboardingActiveIndicatorStyle = lipgloss.NewStyle().
-					Foreground(PrimaryColor).
+					Foreground(FocusColor).
 					Bold(true)
 
 	OnboardingSeparatorStyle = lipgloss.NewStyle().
-					Foreground(MutedColor)
+					Foreground(SurfaceColor)
 
 	OnboardingFieldActiveStyle = lipgloss.NewStyle().
 					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(PrimaryColor).
+					BorderForeground(FocusColor).
 					Padding(0, 1)
 
 	OnboardingErrorStyle = lipgloss.NewStyle().
-				Foreground(FailureColor)
+				Foreground(FailureColor).
+				Bold(true)
 
 	OnboardingHintStyle = lipgloss.NewStyle().
 				Foreground(MutedColor)
@@ -175,4 +208,41 @@ var (
 	OnboardingSavedStyle = lipgloss.NewStyle().
 				Foreground(SuccessColor).
 				Bold(true)
+
+	FieldBorderStyle = lipgloss.NewStyle().
+				Foreground(SurfaceColor)
+
+	FieldFocusedBorderStyle = lipgloss.NewStyle().
+				Foreground(FocusColor)
+
+	FieldRequiredBorderStyle = lipgloss.NewStyle().
+					Foreground(ErrorColor)
+
+	FieldPlaceholderStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	FieldCursorStyle = lipgloss.NewStyle().
+				Foreground(FocusColor).
+				Bold(true)
+
+	FieldFooterStyle = lipgloss.NewStyle().
+				Foreground(MutedColor)
+
+	PrimaryButtonStyle = lipgloss.NewStyle().
+				Background(SuccessColor).
+				Foreground(TextColor).
+				Bold(true).
+				Padding(1, 3).
+				Align(lipgloss.Center)
+
+	DestructiveButtonStyle = lipgloss.NewStyle().
+				Background(ErrorColor).
+				Foreground(TextColor).
+				Bold(true).
+				Padding(1, 3).
+				Align(lipgloss.Center)
+
+	FocusedButtonStyle = lipgloss.NewStyle().
+				Foreground(TextColor).
+				Underline(true)
 )

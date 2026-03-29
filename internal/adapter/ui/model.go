@@ -3,8 +3,10 @@ package ui
 import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
+	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
@@ -28,7 +30,11 @@ const (
 	screenLoading    = "loading"
 	screenMain       = "main"
 	screenOnboarding = "onboarding"
-	screenSaved      = "saved"
+
+	// Panel height calculation: subtract border/padding and spacing from content height
+	panelHeightCompensation = 3
+	// Minimum usable panel height to ensure viewport remains functional
+	minPanelHeight = 7
 )
 
 // ==========================================
@@ -60,7 +66,8 @@ type mainState struct {
 
 // onboardingState holds the state for the database configuration onboarding form.
 type onboardingState struct {
-	step        int // 0=Host, 1=Port, 2=ServiceName, 3=Username, 4=Password
+	step        int // 0=DatabaseID, 1=Host, 2=Port, 3=ServiceName, 4=Username, 5=Password
+	DatabaseID  string
 	Host        string
 	Port        string
 	ServiceName string
@@ -70,17 +77,13 @@ type onboardingState struct {
 	submitted   bool
 }
 
-// savedState holds the state for the "configuration saved" confirmation screen.
-type savedState struct {
-}
-
 // ==========================================
 // Model
 // ==========================================
 
 // Model is the root Bubble Tea model for entire Omniview application
 type Model struct {
-	screen string // Current screen: welcome, loading, main, onboarding, or saved
+	screen string // Current screen: welcome, loading, main, or onboarding
 	width  int    // Terminal width
 	height int    // Terminal height
 
@@ -88,7 +91,7 @@ type Model struct {
 	loading    loadingState
 	main       mainState
 	onboarding onboardingState
-	saved      savedState
+	dbSettings databaseSettingsState
 
 	// Cancellable contexts for all background operations
 	ctx    context.Context
@@ -98,6 +101,7 @@ type Model struct {
 	boltAdapter *boltdb.BoltAdapter
 
 	// Application Services (injected via NewModel)
+	dbSettingsRepo    ports.DatabaseSettingsRepository
 	dbAdapter         *oracle.OracleAdapter
 	permissionService *permissions.PermissionService
 	tracerService     *tracer.TracerService
@@ -116,6 +120,7 @@ type Model struct {
 type ModelOpts struct {
 	App               *app.App
 	BoltAdapter       *boltdb.BoltAdapter
+	DBSettingsRepo    ports.DatabaseSettingsRepository
 	DBAdapter         *oracle.OracleAdapter
 	PermissionService *permissions.PermissionService
 	TracerService     *tracer.TracerService
@@ -132,6 +137,9 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}
 	if opts.BoltAdapter == nil {
 		errs = append(errs, "BoltAdapter is required")
+	}
+	if opts.DBSettingsRepo == nil {
+		errs = append(errs, "DBSettingsRepo is required")
 	}
 	if opts.EventChannel == nil {
 		errs = append(errs, "EventChannel is required")
@@ -154,6 +162,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		ctx:               ctx,
 		cancel:            cancel,
 		boltAdapter:       opts.BoltAdapter,
+		dbSettingsRepo:    opts.DBSettingsRepo,
 		app:               opts.App,
 		dbAdapter:         opts.DBAdapter,
 		permissionService: opts.PermissionService,
@@ -170,6 +179,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}, nil
 }
 
+// initializeServices: initializes or reinitializes database adapter and dependent services if they are not already set.
 func (m *Model) initializeServices() error {
 	if m.appConfig == nil {
 		return fmt.Errorf("initializeServices: database configuration is required")
@@ -209,6 +219,7 @@ func (m *Model) Init() tea.Cmd {
 // Update
 // ==========================================
 
+// Update: Bubble Tea update function that handles global events (quit, resize) and delegates to screen-specific handlers.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global handler (active on every screen)
 	switch msg := msg.(type) {
@@ -219,8 +230,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel() // Cancel all background operations
 			return m, tea.Quit
 		case "q":
-			m.cancel() // Cancel all background operations
-			return m, tea.Quit
+			// Only quit from screens that don't need 'q' for navigation
+			if (m.screen == screenMain && !m.dbSettings.visible) || m.screen == screenWelcome || m.screen == screenLoading {
+				m.cancel()
+				return m, tea.Quit
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -229,15 +243,36 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Resize viewport if on Main Screen
 		if m.screen == screenMain && m.main.ready {
-			viewportHeight := m.height - headerHeight
-			if viewportHeight < 1 {
-				viewportHeight = 1
-			}
-			m.main.viewport.SetWidth(m.width)
+			contentWidth, contentHeight := screenContentSize(m.width, m.height)
+			header := renderScreenHeader(
+				contentWidth,
+				"OmniView Trace Console",
+				m.mainSubtitle(),
+				m.mainConnectionMeta(),
+			)
+			statusBar := renderInfoBar(contentWidth, m.mainStatusText())
+			footer := renderFooterBar(contentWidth, m.mainFooterText())
+			// Compute panel height: subtract header, status bar, footer, and border/padding
+			// Enforce minimum height to remain usable
+			panelHeight := max(
+				contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
+				minPanelHeight,
+			)
+			_, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
+			m.main.viewport.SetWidth(viewportWidth)
 			m.main.viewport.SetHeight(viewportHeight)
 			// Re-wrap all messages at the new terminal width
-			m.rebuildRenderedContent()
+			if len(m.main.messages) > 0 {
+				m.main.renderedContent.Reset()
+				for _, queuedMsg := range m.main.messages {
+					m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+					m.main.renderedContent.WriteString("\n")
+				}
+				m.main.viewport.SetContent(m.main.renderedContent.String())
+			}
 		}
+
+		m.resizeDatabaseSettings(msg.Width, msg.Height)
 
 		// Initialize viewport on first size message if we are on the main screen
 		if m.screen == screenMain && !m.main.ready {
@@ -257,8 +292,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMain(msg)
 	case screenOnboarding:
 		return m.updateOnboarding(msg)
-	case screenSaved:
-		return m.updateSaved(msg)
 	}
 
 	return m, nil
@@ -282,18 +315,19 @@ func (m *Model) View() tea.View {
 			content = "Initializing..."
 		} else {
 			content = m.viewMain()
+			if m.dbSettings.visible {
+				content = renderCenteredOverlay(content, m.viewDatabaseSettings(), m.width, m.height)
+				if m.dbSettings.showAddForm {
+					content = renderCenteredOverlay(content, m.dbSettings.addForm.Modal(), m.width, m.height)
+				}
+			}
 		}
 	case screenOnboarding:
 		content = m.viewOnboarding()
-	case screenSaved:
-		content = m.viewSaved()
 	}
 
 	if m.width > 0 && m.height > 0 {
-		content = lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height).
-			Render(content)
+		content = styles.AppStyle.Width(m.width).Height(m.height).Render(content)
 	}
 
 	// Create the view with declarative terminal features

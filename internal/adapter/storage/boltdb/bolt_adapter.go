@@ -87,7 +87,7 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error
 		return fmt.Errorf("database config cannot be nil")
 	}
 
-	key := fmt.Sprintf("%s%s:%s", DatabaseConfigKeyPrefix, config.Username(), config.Database())
+	key := config.ID()
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))

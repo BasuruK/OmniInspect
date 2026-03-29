@@ -22,5 +22,5 @@
 ## Conventions
 - Repository interfaces live under `internal/core/ports`; concrete storage implementations belong under `internal/adapter/storage`.
 - First-run and persisted connection state live in `omniview.bolt`, with initial config flow coordinated through the config loader and `settings.json`.
-- When working on the Bubble Tea migration, review `docs/TUI_MIGRATION_SPEC.md` and the current UI files in `internal/adapter/ui/` before changing flow or state management.
+- When working on the TUI, follow DESIGN.md guidelines and existing patterns in `internal/adapter/ui`. Avoid mixing TUI logic into services or domain code.
 - Prefer representative project patterns from `cmd/omniview/main.go`, `internal/core/domain/subscriber.go`, `internal/core/ports/repository.go`, and `internal/adapter/ui/model.go` when adding new code.

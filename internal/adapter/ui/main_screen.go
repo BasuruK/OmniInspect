@@ -4,9 +4,9 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -16,9 +16,6 @@ import (
 // ==========================================
 // Constants
 // ==========================================
-
-// headerHeight is the number of terminal lines reserved for header + help.
-const headerHeight = 4
 
 // maxMessages is the maximum number of messages to retain in the ring buffer.
 // Oldest messages are dropped when capacity is reached.
@@ -59,6 +56,11 @@ func sanitizeLogString(s string) string {
 // updateMain handles messages when screen == "main".
 func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case dbValidationResultMsg, dbSwitchResultMsg:
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
+		return m, nil
 
 	// New log message from event listener
 	case queueMessageMsg:
@@ -66,12 +68,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if len(m.main.messages) >= maxMessages {
 			m.main.messages = m.main.messages[1:]
 			// Buffer exceeded — rebuild rendered content from trimmed slice
-			m.rebuildRenderedContent()
+			m.main.renderedContent.Reset()
+			for _, queuedMsg := range m.main.messages {
+				m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+				m.main.renderedContent.WriteString("\n")
+			}
+		} else {
+			// Incrementally append the new message to rendered content
+			m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
+			m.main.renderedContent.WriteString("\n")
 		}
 		m.main.messages = append(m.main.messages, msg.message)
-		// Incrementally append the new message to rendered content
-		m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
-		m.main.renderedContent.WriteString("\n")
 		m.main.viewport.SetContent(m.main.renderedContent.String())
 		if m.main.autoScroll {
 			m.main.viewport.GotoBottom()
@@ -86,6 +93,9 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// Keyboard input
 	case tea.KeyPressMsg:
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
 		switch msg.String() {
 		case "a":
 			// Toggle auto-scroll
@@ -93,6 +103,19 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			if m.main.autoScroll {
 				m.main.viewport.GotoBottom()
 			}
+			return m, nil
+		case "d":
+			// Open database settings
+			activeID := ""
+			if m.appConfig != nil {
+				activeID = m.appConfig.ID()
+			}
+			databases, err := m.dbSettingsRepo.GetAll(m.ctx)
+			if err != nil {
+				log.Printf("[UI] Failed to load database settings: %v", err)
+				databases = []domain.DatabaseSettings{}
+			}
+			m.initDatabaseSettings(databases, activeID)
 			return m, nil
 		}
 	}
@@ -107,32 +130,80 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 // Main View
 // ==========================================
 
+// mainLayoutParts holds the computed layout pieces for the main screen.
+type mainLayoutParts struct {
+	header         string
+	statusBar      string
+	footer         string
+	panelHeight    int
+	panelWidth     int
+	viewportWidth  int
+	viewportHeight int
+}
+
+// computeMainLayout computes all layout pieces for the main screen.
+// Centralizes the height calculations and layout logic in one place.
+func (m *Model) computeMainLayout() mainLayoutParts {
+	contentWidth, contentHeight := screenContentSize(m.width, m.height)
+	header := renderScreenHeader(
+		contentWidth,
+		"OmniView Trace Console",
+		m.mainSubtitle(),
+		m.mainConnectionMeta(),
+	)
+	statusBar := renderInfoBar(contentWidth, m.mainStatusText())
+	footer := renderFooterBar(contentWidth, m.mainFooterText())
+
+	panelHeight := max(
+		contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
+		minPanelHeight,
+	)
+	panelWidth, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
+
+	return mainLayoutParts{
+		header:         header,
+		statusBar:      statusBar,
+		footer:         footer,
+		panelHeight:    panelHeight,
+		panelWidth:     panelWidth,
+		viewportWidth:  viewportWidth,
+		viewportHeight: viewportHeight,
+	}
+}
+
+// ==========================================
+// Main View
+// ==========================================
+
 // viewMain renders the main log viewer screen.
 func (m *Model) viewMain() string {
-	// Header
-	header := styles.HeaderStyle.Render("OmniView — Real-time Traces")
+	layout := m.computeMainLayout()
 
-	// Help bar
-	autoScrollIndicator := "off"
-	if m.main.autoScroll {
-		autoScrollIndicator = "on"
-	}
-	help := styles.HelpStyle.Render(
-		fmt.Sprintf("↑/↓ scroll • a auto-scroll [%s] • [q] quit", autoScrollIndicator),
+	viewportView := styles.ViewportStyle.
+		Width(layout.viewportWidth).
+		Height(layout.viewportHeight).
+		Render(m.main.viewport.View())
+
+	logPanel := applyTotalSize(styles.PrimaryPanelStyle, layout.panelWidth, layout.panelHeight).
+		Render(lipgloss.JoinVertical(
+			lipgloss.Left,
+			styles.SectionTitleStyle.Render("Live Trace Feed"),
+			styles.SubtitleStyle.Render("Awaiting Trace Messages..."),
+			"",
+			viewportView,
+		))
+
+	return renderScreen(
+		m.width,
+		m.height,
+		layout.header,
+		"",
+		layout.statusBar,
+		"",
+		logPanel,
+		"",
+		layout.footer,
 	)
-
-	// Viewport (SoftWrap handles line breaking at configured width)
-	viewportView := m.main.viewport.View()
-
-	// Assemble layout
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		help,
-		viewportView,
-	)
-
-	return content
 }
 
 // ==========================================
@@ -144,7 +215,7 @@ func (m *Model) viewMain() string {
 // rebuilding only when the buffer is empty.
 func (m *Model) renderLogContent() string {
 	if len(m.main.messages) == 0 {
-		return styles.SubtitleStyle.Render("  Waiting for trace events...")
+		return styles.EmptyStateStyle.Render("Waiting for trace events from Oracle AQ...")
 	}
 	// Return incrementally built content to avoid O(n²) rebuild on every message
 	return m.main.renderedContent.String()
@@ -155,125 +226,41 @@ func (m *Model) renderLogContent() string {
 // align with the start of the payload column.
 func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
-	processName := sanitizeLogString(msg.ProcessName())
-	payload := sanitizeLogString(msg.Payload())
 
 	// Choose color based on log level
 	var levelStyle lipgloss.Style
 	switch msg.LogLevel() {
 	case domain.LogLevelDebug:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.DebugColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.DebugColor)
 	case domain.LogLevelInfo:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.InfoColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.InfoColor)
 	case domain.LogLevelWarning:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.WarningColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.WarningColor)
 	case domain.LogLevelError:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.ErrorColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.ErrorColor)
 	case domain.LogLevelCritical:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.CriticalColor).Bold(true)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.CriticalColor)
 	default:
-		levelStyle = lipgloss.NewStyle().Foreground(styles.MutedColor)
+		levelStyle = styles.LogLevelStyle.Foreground(styles.MutedColor)
 	}
 
-	// Build styled prefix parts
-	styledTimestamp := lipgloss.NewStyle().Foreground(styles.MutedColor).Render(timestamp)
-	styledLevel := levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel()))
-	styledProcess := lipgloss.NewStyle().Foreground(styles.SecondaryColor).Render(processName)
-
-	// Calculate prefix display width: "timestamp [level   ] processName "
-	// 19 + 1 + 10 + 1 + len(processName) + 1
-	prefixWidth := 19 + 1 + 10 + 1 + len(processName) + 1
-
-	// Available width for the payload column
-	availWidth := m.width - prefixWidth
-	if availWidth < 20 {
-		availWidth = 20
-	}
-
-	// Wrap payload to fit within the available column width
-	payloadLines := wrapText(payload, availWidth)
-
-	// First line: full prefix + first payload segment
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s %s %s %s", styledTimestamp, styledLevel, styledProcess, payloadLines[0]))
-
-	// Continuation lines: indented to align with payload column
-	indent := strings.Repeat(" ", prefixWidth)
-	for _, line := range payloadLines[1:] {
-		b.WriteString("\n")
-		b.WriteString(indent)
-		b.WriteString(line)
-	}
-	return b.String()
-}
-
-// wrapText splits text into lines that fit within the given width limit.
-// Breaks at word boundaries when possible, hard-wraps at rune boundaries when a single word exceeds the limit.
-func wrapText(text string, limit int) []string {
-	if limit <= 0 || utf8.RuneCountInString(text) <= limit {
-		return []string{text}
-	}
-
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{text}
-	}
-
-	var lines []string
-	currentLine := []rune(words[0])
-
-	// Hard-wrap if the first word exceeds the limit
-	for len(currentLine) > limit {
-		lines = append(lines, string(currentLine[:limit]))
-		currentLine = currentLine[limit:]
-	}
-
-	for _, word := range words[1:] {
-		wordRunes := []rune(word)
-		if len(currentLine)+1+len(wordRunes) <= limit {
-			currentLine = append(currentLine, ' ')
-			currentLine = append(currentLine, wordRunes...)
-		} else {
-			lines = append(lines, string(currentLine))
-			currentLine = wordRunes
-		}
-		// Hard-wrap if a single token exceeds the limit
-		for len(currentLine) > limit {
-			lines = append(lines, string(currentLine[:limit]))
-			currentLine = currentLine[limit:]
-		}
-	}
-	lines = append(lines, string(currentLine))
-	return lines
-}
-
-// rebuildRenderedContent re-wraps all messages at the current terminal width.
-// Called when the terminal is resized or the viewport is first initialized.
-// When there are no messages the call is a no-op so the empty-state placeholder
-// already shown in the viewport is preserved.
-func (m *Model) rebuildRenderedContent() {
-	if len(m.main.messages) == 0 {
-		return
-	}
-	m.main.renderedContent.Reset()
-	for _, msg := range m.main.messages {
-		m.main.renderedContent.WriteString(m.formatLogLine(msg))
-		m.main.renderedContent.WriteString("\n")
-	}
-	m.main.viewport.SetContent(m.main.renderedContent.String())
-	if m.main.autoScroll {
-		m.main.viewport.GotoBottom()
-	}
+	return fmt.Sprintf(
+		"%s %s %s %s",
+		styles.LogTimestampStyle.Render(timestamp),
+		levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel())),
+		styles.LogProcessStyle.Render(sanitizeLogString(msg.ProcessName())),
+		sanitizeLogString(msg.Payload()),
+	)
 }
 
 // initViewport creates and configures the viewport for the main screen.
 // Called when we first receive terminal dimensions or transition to main screen.
 func (m *Model) initViewport() {
-	vpHeight := m.viewportHeight()
+	layout := m.computeMainLayout()
 
 	m.main.viewport = viewport.New(
-		viewport.WithWidth(m.width),
-		viewport.WithHeight(vpHeight),
+		viewport.WithWidth(layout.viewportWidth),
+		viewport.WithHeight(layout.viewportHeight),
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
@@ -281,14 +268,75 @@ func (m *Model) initViewport() {
 	// Rebuild rendered content with real viewport width in case messages were
 	// buffered before the viewport was initialized (formatted with the fallback
 	// column width). No-op when there are no messages.
-	m.rebuildRenderedContent()
+	if len(m.main.messages) > 0 {
+		m.main.renderedContent.Reset()
+		for _, queuedMsg := range m.main.messages {
+			m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+			m.main.renderedContent.WriteString("\n")
+		}
+		m.main.viewport.SetContent(m.main.renderedContent.String())
+	}
 }
 
-// viewportHeight returns the available height for the viewport, accounting for header.
-func (m *Model) viewportHeight() int {
-	h := m.height - headerHeight
-	if h < 1 {
-		return 1
+// mainViewportDimensions: calculates panel and viewport dimensions accounting for borders and text elements.
+func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {
+	panelWidth := max(contentWidth, 20)
+	panelHorizontalFrame, panelVerticalFrame := styles.PrimaryPanelStyle.GetFrameSize()
+	panelTextHeight := lipgloss.Height(styles.SectionTitleStyle.Render("Live Trace Feed")) +
+		lipgloss.Height(styles.SubtitleStyle.Render("Awaiting Trace Messages...")) +
+		1
+
+	viewportWidth := max(panelWidth-panelHorizontalFrame, 10)
+	viewportHeight := max(panelHeight-panelVerticalFrame-panelTextHeight, 1)
+
+	return panelWidth, viewportWidth, viewportHeight
+}
+
+// mainSubtitle: returns the subtitle for the main screen showing database connection info or a default.
+func (m *Model) mainSubtitle() string {
+	if m.appConfig == nil {
+		return "Live Oracle trace viewer"
 	}
-	return h
+
+	return fmt.Sprintf(
+		"%s@%s • %s:%d",
+		m.appConfig.Username(),
+		m.appConfig.Database(),
+		m.appConfig.Host(),
+		m.appConfig.Port().Int(),
+	)
+}
+
+// mainConnectionMeta: returns connection metadata for display in the status bar (currently unused, reserved for future health details).
+func (m *Model) mainConnectionMeta() string {
+	return ""
+}
+
+// mainStatusText: returns the status bar text showing subscriber name, auto-scroll state, and message count.
+func (m *Model) mainStatusText() string {
+	autoScroll := styles.WarningColor
+	autoScrollText := "manual"
+	if m.main.autoScroll {
+		autoScroll = styles.SuccessColor
+		autoScrollText = "on"
+	}
+
+	subscriberName := "pending"
+	if m.subscriber != nil {
+		subscriberName = truncate(m.subscriber.Name(), 20)
+	}
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		styles.BodyTextStyle.Render("Sub "+subscriberName),
+		styles.SubtitleStyle.Render("  •  "),
+		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll "+autoScrollText),
+		styles.SubtitleStyle.Render("  •  "),
+		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
+	)
+}
+
+// mainFooterText: returns the footer help text showing available keyboard shortcuts.
+func (m *Model) mainFooterText() string {
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  D Database Settings  •  Q Quit"
 }

@@ -20,6 +20,7 @@ type onboardingField struct {
 }
 
 var onboardingFields = []onboardingField{
+	{label: "Database ID", placeholder: "e.g., PROD-EU ... name to identify this database in the app"},
 	{label: "Database Host", placeholder: "e.g., localhost"},
 	{label: "Database Port", placeholder: "e.g., 1521"},
 	{label: "Service Name / SID", placeholder: "e.g., ORCL"},
@@ -31,6 +32,7 @@ var onboardingFields = []onboardingField{
 // Onboarding Update
 // ==========================================
 
+// updateOnboarding: handles messages for the onboarding screen, routing keyboard input and processing form submission.
 func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -45,13 +47,27 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		m.onboarding.submitted = false
 		m.appConfig = msg.config
-		m.screen = screenSaved
-		return m, nil
+		if err := m.initializeServices(); err != nil {
+			m.loading.err = err
+			m.loading.current = ""
+			m.screen = screenLoading
+			return m, nil
+		}
+
+		m.loading.err = nil
+		m.loading.steps = nil
+		m.loading.current = ""
+		m.screen = screenLoading
+		return m, tea.Batch(
+			m.loading.spinner.Tick,
+			connectDBCmd(m),
+		)
 	}
 
 	return m, nil
 }
 
+// handleOnboardingKey: processes keyboard input for the onboarding form including navigation, validation, and character input.
 func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 	if m.onboarding.submitted && msg.String() != "ctrl+c" {
 		return m, nil
@@ -131,11 +147,15 @@ func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 func validateOnboardingField(step int, value string) string {
 	value = strings.TrimSpace(value)
 	switch step {
-	case 0: // Host
+	case 0: // Database ID
+		if value == "" {
+			return "Database ID cannot be empty"
+		}
+	case 1: // Host
 		if value == "" {
 			return "Database host cannot be empty"
 		}
-	case 1: // Port
+	case 2: // Port
 		if value == "" {
 			return "Database port cannot be empty"
 		}
@@ -143,15 +163,15 @@ func validateOnboardingField(step int, value string) string {
 		if err != nil || port < 1 || port > 65535 {
 			return "Port must be a number between 1 and 65535"
 		}
-	case 2: // Service Name
+	case 3: // Service Name
 		if value == "" {
 			return "Service name cannot be empty"
 		}
-	case 3: // Username
+	case 4: // Username
 		if value == "" {
 			return "Username cannot be empty"
 		}
-	case 4: // Password
+	case 5: // Password
 		if value == "" {
 			return "Password cannot be empty"
 		}
@@ -161,6 +181,7 @@ func validateOnboardingField(step int, value string) string {
 
 // saveOnboardingConfigCmd saves the collected form data to BoltDB.
 func saveOnboardingConfigCmd(m *Model) tea.Cmd {
+	databaseID := m.onboarding.DatabaseID
 	host := m.onboarding.Host
 	portValue := strings.TrimSpace(m.onboarding.Port)
 	serviceName := m.onboarding.ServiceName
@@ -181,6 +202,7 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 		}
 
 		settings, err := domain.NewDatabaseSettings(
+			databaseID,
 			serviceName,
 			host,
 			dbPort,
@@ -205,35 +227,33 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 // Onboarding View
 // ==========================================
 
+// viewOnboarding: renders the database configuration onboarding form with all fields and navigation hints.
 func (m *Model) viewOnboarding() string {
-	panelWidth := min(m.width-8, 56)
-	panelWidth = max(panelWidth, 40)
-	contentWidth := max(panelWidth-4, 10)
-	separatorWidth := max(contentWidth-2, 1)
-
-	lines := []string{""}
+	available := m.width - 10
+	panelWidth := min(available, 74)
+	if available >= 52 {
+		panelWidth = max(panelWidth, 52)
+	}
+	fieldWidth := max(panelWidth-4, 24)
+	lines := []string{
+		styles.OnboardingTitleStyle.Render("Database Onboarding"),
+		styles.OnboardingBannerStyle.Render("Important: fields marked with (*) are required."),
+		"",
+	}
 
 	for i, field := range onboardingFields {
 		isActive := i == m.onboarding.step
 		value := m.onboarding.fieldValueValue(i)
-		pointer := " "
-		labelStyle := styles.OnboardingFieldLabelStyle
-		valueStyle := styles.OnboardingFieldValueStyle
 
-		if isActive {
-			pointer = styles.OnboardingActiveIndicatorStyle.Render(">")
-			labelStyle = styles.OnboardingActiveLabelStyle
-			if value != "" {
-				valueStyle = styles.OnboardingActiveValueStyle
-			}
-		} else if value == "" {
-			pointer = " "
-		}
-
-		lines = append(lines,
-			pointer+" "+labelStyle.Render(field.label),
-			"  "+valueStyle.Render(renderFieldValue(field, value)),
-			"  "+styles.OnboardingSeparatorStyle.Render(strings.Repeat("─", separatorWidth)),
+		lines = append(
+			lines,
+			renderEmbeddedField(embeddedFieldOptions{
+				Label:    field.label,
+				Value:    renderOnboardingFieldValue(field, value, isActive),
+				Width:    fieldWidth,
+				Focused:  isActive,
+				Required: true,
+			}),
 			"",
 		)
 	}
@@ -245,69 +265,51 @@ func (m *Model) viewOnboarding() string {
 		)
 	}
 
-	hint := "Use ↑/↓ to edit, Enter to continue"
-	if m.onboarding.step < len(onboardingFields)-1 {
-		lines = append(lines, styles.OnboardingHintStyle.Width(contentWidth).Align(lipgloss.Center).Render(hint))
-	} else {
-		lines = append(lines, styles.OnboardingHintStyle.Width(contentWidth).Align(lipgloss.Center).Render("Use ↑/↓ to edit, Enter to save configuration"))
+	primaryAction := "Enter Continue"
+	if m.onboarding.step == len(onboardingFields)-1 {
+		primaryAction = "Enter Save"
 	}
 
-	lines = append(lines, "")
-
-	panelContent := renderOnboardingFrame("Onboarding", panelWidth, lines)
-
-	panel := lipgloss.Place(
-		m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		panelContent,
+	actionBar := renderCenteredActionButtons(
+		fieldWidth,
+		primaryAction,
+		false,
+		"Ctrl+C Exit",
+		false,
 	)
 
-	return panel
+	lines = append(
+		lines,
+		actionBar,
+		"",
+		styles.OnboardingHintStyle.Render("↑/↓ Cycle Fields  •  Ctrl+U clear field"),
+	)
+
+	panel := renderFramedPanel("Configuration", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return placeCentered(m.width, m.height, panel)
 }
 
-func renderOnboardingFrame(title string, width int, lines []string) string {
-	innerWidth := max(width-4, 1)
-	titleText := "[ " + title + " ]"
-	topFill := max(width-lipgloss.Width(titleText)-3, 0)
-
-	var b strings.Builder
-	b.WriteString(styles.OnboardingBorderStyle.Render("┌─"))
-	b.WriteString(styles.OnboardingTitleStyle.Render(titleText))
-	b.WriteString(styles.OnboardingBorderStyle.Render(strings.Repeat("─", topFill) + "┐"))
-	b.WriteString("\n")
-
-	for _, line := range lines {
-		b.WriteString(renderOnboardingFrameLine(line, innerWidth))
-		b.WriteString("\n")
-	}
-
-	b.WriteString(styles.OnboardingBorderStyle.Render("└" + strings.Repeat("─", width-2) + "┘"))
-
-	return b.String()
-}
-
-func renderOnboardingFrameLine(content string, width int) string {
-	padding := max(width-lipgloss.Width(content), 0)
-	return styles.OnboardingBorderStyle.Render("│ ") + content + strings.Repeat(" ", padding) + styles.OnboardingBorderStyle.Render(" │")
-}
-
+// fieldValue: returns a pointer to the field value for the given step (0-5), enabling direct modification.
 func (state *onboardingState) fieldValue(step int) *string {
 	switch step {
 	case 0:
-		return &state.Host
+		return &state.DatabaseID
 	case 1:
-		return &state.Port
+		return &state.Host
 	case 2:
-		return &state.ServiceName
+		return &state.Port
 	case 3:
-		return &state.Username
+		return &state.ServiceName
 	case 4:
+		return &state.Username
+	case 5:
 		return &state.Password
 	default:
 		panic(fmt.Sprintf("invalid onboarding step: %d", step))
 	}
 }
 
+// fieldValueValue: returns the string value of the field at the given step without pointer access.
 func (state *onboardingState) fieldValueValue(step int) string {
 	return *state.fieldValue(step)
 }
@@ -322,4 +324,21 @@ func renderFieldValue(field onboardingField, value string) string {
 		return strings.Repeat("•", min(len(value), 20))
 	}
 	return value
+}
+
+// renderOnboardingFieldValue: renders the display value for an onboarding field with appropriate styling based on focus state.
+func renderOnboardingFieldValue(field onboardingField, value string, focused bool) string {
+	displayValue := renderFieldValue(field, value)
+
+	if value == "" {
+		displayValue = styles.FieldPlaceholderStyle.Render(displayValue)
+	} else {
+		displayValue = styles.OnboardingFieldValueStyle.Render(displayValue)
+	}
+
+	if focused {
+		return displayValue + styles.FieldCursorStyle.Render("_")
+	}
+
+	return displayValue
 }

@@ -69,9 +69,10 @@ func renderScreenHeader(width int, title, subtitle, meta string) string {
 		return lipgloss.NewStyle().Width(width).Render(left)
 	}
 
-	// Calculate available width for left column (width minus right column and separator)
-	leftWidth := max(width-1, 1)
-	rightWidth := max(width-leftWidth-1, 1)
+	// Calculate available width based on actual content
+	metaWidth := lipgloss.Width(meta)
+	rightWidth := max(min(metaWidth+2, width/3), 1)
+	leftWidth := max(width-rightWidth-1, 1)
 
 	right := lipgloss.NewStyle().
 		Foreground(styles.SecondaryColor).

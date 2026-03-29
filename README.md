@@ -351,12 +351,11 @@ On first run, the application will:
 
 #### Switching to a Different Database
 
-If you need to connect to a different database:
-1. Delete the `omniview.bolt` file
-2. Re-run the application
-3. Enter the new database connection details when prompted
+OmniView supports multiple database configurations with dynamic switching via the TUI. To switch databases:
 
-*(Note: This process will be simplified in a future update.)*
+1. Press `Ctrl+D` to open the Database Settings overlay
+2. Select a different database from the list or add a new one
+3. The application will dynamically switch to the selected database
 
 ## Makefile Targets
 
@@ -440,24 +439,25 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 ┌─────────────┐     Animation Complete      ┌─────────────┐
 │  Welcome    │ ──────────────────────────▶│  Loading    │
 │  (Animated  │                           │  (Progress  │
-│   Logo)     │◀──────────────────────────│   Steps)    │
-└─────────────┘     Config Not Found       └──────┬──────┘
-                                                 │
-                              ┌──────────────────┤
-                              │                  │
-                              ▼                  ▼
+│   Logo)     │                           │   Steps)    │
+└─────────────┘                           └──────┬──────┘
+                                                  │
+                               Config Not Found   │
+                              ┌───────────────────┘
+                              │
+                              ▼
                      ┌─────────────┐     ┌─────────────┐
                      │ Onboarding  │     │    Main     │
                      │ (Database   │     │  (Trace     │
                      │  Config)    │     │   Console)  │
                      └─────────────┘     └──────┬──────┘
-                                                 │
-                                                 ▼
-                                        ┌─────────────┐
-                                        │  Database   │
-                                        │  Settings   │
-                                        │  (Overlay)  │
-                                        └──────┬──────┘
+                                                  │
+                                                  ▼
+                                         ┌─────────────┐
+                                         │  Database   │
+                                         │  Settings   │
+                                         │  (Overlay)  │
+                                         └──────┬──────┘
                                                │
                                                ▼
                                         ┌─────────────┐

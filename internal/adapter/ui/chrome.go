@@ -69,15 +69,20 @@ func renderScreenHeader(width int, title, subtitle, meta string) string {
 		return lipgloss.NewStyle().Width(width).Render(left)
 	}
 
+	// Calculate available width for left column (width minus right column and separator)
+	leftWidth := max(width-1, 1)
+	rightWidth := max(width-leftWidth-1, 1)
+
 	right := lipgloss.NewStyle().
 		Foreground(styles.SecondaryColor).
 		Bold(true).
+		Width(rightWidth).
 		Align(lipgloss.Right).
 		Render(meta)
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		lipgloss.NewStyle().Width(max(width-lipgloss.Width(right)-1, 1)).Render(left),
+		lipgloss.NewStyle().Width(leftWidth).Render(left),
 		right,
 	)
 }

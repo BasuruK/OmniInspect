@@ -229,7 +229,11 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 
 // viewOnboarding: renders the database configuration onboarding form with all fields and navigation hints.
 func (m *Model) viewOnboarding() string {
-	panelWidth := max(min(m.width-10, 74), 52)
+	available := m.width - 10
+	panelWidth := min(available, 74)
+	if available >= 52 {
+		panelWidth = max(panelWidth, 52)
+	}
 	fieldWidth := max(panelWidth-4, 24)
 	lines := []string{
 		styles.OnboardingTitleStyle.Render("Database Onboarding"),

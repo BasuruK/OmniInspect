@@ -5,9 +5,9 @@ import (
 	"OmniView/internal/adapter/ui"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
+	updaterSvc "OmniView/internal/service/updater"
 	"OmniView/internal/updater"
 	"fmt"
-	"log"
 	"os"
 )
 
@@ -17,11 +17,8 @@ func main() {
 	// ==========================================
 	omniApp := app.New()
 
-	// Self-update check (may replace binary and restart)
+	// Self-update cleanup (remove .old binary leftovers from previous update)
 	updater.CleanupOldBinary()
-	if err := updater.CheckAndUpdate(app.Version); err != nil {
-		log.Printf("[updater] Update failed: %v\n", err)
-	}
 
 	// Initialize BoltDB (fast, no UI needed)
 	boltAdapter := boltdb.NewBoltAdapter("omniview.bolt")
@@ -38,6 +35,9 @@ func main() {
 	// Event channel: tracer service → TUI
 	eventCh := make(chan *domain.QueueMessage, 100)
 
+	// Updater service for update checking within TUI
+	updaterService := updaterSvc.NewUpdaterService(omniApp.GetVersion())
+
 	// ── Phase 3: Start TUI ───────────────────────
 	// BoltDB is already initialized; TUI handles config loading via onboarding screen
 
@@ -48,6 +48,7 @@ func main() {
 		BoltAdapter:    boltAdapter,
 		DBSettingsRepo: dbSettingsRepo,
 		EventChannel:   eventCh,
+		UpdaterService: updaterService,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

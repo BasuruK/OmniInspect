@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/updater"
 	"context"
 
 	tea "charm.land/bubbletea/v2"
@@ -57,5 +58,35 @@ func waitForEventCmd(ctx context.Context, ch <-chan *domain.QueueMessage) tea.Cm
 		case <-ctx.Done():
 			return eventChannelClosedMsg{}
 		}
+	}
+}
+
+// ==========================================
+// Updater Commands
+// ==========================================
+
+// checkForUpdateCmd checks for available updates and returns the result.
+func checkForUpdateCmd(m *Model) tea.Cmd {
+	return func() tea.Msg {
+		info, err := m.updaterService.CheckForUpdate(m.ctx)
+		return updateCheckResultMsg{info: info, err: err}
+	}
+}
+
+// applyUpdateCmd downloads and applies the update, reporting progress via updateProgressMsg.
+// Progress updates are sent through the updateEventChannel which must be processed by the Update loop.
+func applyUpdateCmd(m *Model, info *updater.UpdateInfo) tea.Cmd {
+	return func() tea.Msg {
+		// DownloadAndApply blocks and calls progressFn at each stage.
+		// We send progress messages through the channel for the Update loop to process.
+		err := m.updaterService.ApplyUpdate(m.ctx, info, func(stage string) {
+			if m.updateEventChannel != nil {
+				m.updateEventChannel <- updateProgressMsg{stage: stage}
+			}
+		})
+		if err != nil {
+			return updateErrorMsg{err: err}
+		}
+		return updateCompleteMsg{}
 	}
 }

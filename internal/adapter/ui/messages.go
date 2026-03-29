@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/updater"
 	"time"
 )
 
@@ -80,5 +81,33 @@ type dbValidationResultMsg struct {
 
 // dbSwitchResultMsg is returned after attempting to switch the active DB.
 type dbSwitchResultMsg struct {
+	err error
+}
+
+// ==========================================
+// Updater messages
+// ==========================================
+
+// updateCheckResultMsg is returned after checking for updates.
+type updateCheckResultMsg struct {
+	info *updater.UpdateInfo
+	err  error
+}
+
+// updateUserResponseMsg is returned after the user responds to an update prompt.
+type updateUserResponseMsg struct {
+	accepted bool
+}
+
+// updateProgressMsg reports the current stage of the update process.
+type updateProgressMsg struct {
+	stage string
+}
+
+// updateCompleteMsg signals the update was successfully applied.
+type updateCompleteMsg struct{}
+
+// updateErrorMsg signals an update-related error.
+type updateErrorMsg struct {
 	err error
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"OmniView/internal/adapter/ui/styles"
 	"fmt"
+	"log"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -22,6 +23,77 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.loading.spinner, cmd = m.loading.spinner.Update(msg)
 		return m, cmd
+
+	// Step 0: Update check result (before database connection)
+	case updateCheckResultMsg:
+		if msg.err != nil {
+			// Update check failed — non-fatal, log warning and proceed
+			log.Printf("[updater] Update check failed: %v\n", msg.err)
+			m.update.checking = false
+			m.loading.current = "Connecting to database..."
+			return m, connectDBCmd(m)
+		}
+		m.update.checking = false
+		if msg.info != nil {
+			// Update available — prompt user
+			m.update.info = msg.info
+			m.update.prompting = true
+			m.loading.current = ""
+			return m, nil
+		}
+		// No update available — proceed to database connection
+		m.loading.current = "Connecting to database..."
+		return m, connectDBCmd(m)
+
+	// Handle key input when prompting for update
+	case tea.KeyPressMsg:
+		if m.update.prompting {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				// User accepted update
+				m.update.prompting = false
+				m.update.applying = true
+				m.update.stage = "Starting update..."
+				return m, applyUpdateCmd(m, m.update.info)
+			case "n", "N", "escape":
+				// User declined update — proceed to database connection
+				m.update.prompting = false
+				m.loading.current = "Connecting to database..."
+				return m, connectDBCmd(m)
+			}
+		}
+		if m.update.err != nil {
+			// Update error — allow user to continue or quit
+			switch msg.String() {
+			case "y", "Y", "enter":
+				// Continue without update
+				m.update.err = nil
+				m.loading.current = "Connecting to database..."
+				return m, connectDBCmd(m)
+			case "n", "N", "q":
+				// Quit
+				m.cancel()
+				return m, tea.Quit
+			}
+		}
+
+	// Update progress
+	case updateProgressMsg:
+		m.update.stage = msg.stage
+		return m, nil
+
+	// Update complete — defensive fallback if updater doesn't exit
+	case updateCompleteMsg:
+		m.update.applying = false
+		m.loading.current = "Update complete. Restarting..."
+		return m, tea.Quit
+
+	// Update error
+	case updateErrorMsg:
+		m.update.applying = false
+		m.update.err = msg.err
+		m.loading.current = ""
+		return m, nil
 
 	// Step 1: Oracle DB connection result
 	case dbConnectedMsg:
@@ -103,6 +175,46 @@ func (m *Model) viewLoading() string {
 		"",
 	}
 
+	// Handle update states first (before regular loading steps)
+	if m.update.prompting && m.update.info != nil {
+		// Show update prompt
+		updateInfo := fmt.Sprintf("Update %s available (current: %s)",
+			m.update.info.NewVersion, m.update.info.CurrentVersion)
+		lines = append(lines,
+			styles.LoadingStepStyle.Render("✓ Update available"),
+			"",
+			styles.SubtitleStyle.Width(bodyWidth).Render(updateInfo),
+			"",
+			styles.LoadingCurrentStyle.Render("[Y] Update  [N] Skip"),
+		)
+		panel := renderPanel("Startup Status", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
+		return placeCentered(m.width, m.height, panel)
+	}
+
+	if m.update.applying {
+		// Show update progress
+		lines = append(lines,
+			styles.LoadingStepStyle.Render("✓ Update available"),
+			"",
+			styles.LoadingCurrentStyle.Render(m.loading.spinner.View()+" "+m.update.stage),
+		)
+		panel := renderPanel("Startup Status", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
+		return placeCentered(m.width, m.height, panel)
+	}
+
+	if m.update.err != nil {
+		// Show update error with option to continue
+		lines = append(lines,
+			styles.LoadingErrorStyle.Render("Update failed"),
+			styles.SubtitleStyle.Width(bodyWidth).Render(m.update.err.Error()),
+			"",
+			styles.SubtitleStyle.Render("[Y] Continue without update  [N/Q] Quit"),
+		)
+		panel := renderPanel("Startup Status", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
+		return placeCentered(m.width, m.height, panel)
+	}
+
+	// Regular loading steps
 	for _, step := range m.loading.steps {
 		lines = append(lines, styles.LoadingStepStyle.Render(step))
 	}

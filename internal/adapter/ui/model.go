@@ -10,6 +10,8 @@ import (
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
+	updaterSvc "OmniView/internal/service/updater"
+	"OmniView/internal/updater"
 	"context"
 	"fmt"
 	"strings"
@@ -77,6 +79,16 @@ type onboardingState struct {
 	submitted   bool
 }
 
+// updateState holds the state for update checking and application.
+type updateState struct {
+	checking  bool                // Whether an update check is in progress
+	info      *updater.UpdateInfo // Available update info, if any
+	prompting bool                // Whether user is being prompted to update
+	applying  bool                // Whether the update is being applied
+	stage     string              // Current progress stage description
+	err       error               // Error encountered, if any
+}
+
 // ==========================================
 // Model
 // ==========================================
@@ -92,6 +104,7 @@ type Model struct {
 	main       mainState
 	onboarding onboardingState
 	dbSettings databaseSettingsState
+	update     updateState
 
 	// Cancellable contexts for all background operations
 	ctx    context.Context
@@ -106,6 +119,7 @@ type Model struct {
 	permissionService *permissions.PermissionService
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
+	updaterService    *updaterSvc.UpdaterService
 	appConfig         *domain.DatabaseSettings
 	subscriber        *domain.Subscriber
 
@@ -114,19 +128,24 @@ type Model struct {
 
 	// App reference for accessing global state and methods
 	app *app.App
+
+	// Internal message channel for update-related events
+	updateEventChannel chan tea.Msg
 }
 
 // ModelOpts holds the dependencies injected into the Model
 type ModelOpts struct {
-	App               *app.App
-	BoltAdapter       *boltdb.BoltAdapter
-	DBSettingsRepo    ports.DatabaseSettingsRepository
-	DBAdapter         *oracle.OracleAdapter
-	PermissionService *permissions.PermissionService
-	TracerService     *tracer.TracerService
-	SubscriberService *subscribers.SubscriberService
-	AppConfig         *domain.DatabaseSettings // Optional — onboarding screen populates this
-	EventChannel      chan *domain.QueueMessage
+	App                *app.App
+	BoltAdapter        *boltdb.BoltAdapter
+	DBSettingsRepo     ports.DatabaseSettingsRepository
+	DBAdapter          *oracle.OracleAdapter
+	PermissionService  *permissions.PermissionService
+	TracerService      *tracer.TracerService
+	SubscriberService  *subscribers.SubscriberService
+	UpdaterService     *updaterSvc.UpdaterService
+	AppConfig          *domain.DatabaseSettings // Optional — onboarding screen populates this
+	EventChannel       chan *domain.QueueMessage
+	UpdateEventChannel chan tea.Msg // Optional - can be created by Model if not provided
 }
 
 func NewModel(opts ModelOpts) (*Model, error) {
@@ -156,20 +175,22 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	)
 
 	return &Model{
-		screen:            screenWelcome,
-		width:             80,
-		height:            24,
-		ctx:               ctx,
-		cancel:            cancel,
-		boltAdapter:       opts.BoltAdapter,
-		dbSettingsRepo:    opts.DBSettingsRepo,
-		app:               opts.App,
-		dbAdapter:         opts.DBAdapter,
-		permissionService: opts.PermissionService,
-		tracerService:     opts.TracerService,
-		subscriberService: opts.SubscriberService,
-		appConfig:         opts.AppConfig,
-		eventChannel:      opts.EventChannel,
+		screen:             screenWelcome,
+		width:              80,
+		height:             24,
+		ctx:                ctx,
+		cancel:             cancel,
+		boltAdapter:        opts.BoltAdapter,
+		dbSettingsRepo:     opts.DBSettingsRepo,
+		app:                opts.App,
+		dbAdapter:          opts.DBAdapter,
+		permissionService:  opts.PermissionService,
+		tracerService:      opts.TracerService,
+		subscriberService:  opts.SubscriberService,
+		updaterService:     opts.UpdaterService,
+		appConfig:          opts.AppConfig,
+		eventChannel:       opts.EventChannel,
+		updateEventChannel: make(chan tea.Msg, 16),
 		loading: loadingState{
 			spinner: s,
 		},

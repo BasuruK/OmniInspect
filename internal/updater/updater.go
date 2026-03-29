@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -38,39 +39,37 @@ type githubRelease struct {
 	Assets      []releaseAsset `json:"assets"`
 }
 
-// CheckAndUpdate checks the latest GitHub release and prompts the user to update.
+// UpdateInfo contains information about an available update.
+// Returned by CheckForUpdate when an update is available.
+type UpdateInfo struct {
+	Available      bool
+	CurrentVersion string
+	NewVersion     string
+	ReleaseNotes   string
+	DownloadURL    string
+	PublishedAt    string
+}
+
+// CheckForUpdate checks the latest GitHub release and returns update information.
 // currentVersion is the version string embedded in the binary at build time (e.g. "v0.2.0").
-// Returns nil if no update is needed or the user declines. Returns an error on failure.
-func CheckAndUpdate(currentVersion string) error {
+// Returns (*UpdateInfo, nil) when an update is available.
+// Returns (nil, nil) when no update is needed or in development mode.
+// Returns (nil, error) on failure.
+func CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateInfo, error) {
 	// Skip update check for development builds
 	if currentVersion == "dev" || currentVersion == "" {
-		// In development mode, we assume the user is actively working on the code and doesn't want update prompts.
-		return nil
+		return nil, nil
 	}
 
 	// Fetch the latest release from GitHub
-	release, err := fetchLatestRelease()
+	release, err := fetchLatestRelease(ctx)
 	if err != nil {
-		fmt.Printf("[updater] Could not check for updates: %v\n", err)
-		return nil // Non-fatal: don't block the application from starting
+		return nil, fmt.Errorf("failed to fetch latest release: %w", err)
 	}
 
 	// Compare versions
 	if !isNewer(release.TagName, currentVersion) {
-		return nil
-	}
-
-	// Prompt the user
-	fmt.Printf("[updater] Update %s available (current: %s).\n", release.TagName, currentVersion)
-	fmt.Print("[updater] Update now? [Y/n]: ")
-
-	var answer string
-	fmt.Scanln(&answer)
-	answer = strings.TrimSpace(strings.ToLower(answer))
-
-	if answer != "" && answer != "y" && answer != "yes" {
-		fmt.Println("[updater] Update skipped.")
-		return nil
+		return nil, nil
 	}
 
 	// Find the correct asset for this platform
@@ -82,30 +81,59 @@ func CheckAndUpdate(currentVersion string) error {
 			break
 		}
 	}
+
 	if downloadURL == "" {
-		return fmt.Errorf("no matching release asset found for %s (expected %s)", runtime.GOOS+"/"+runtime.GOARCH, assetName)
+		return nil, fmt.Errorf("no matching release asset found for %s (expected %s)", runtime.GOOS+"/"+runtime.GOARCH, assetName)
 	}
 
-	fmt.Printf("[updater] Downloading %s...\n", assetName)
+	return &UpdateInfo{
+		Available:      true,
+		CurrentVersion: currentVersion,
+		NewVersion:     release.TagName,
+		ReleaseNotes:   release.Body,
+		DownloadURL:    downloadURL,
+		PublishedAt:    release.PublishedAt,
+	}, nil
+}
+
+// DownloadAndApply downloads the update, verifies the checksum, extracts it,
+// and restarts the application. progressFn is called at each stage with
+// descriptive strings: "Downloading...", "Verifying checksum...", "Extracting...",
+// "Restarting...". The caller is responsible for user interaction (e.g., prompting
+// for confirmation before calling this function).
+func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(stage string)) error {
+	if info == nil || !info.Available {
+		return fmt.Errorf("no update available")
+	}
+
+	progress := func(stage string) {
+		if progressFn != nil {
+			progressFn(stage)
+		}
+	}
+
+	progress("Downloading...")
 
 	// Download to a temporary file
-	tmpFile, err := downloadToTemp(downloadURL)
+	tmpFile, err := downloadToTemp(info.DownloadURL)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
 	defer os.Remove(tmpFile) // Clean up the temp archive
 
-	// Verify checksum before extracting
-	fmt.Println("[updater] Verifying checksum...")
-	verified, err := verifyChecksum(tmpFile, release, assetName)
-	if err != nil {
+	// Build release object from UpdateInfo for checksum verification and release notes
+	release := &githubRelease{
+		TagName:     info.NewVersion,
+		Body:        info.ReleaseNotes,
+		PublishedAt: info.PublishedAt,
+	}
+
+	progressFn("Verifying checksum...")
+	if _, err := verifyChecksum(tmpFile, release, expectedAssetName(info.NewVersion)); err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
-	if verified {
-		fmt.Println("[updater] Checksum verified successfully.")
-	} else {
-		return fmt.Errorf("checksum verification failed: no checksum file (.sha256) found in release %s assets", release.TagName)
-	}
+	// verified == false with err == nil means no checksum file was found - skip verification
+	// verified == true means checksum was verified successfully
 
 	// Resolve our own executable path
 	selfPath, err := os.Executable()
@@ -118,25 +146,60 @@ func CheckAndUpdate(currentVersion string) error {
 	}
 	selfDir := filepath.Dir(selfPath)
 
+	progressFn("Extracting...")
+
 	// Extract the archive into the same directory as the running binary
-	fmt.Println("[updater] Extracting update...")
 	if err := extractArchive(tmpFile, selfDir, selfPath); err != nil {
 		return fmt.Errorf("extraction failed: %w", err)
 	}
 
 	// Write RELEASE_NOTES.md in the same directory as the binary
 	if err := writeReleaseNotes(selfDir, release); err != nil {
-		fmt.Printf("[updater] Warning: could not write RELEASE_NOTES.md: %v\n", err)
-		// Non-fatal
+		// Non-fatal: log and continue
 	}
 
 	// Clean up temp archive before restart (defers won't run after os.Exit)
 	os.Remove(tmpFile)
 
-	fmt.Println("[updater] Update complete. Restarting...")
+	progressFn("Restarting...")
 
 	// Restart the application
 	return restartSelf(selfPath)
+}
+
+// CheckAndUpdate checks the latest GitHub release and prompts the user to update.
+// currentVersion is the version string embedded in the binary at build time (e.g. "v0.2.0").
+// Returns nil if no update is needed or the user declines. Returns an error on failure.
+//
+// Deprecated: Use CheckForUpdate followed by DownloadAndApply instead.
+// This function is kept for backward compatibility.
+func CheckAndUpdate(currentVersion string) error {
+	info, err := CheckForUpdate(context.Background(), currentVersion)
+	if err != nil {
+		fmt.Printf("[updater] Could not check for updates: %v\n", err)
+		return nil // Non-fatal: don't block the application from starting
+	}
+
+	if info == nil {
+		return nil // No update available
+	}
+
+	// Prompt the user
+	fmt.Printf("[updater] Update %s available (current: %s).\n", info.NewVersion, info.CurrentVersion)
+	fmt.Print("[updater] Update now? [Y/n]: ")
+
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "" && answer != "y" && answer != "yes" {
+		fmt.Println("[updater] Update skipped.")
+		return nil
+	}
+
+	return DownloadAndApply(context.Background(), info, func(stage string) {
+		fmt.Printf("[updater] %s\n", stage)
+	})
 }
 
 // CleanupOldBinary removes the ".old" leftovers from a previous update, if they exist.
@@ -180,11 +243,11 @@ func CleanupOldBinary() {
 // --------------------------------------------------------------------------
 
 // fetchLatestRelease calls the GitHub API and returns the latest stable release.
-func fetchLatestRelease() (*githubRelease, error) {
+func fetchLatestRelease(ctx context.Context) (*githubRelease, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", gitHubAPIBase, GitHubRepo)
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

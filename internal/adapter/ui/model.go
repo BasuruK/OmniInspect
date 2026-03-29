@@ -179,6 +179,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}, nil
 }
 
+// initializeServices: initializes or reinitializes database adapter and dependent services if they are not already set.
 func (m *Model) initializeServices() error {
 	if m.appConfig == nil {
 		return fmt.Errorf("initializeServices: database configuration is required")
@@ -218,6 +219,7 @@ func (m *Model) Init() tea.Cmd {
 // Update
 // ==========================================
 
+// Update: Bubble Tea update function that handles global events (quit, resize) and delegates to screen-specific handlers.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global handler (active on every screen)
 	switch msg := msg.(type) {

@@ -55,6 +55,15 @@
       </ul>
     </li>
     <li>
+      <a href="#ui-structure">UI Structure</a>
+      <ul>
+        <li><a href="#screen-flow">Screen Flow</a></li>
+        <li><a href="#screens">Screens</a></li>
+        <li><a href="#ui-components">UI Components</a></li>
+        <li><a href="#navigation">Navigation</a></li>
+      </ul>
+    </li>
+    <li>
       <a href="#architecture">Architecture</a>
     </li>
     <li>
@@ -183,6 +192,19 @@ OmniInspect/
 │   │           ├── sql_parse.go
 │   │           ├── dequeue_ops.c      # CGO bindings for dequeuing
 │   │           └── dequeue_ops.h
+│   │   └── ui/                # Bubble Tea TUI
+│   │       ├── model.go              # Root model and screen state
+│   │       ├── main_screen.go        # Main trace console view
+│   │       ├── welcome.go            # Animated welcome screen
+│   │       ├── loading.go            # Loading progress screen
+│   │       ├── onboarding.go         # Database config form
+│   │       ├── database_settings.go  # Database settings panel
+│   │       ├── database_list.go      # Database list component
+│   │       ├── add_database_form.go  # Add database modal
+│   │       ├── chrome.go             # Layout and rendering helpers
+│   │       ├── messages.go          # Bubble Tea message types
+│   │       └── styles/
+│   │           └── styles.go         # Lipgloss style definitions
 │   ├── core/
 │   │   ├── domain/            # Domain entities
 │   │   │   ├── config.go
@@ -408,6 +430,44 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 └─────────────────┘                        └─────────────────┘
 ```
 
+## UI Structure
+
+OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgloss. The application flows through the following screens:
+
+### Screen Flow
+
+```
+┌─────────────┐     Animation Complete      ┌─────────────┐
+│  Welcome    │ ──────────────────────────▶│  Loading    │
+│  (Animated  │                           │  (Progress  │
+│   Logo)     │◀──────────────────────────│   Steps)    │
+└─────────────┘     Config Not Found       └──────┬──────┘
+                                                 │
+                              ┌──────────────────┤
+                              │                  │
+                              ▼                  ▼
+                     ┌─────────────┐     ┌─────────────┐
+                     │ Onboarding  │     │    Main     │
+                     │ (Database   │     │  (Trace     │
+                     │  Config)    │     │   Console)  │
+                     └─────────────┘     └──────┬──────┘
+                                                 │
+                                                 ▼
+                                        ┌─────────────┐
+                                        │  Database   │
+                                        │  Settings   │
+                                        │  (Overlay)  │
+                                        └──────┬──────┘
+                                               │
+                                               ▼
+                                        ┌─────────────┐
+                                        │   Add       │
+                                        │  Database   │
+                                        │   Form      │
+                                        │  (Modal)    │
+                                        └─────────────┘
+```
+
 ## Roadmap
   
 ### Completed
@@ -416,14 +476,15 @@ OmniView uses a Hexagonal (Ports and Adapters) architecture:
 - [x] Single database sign in
 - [x] Domain Driven Design refactor
 - [x] Trace Message webhook integration
+- [x] New UI with BubbleteaV2/Lipgloss
+- [x] Multiple database support with dynamic switching
 
 ### Planned
 
-- [ ] New UI with BubbleteaV2/Lipgloss
 - [ ] multi-subscriber support with dynamic subscription management and targeted message delivery
-- [ ] Multiple database connections and seamless connection switching
-- [ ] Trace Message to file integration
+- [ ] Save Trace Messages to file integration
 - [ ] Connection health/latency/queue/message per second checking
+- [ ] Light theme support
 
 <p align="right">(<a href="#">back to top</a>)</p>
 

@@ -278,6 +278,7 @@ func (m *Model) initViewport() {
 	}
 }
 
+// mainViewportDimensions: calculates panel and viewport dimensions accounting for borders and text elements.
 func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {
 	panelWidth := max(contentWidth, 20)
 	panelHorizontalFrame, panelVerticalFrame := styles.PrimaryPanelStyle.GetFrameSize()
@@ -291,6 +292,7 @@ func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int,
 	return panelWidth, viewportWidth, viewportHeight
 }
 
+// mainSubtitle: returns the subtitle for the main screen showing database connection info or a default.
 func (m *Model) mainSubtitle() string {
 	if m.appConfig == nil {
 		return "Live Oracle trace viewer"
@@ -305,11 +307,12 @@ func (m *Model) mainSubtitle() string {
 	)
 }
 
-// mainConnectionMeta returns a string with connection details for the status bar. TODO: Add connection health details here in the future.
+// mainConnectionMeta: returns connection metadata for display in the status bar (currently unused, reserved for future health details).
 func (m *Model) mainConnectionMeta() string {
 	return ""
 }
 
+// mainStatusText: returns the status bar text showing subscriber name, auto-scroll state, and message count.
 func (m *Model) mainStatusText() string {
 	autoScroll := styles.WarningColor
 	autoScrollText := "manual"
@@ -333,6 +336,7 @@ func (m *Model) mainStatusText() string {
 	)
 }
 
+// mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
 	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  D Database Settings  •  Q Quit"
 }

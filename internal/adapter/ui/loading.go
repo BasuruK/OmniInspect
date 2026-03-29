@@ -91,7 +91,12 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewLoading renders the loading screen with spinner and step progress.
 func (m *Model) viewLoading() string {
-	panelWidth := max(min(m.width-8, 72), 44)
+	panelWidth := min(max(m.width-8, 20), 72)
+	if m.width > 0 {
+		panelWidth = min(panelWidth, m.width)
+	}
+	horizontalFrame, _ := styles.PrimaryPanelStyle.GetFrameSize()
+	bodyWidth := max(panelWidth-horizontalFrame, 1)
 	lines := []string{
 		styles.LoadingTitleStyle.Render("Initializing OmniView"),
 		styles.SubtitleStyle.Render("Preparing the Oracle trace session and live event pipeline."),
@@ -107,7 +112,7 @@ func (m *Model) viewLoading() string {
 			lines,
 			"",
 			styles.LoadingErrorStyle.Render("Startup blocked"),
-			styles.SubtitleStyle.Width(panelWidth-4).Render(m.loading.err.Error()),
+			styles.SubtitleStyle.Width(bodyWidth).Render(m.loading.err.Error()),
 			"",
 			styles.SubtitleStyle.Render("Press q to exit."),
 		)

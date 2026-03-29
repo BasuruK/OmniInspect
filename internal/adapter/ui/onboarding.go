@@ -32,6 +32,7 @@ var onboardingFields = []onboardingField{
 // Onboarding Update
 // ==========================================
 
+// updateOnboarding: handles messages for the onboarding screen, routing keyboard input and processing form submission.
 func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -66,6 +67,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleOnboardingKey: processes keyboard input for the onboarding form including navigation, validation, and character input.
 func (m *Model) handleOnboardingKey(msg tea.KeyPressMsg) (*Model, tea.Cmd) {
 	if m.onboarding.submitted && msg.String() != "ctrl+c" {
 		return m, nil
@@ -225,6 +227,7 @@ func saveOnboardingConfigCmd(m *Model) tea.Cmd {
 // Onboarding View
 // ==========================================
 
+// viewOnboarding: renders the database configuration onboarding form with all fields and navigation hints.
 func (m *Model) viewOnboarding() string {
 	panelWidth := max(min(m.width-10, 74), 52)
 	fieldWidth := max(panelWidth-4, 24)
@@ -282,6 +285,7 @@ func (m *Model) viewOnboarding() string {
 	return placeCentered(m.width, m.height, panel)
 }
 
+// fieldValue: returns a pointer to the field value for the given step (0-5), enabling direct modification.
 func (state *onboardingState) fieldValue(step int) *string {
 	switch step {
 	case 0:
@@ -301,6 +305,7 @@ func (state *onboardingState) fieldValue(step int) *string {
 	}
 }
 
+// fieldValueValue: returns the string value of the field at the given step without pointer access.
 func (state *onboardingState) fieldValueValue(step int) string {
 	return *state.fieldValue(step)
 }
@@ -317,6 +322,7 @@ func renderFieldValue(field onboardingField, value string) string {
 	return value
 }
 
+// renderOnboardingFieldValue: renders the display value for an onboarding field with appropriate styling based on focus state.
 func renderOnboardingFieldValue(field onboardingField, value string, focused bool) string {
 	displayValue := renderFieldValue(field, value)
 

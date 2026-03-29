@@ -43,6 +43,7 @@ type DatabaseList struct {
 	width   int
 }
 
+// NewDatabaseList: creates a new DatabaseList with the given entries and display width.
 func NewDatabaseList(entries []DatabaseEntry, width int) DatabaseList {
 	return DatabaseList{entries: entries, width: width}
 }
@@ -50,6 +51,7 @@ func NewDatabaseList(entries []DatabaseEntry, width int) DatabaseList {
 func (dl DatabaseList) Cursor() int              { return dl.cursor }
 func (dl DatabaseList) Entries() []DatabaseEntry { return dl.entries }
 
+// WithCursor: returns a new DatabaseList with the cursor set to the specified position if valid.
 func (dl DatabaseList) WithCursor(c int) DatabaseList {
 	if c >= 0 && c < len(dl.entries) {
 		dl.cursor = c
@@ -57,6 +59,7 @@ func (dl DatabaseList) WithCursor(c int) DatabaseList {
 	return dl
 }
 
+// Update: handles keyboard navigation within the database list (up/k and down/j keys).
 func (dl DatabaseList) Update(msg tea.KeyPressMsg) (DatabaseList, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
@@ -88,6 +91,7 @@ var (
 	listStateStyle    = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Bold(true)
 )
 
+// Render: renders the database list as a styled string with cursor highlighting and connection status indicators.
 func (dl DatabaseList) Render() string {
 	if len(dl.entries) == 0 {
 		return styles.EmptyStateStyle.Render("No databases configured yet.")
@@ -150,9 +154,11 @@ func (dl DatabaseList) Render() string {
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+// truncate shortens a string to fit within maxLen runes, adding an ellipsis if truncated.
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	return string(runes[:maxLen-1]) + "…"
 }

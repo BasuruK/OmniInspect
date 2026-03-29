@@ -12,6 +12,7 @@ import (
 // Shared Screen Layout
 // ==========================================
 
+// screenContentSize: calculates the usable content area by subtracting frame/border dimensions from terminal size.
 func screenContentSize(termWidth, termHeight int) (int, int) {
 	horizontalFrame, verticalFrame := styles.ScreenStyle.GetFrameSize()
 	contentWidth := max(termWidth-horizontalFrame, 20)
@@ -19,6 +20,7 @@ func screenContentSize(termWidth, termHeight int) (int, int) {
 	return contentWidth, contentHeight
 }
 
+// renderScreen: assembles vertical sections into a screen with proper content dimensions.
 func renderScreen(width, height int, sections ...string) string {
 	contentWidth, contentHeight := screenContentSize(width, height)
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -29,10 +31,12 @@ func renderScreen(width, height int, sections ...string) string {
 		Render(content)
 }
 
+// placeCentered: centers content within the given width and height using lipgloss positioning.
 func placeCentered(width, height int, content string) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
 
+// renderCenteredOverlay: overlays centered content on top of base content, replacing the underlying lines.
 func renderCenteredOverlay(base, overlay string, width, height int) string {
 	x := max((width-lipgloss.Width(overlay))/2, 0)
 	y := max((height-lipgloss.Height(overlay))/2, 0)
@@ -53,6 +57,7 @@ func renderCenteredOverlay(base, overlay string, width, height int) string {
 	return strings.Join(baseLines, "\n")
 }
 
+// renderScreenHeader: renders a header with title, subtitle on the left and meta info on the right.
 func renderScreenHeader(width int, title, subtitle, meta string) string {
 	left := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -77,14 +82,17 @@ func renderScreenHeader(width int, title, subtitle, meta string) string {
 	)
 }
 
+// renderInfoBar: renders an info bar with the given text at the specified width.
 func renderInfoBar(width int, text string) string {
 	return applyTotalWidth(styles.InfoBarStyle, width).Render(text)
 }
 
+// renderFooterBar: renders a footer bar with the given text at the specified width.
 func renderFooterBar(width int, text string) string {
 	return applyTotalWidth(styles.FooterStyle, width).Render(text)
 }
 
+// renderPanel: renders a titled panel with the given body content at the specified width.
 func renderPanel(title string, width int, body string) string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -96,6 +104,7 @@ func renderPanel(title string, width int, body string) string {
 	return applyTotalWidth(styles.PrimaryPanelStyle, width).Render(content)
 }
 
+// renderFramedPanel: renders a panel with double-line border framing, title, and content blocks.
 func renderFramedPanel(title string, width int, blocks ...string) string {
 	innerWidth := max(width-4, 1)
 	titleText := " " + title + " "
@@ -128,11 +137,13 @@ func renderFramedPanel(title string, width int, blocks ...string) string {
 	return b.String()
 }
 
+// applyTotalWidth: adjusts a style's width to account for border frame, returning the usable content width.
 func applyTotalWidth(style lipgloss.Style, totalWidth int) lipgloss.Style {
 	horizontalFrame, _ := style.GetFrameSize()
 	return style.Width(max(totalWidth-horizontalFrame, 1))
 }
 
+// applyTotalSize: adjusts a style's width and height to account for border frame dimensions.
 func applyTotalSize(style lipgloss.Style, totalWidth, totalHeight int) lipgloss.Style {
 	horizontalFrame, verticalFrame := style.GetFrameSize()
 	return style.
@@ -154,8 +165,13 @@ type embeddedFieldOptions struct {
 	FooterText  string
 }
 
+// renderEmbeddedField creates a bordered field with a label and value, optionally styled for focus and required state.
 func renderEmbeddedField(opts embeddedFieldOptions) string {
-	width := max(opts.Width, lipgloss.Width(opts.Label)+8)
+	labelWidth := lipgloss.Width(opts.Label)
+	if opts.Required {
+		labelWidth += lipgloss.Width(" (*)")
+	}
+	width := max(opts.Width, labelWidth+8)
 	innerWidth := max(width-4, 1)
 
 	borderStyle := styles.FieldBorderStyle
@@ -217,11 +233,13 @@ const (
 	buttonVariantSecondary
 )
 
+// actionButtonTotalWidth: calculates the total width needed for a button including its border frame.
 func actionButtonTotalWidth(style lipgloss.Style, label string, minimumWidth int) int {
 	horizontalFrame, _ := style.GetFrameSize()
 	return max(minimumWidth, lipgloss.Width(label)+horizontalFrame+2)
 }
 
+// renderActionButton: renders a styled button with optional focus state and variant (primary/secondary).
 func renderActionButton(label string, width int, focused bool, variant buttonVariant) string {
 	style := styles.PrimaryButtonStyle
 	if variant == buttonVariantSecondary {
@@ -242,6 +260,7 @@ func renderActionButton(label string, width int, focused bool, variant buttonVar
 	return applyTotalWidth(style, totalWidth).Render(label)
 }
 
+// renderCenteredActionButtons creates two action buttons centered within the given total width, with appropriate spacing.
 func renderCenteredActionButtons(totalWidth int, primaryLabel string, primaryFocused bool, secondaryLabel string, secondaryFocused bool) string {
 	primaryStyle := styles.PrimaryButtonStyle
 	secondaryStyle := styles.DestructiveButtonStyle
@@ -257,5 +276,5 @@ func renderCenteredActionButtons(totalWidth int, primaryLabel string, primaryFoc
 		renderActionButton(secondaryLabel, buttonWidth, secondaryFocused, buttonVariantSecondary),
 	)
 
-	return lipgloss.PlaceHorizontal(totalWidth, lipgloss.Left, row)
+	return lipgloss.PlaceHorizontal(totalWidth, lipgloss.Center, row)
 }

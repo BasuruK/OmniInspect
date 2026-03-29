@@ -47,7 +47,7 @@ make install                  # go mod download && go mod tidy
 
 Hexagonal (Ports and Adapters) architecture:
 
-```
+```text
 cmd/omniview/main.go (Composition Root)
         │
         ▼
@@ -253,7 +253,7 @@ When changing Oracle dequeueing or CGO code, keep Go and C sides aligned across:
 
 ## File Organization
 
-```
+```text
 internal/
 ├── adapter/
 │   ├── config/          # Settings loader

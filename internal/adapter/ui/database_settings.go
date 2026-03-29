@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/service/tracer"
@@ -57,6 +58,7 @@ func settingsPanelWidth(termWidth int) int {
 	return max(min(termWidth-10, 92), 60)
 }
 
+// initDatabaseSettings: initializes the database settings panel with the list of databases and marks it visible.
 func (m *Model) initDatabaseSettings(databases []domain.DatabaseSettings, activeID string) {
 	pw := settingsPanelWidth(m.width)
 	innerW := pw - 4
@@ -69,6 +71,7 @@ func (m *Model) initDatabaseSettings(databases []domain.DatabaseSettings, active
 	}
 }
 
+// resizeDatabaseSettings: updates the database settings panel dimensions when the terminal is resized.
 func (m *Model) resizeDatabaseSettings(width, height int) {
 	if !m.dbSettings.visible {
 		return
@@ -86,6 +89,7 @@ func (m *Model) resizeDatabaseSettings(width, height int) {
 	}
 }
 
+// closeDatabaseSettings: hides the database settings panel and resets all overlay states.
 func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.visible = false
 	m.dbSettings.showAddForm = false
@@ -97,6 +101,7 @@ func (m *Model) closeDatabaseSettings() {
 // Update
 // ==========================================
 
+// updateDatabaseSettings: handles messages for the database settings panel including navigation, selection, and add form overlay.
 func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	// Delegate to add-form overlay when open
 	if m.dbSettings.showAddForm {
@@ -177,6 +182,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	return m, nil
 }
 
+// viewDatabaseSettings: renders the database settings panel showing current connection and stored databases list.
 func (m *Model) viewDatabaseSettings() string {
 	panelWidth := max(min(m.width-10, 92), 60)
 	innerWidth := max(panelWidth-4, 24)
@@ -234,6 +240,7 @@ func (m *Model) viewDatabaseSettings() string {
 // Database Switching
 // ==========================================
 
+// handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
 func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Model, tea.Cmd) {
 	if m.tracerService != nil {
 		tracer.StopAll(m.tracerService)
@@ -242,6 +249,12 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 		m.dbAdapter.Close(m.ctx)
 	}
 	m.appConfig = &selected
+	// Reinitialize adapter with new config
+	m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+	// Reset dependent services to be reinit with new adapter
+	m.permissionService = nil
+	m.tracerService = nil
+	m.subscriberService = nil
 	m.main.messages = nil
 	m.main.renderedContent.Reset()
 	m.main.ready = false
@@ -253,6 +266,7 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	return m, connectDBCmd(m)
 }
 
+// reloadDatabaseList: reloads the database list from BoltDB storage and updates the UI list.
 func (m *Model) reloadDatabaseList() {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 	databases, err := settingsRepo.GetAll(m.ctx)
@@ -272,6 +286,7 @@ func (m *Model) reloadDatabaseList() {
 // Async Commands
 // ==========================================
 
+// saveAddFormCmd: async command to validate and save a new database configuration from the add form.
 func (m *Model) saveAddFormCmd() tea.Cmd {
 	databaseID, host, portStr, service, username, password := m.dbSettings.addForm.FieldValues()
 	ctx := m.ctx

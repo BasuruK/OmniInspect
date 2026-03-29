@@ -68,7 +68,6 @@ The current UI is organized around a single root Bubble Tea model and screen-spe
   - `internal/adapter/ui/main_screen.go`
   - `internal/adapter/ui/onboarding.go`
   - `internal/adapter/ui/database_settings.go`
-  - `internal/adapter/ui/saved.go`
 - Shared style tokens: `internal/adapter/ui/styles/styles.go`
 
 These code locations describe where UI work currently lives. They do not override the target design in this document.
@@ -481,17 +480,15 @@ Behavior rules:
 
 ### 6. Saved / Confirmation Screen
 
-File: `internal/adapter/ui/saved.go`
+> **DEPRECATED** — This screen has been removed.
+> The post-save confirmation flow is now handled by the Database Settings overlay
+> at `internal/adapter/ui/database_settings.go`.
 
-Purpose:
-
-- confirm configuration save success
-- direct the user into the next application state
-
-Layout rules:
-
-- brief, centered, high-signal
-- do not require excessive reading
+**Migration Notes:**
+- Saving a new database configuration now triggers `saveAddFormCmd()` in `database_settings.go`
+- Confirmation is shown via `dbValidationResultMsg` which reloads the database list and displays any validation errors
+- The Database Settings overlay remains open after save, allowing users to immediately switch to the newly saved configuration or continue managing connections
+- Future UI work targeting post-save flows should be directed to `database_settings.go` rather than attempting to revive a separate Saved screen
 
 ## Component Standards
 

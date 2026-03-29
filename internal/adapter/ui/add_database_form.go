@@ -52,6 +52,7 @@ type AddDatabaseForm struct {
 	errMsg    string
 }
 
+// NewAddDatabaseForm: creates a new AddDatabaseForm with the specified terminal dimensions and empty fields.
 func NewAddDatabaseForm(width, height int) AddDatabaseForm {
 	return AddDatabaseForm{
 		fields: []FormField{
@@ -84,6 +85,7 @@ func (f AddDatabaseForm) FieldValues() (string, string, string, string, string, 
 // Validation
 // ─────────────────────────
 
+// validate: validates all form fields and returns an error message if any field is invalid, or empty string if valid.
 func (f *AddDatabaseForm) validate() string {
 	for i, field := range f.fields {
 		v := strings.TrimSpace(field.Value)
@@ -125,6 +127,7 @@ func (f *AddDatabaseForm) validate() string {
 // Update
 // ─────────────────────────
 
+// Update: handles keyboard input for the add database form including navigation, character input, and form submission.
 func (f AddDatabaseForm) Update(msg tea.KeyPressMsg) (AddDatabaseForm, tea.Cmd) {
 	if f.submitted || f.cancelled {
 		return f, nil
@@ -233,10 +236,12 @@ var (
 // Render
 // ─────────────────────────
 
+// Render: renders the form centered within the terminal using the Modal method.
 func (f AddDatabaseForm) Render() string {
 	return lipgloss.Place(f.width, f.height, lipgloss.Center, lipgloss.Center, f.Modal())
 }
 
+// Modal: renders the add database form as a modal dialog with all fields, validation errors, and action buttons.
 func (f AddDatabaseForm) Modal() string {
 	modalWidth := max(min(f.width-12, 72), 52)
 	fieldWidth := max(modalWidth-4, 24)
@@ -290,7 +295,7 @@ func (f AddDatabaseForm) Modal() string {
 			f.cursor == formBtnCancel,
 		),
 		"",
-		formHintStyle.Render("↑/↓ Select  •  Up / Down move  •  Enter Confirm  •  Esc Cancel"),
+		formHintStyle.Render("↑/↓ Navigate  •  Enter Confirm  •  Esc Cancel"),
 	)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)

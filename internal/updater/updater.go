@@ -1,9 +1,11 @@
 package updater
 
 import (
+	"OmniView/internal/core/domain"
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -84,7 +86,7 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateInfo, er
 	}
 
 	if downloadURL == "" {
-		return nil, fmt.Errorf("no matching release asset found for %s (expected %s)", runtime.GOOS+"/"+runtime.GOARCH, assetName)
+		return nil, domain.ErrNoMatchingReleaseAsset
 	}
 
 	return &UpdateInfo{
@@ -105,7 +107,7 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateInfo, er
 // for confirmation before calling this function).
 func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(stage string)) error {
 	if info == nil || !info.Available {
-		return fmt.Errorf("no update available")
+		return domain.ErrNoMatchingReleaseAsset
 	}
 
 	progress := func(stage string) {
@@ -130,7 +132,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 		PublishedAt: info.PublishedAt,
 	}
 
-	progressFn("Verifying checksum...")
+	progress("Verifying checksum...")
 	if _, err := verifyChecksum(tmpFile, release, expectedAssetName(info.NewVersion)); err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
@@ -148,7 +150,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 	}
 	selfDir := filepath.Dir(selfPath)
 
-	progressFn("Extracting...")
+	progress("Extracting...")
 
 	// Extract the archive into the same directory as the running binary
 	if err := extractArchive(tmpFile, selfDir, selfPath); err != nil {
@@ -163,7 +165,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 	// Clean up temp archive before restart (defers won't run after os.Exit)
 	os.Remove(tmpFile)
 
-	progressFn("Restarting...")
+	progress("Restarting...")
 
 	// Restart the application
 	return restartSelf(selfPath)

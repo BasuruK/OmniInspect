@@ -1,9 +1,9 @@
 package updater
 
 import (
-	"OmniView/internal/updater"
 	upd "OmniView/internal/updater"
 	"context"
+	"fmt"
 )
 
 // UpdaterService provides update checking and application functionality
@@ -24,12 +24,20 @@ func NewUpdaterService(currentVersion string) *UpdaterService {
 // Returns (nil, nil) when no update is needed or in development mode.
 // Returns (nil, error) on failure.
 func (s *UpdaterService) CheckForUpdate(ctx context.Context) (*upd.UpdateInfo, error) {
-	return upd.CheckForUpdate(ctx, s.currentVersion)
+	info, err := upd.CheckForUpdate(ctx, s.currentVersion)
+	if err != nil {
+		return nil, fmt.Errorf("CheckForUpdate: %w", err)
+	}
+	return info, nil
 }
 
 // ApplyUpdate downloads, verifies, and applies the update.
 // The progressFn callback is invoked at each stage with descriptive strings:
 // "Downloading...", "Verifying checksum...", "Extracting...", "Restarting...".
-func (s *UpdaterService) ApplyUpdate(ctx context.Context, info *updater.UpdateInfo, progressFn func(string)) error {
-	return updater.DownloadAndApply(ctx, info, progressFn)
+func (s *UpdaterService) ApplyUpdate(ctx context.Context, info *upd.UpdateInfo, progressFn func(string)) error {
+	err := upd.DownloadAndApply(ctx, info, progressFn)
+	if err != nil {
+		return fmt.Errorf("ApplyUpdate: %w", err)
+	}
+	return nil
 }

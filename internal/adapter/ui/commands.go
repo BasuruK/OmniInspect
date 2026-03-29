@@ -4,6 +4,8 @@ import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/updater"
 	"context"
+	"errors"
+	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -86,8 +88,14 @@ func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
 // checkForUpdateCmd checks for available updates and returns the result.
 func checkForUpdateCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
+		if m.updaterService == nil {
+			return updateCheckResultMsg{info: nil, err: errors.New("updater service not available")}
+		}
 		info, err := m.updaterService.CheckForUpdate(m.ctx)
-		return updateCheckResultMsg{info: info, err: err}
+		if err != nil {
+			return updateCheckResultMsg{info: nil, err: fmt.Errorf("checkForUpdate: %w", err)}
+		}
+		return updateCheckResultMsg{info: info, err: nil}
 	}
 }
 
@@ -99,11 +107,18 @@ func applyUpdateCmd(m *Model, info *updater.UpdateInfo) tea.Cmd {
 		// We send progress messages through the channel for the Update loop to process.
 		err := m.updaterService.ApplyUpdate(m.ctx, info, func(stage string) {
 			if m.updateEventChannel != nil {
-				m.updateEventChannel <- updateProgressMsg{stage: stage}
+				select {
+				case m.updateEventChannel <- updateProgressMsg{stage: stage}:
+					// sent successfully
+				default:
+					// channel full, drop the message
+				case <-m.ctx.Done():
+					// context cancelled, stop
+				}
 			}
 		})
 		if err != nil {
-			return updateErrorMsg{err: err}
+			return updateErrorMsg{err: fmt.Errorf("applyUpdate: %w", err)}
 		}
 		return updateCompleteMsg{}
 	}

@@ -160,6 +160,9 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	if opts.DBSettingsRepo == nil {
 		errs = append(errs, "DBSettingsRepo is required")
 	}
+	if opts.UpdaterService == nil {
+		errs = append(errs, "UpdaterService is required")
+	}
 
 	// Determine channel values — use injected channels if provided, otherwise create default buffered channels
 	eventChannel := opts.EventChannel

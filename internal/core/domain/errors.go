@@ -38,4 +38,5 @@ var (
 
 	// Updater errors
 	ErrNoMatchingReleaseAsset = errors.New("no matching release asset")
+	ErrNoUpdateInfo           = errors.New("no update info provided")
 )

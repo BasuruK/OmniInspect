@@ -107,7 +107,7 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*UpdateInfo, er
 // for confirmation before calling this function).
 func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(stage string)) error {
 	if info == nil || !info.Available {
-		return domain.ErrNoMatchingReleaseAsset
+		return domain.ErrNoUpdateInfo
 	}
 
 	progress := func(stage string) {
@@ -119,7 +119,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 	progress("Downloading...")
 
 	// Download to a temporary file
-	tmpFile, err := downloadToTemp(info.DownloadURL)
+	tmpFile, err := downloadToTemp(ctx, info.DownloadURL)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
@@ -130,6 +130,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 		TagName:     info.NewVersion,
 		Body:        info.ReleaseNotes,
 		PublishedAt: info.PublishedAt,
+		Assets:      info.Assets,
 	}
 
 	progress("Verifying checksum...")
@@ -159,7 +160,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 
 	// Write RELEASE_NOTES.md in the same directory as the binary
 	if err := writeReleaseNotes(selfDir, release); err != nil {
-		// Non-fatal: log and continue
+		fmt.Printf("[updater] writeReleaseNotes failed for release %v at %s: %v\n", release.TagName, selfDir, err)
 	}
 
 	// Clean up temp archive before restart (defers won't run after os.Exit)
@@ -326,9 +327,13 @@ func expectedAssetName(tag string) string {
 }
 
 // downloadToTemp downloads the given URL to a temporary file and returns its path.
-func downloadToTemp(url string) (string, error) {
+func downloadToTemp(ctx context.Context, url string) (string, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -112,8 +112,9 @@ func renderPanel(title string, width int, body string) string {
 
 // renderFramedPanel: renders a panel with double-line border framing, title, and content blocks.
 func renderFramedPanel(title string, width int, blocks ...string) string {
-	innerWidth := max(width-4, 1)
 	titleText := " " + title + " "
+	width = max(width, lipgloss.Width(titleText)+3)
+	innerWidth := max(width-4, 1)
 	topFill := max(width-lipgloss.Width(titleText)-3, 0)
 
 	var lines []string
@@ -221,8 +222,7 @@ func renderEmbeddedField(opts embeddedFieldOptions) string {
 
 	if strings.TrimSpace(opts.FooterText) != "" {
 		b.WriteString("\n")
-		footerWidth := max(width, lipgloss.Width(opts.FooterText))
-		b.WriteString(styles.FieldFooterStyle.Width(footerWidth).Align(lipgloss.Right).Render(opts.FooterText))
+		b.WriteString(styles.FieldFooterStyle.Width(width).Align(lipgloss.Right).Render(opts.FooterText))
 	}
 
 	return b.String()

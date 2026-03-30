@@ -66,6 +66,7 @@ type traceColumnLayout struct {
 
 // ansiEscape matches ANSI escape sequences for sanitization.
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\x1b[0-9;]*[~^KL]|\x1b[12;[0-9]*[0-9]|[^\x20-\x7E]`)
+var wrapTextTokenPattern = regexp.MustCompile(`\s+|\S+`)
 
 // sanitizeLogString removes ANSI escapes and control characters from user-controlled
 // log content to prevent terminal injection attacks.
@@ -114,13 +115,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			m.main.cachedLevelWidth = 0
 			m.main.cachedAPIWidth = 0
 			m.main.cachedWidthKey = 0
-			m.rebuildRenderedContent(m.main.viewport.Width())
+			if m.main.ready {
+				m.rebuildRenderedContent(m.main.viewport.Width())
+			}
 		} else {
 			// Fast path: append the message, then render only the new line.
 			m.main.messages = append(m.main.messages, msg.message)
-			m.appendSingleMessage(msg.message, m.main.viewport.Width())
+			if m.main.ready {
+				m.appendSingleMessage(msg.message, m.main.viewport.Width())
+			}
 		}
-		if m.main.autoScroll {
+		if m.main.ready && m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
 		return m, waitForEventCmd(m.ctx, m.eventChannel)
@@ -389,62 +394,93 @@ func wrapText(text string, width int) string {
 			continue
 		}
 
-		// Use strings.Fields to split on whitespace (collapses multiple spaces)
-		words := strings.Fields(line)
-		if len(words) == 0 {
+		tokens := wrapTextTokenPattern.FindAllString(line, -1)
+		if len(tokens) == 0 {
 			continue
 		}
 
 		var currentLine strings.Builder
+		currentWidth := 0
+		pendingWhitespace := ""
 
-		for _, word := range words {
-			wordWidth := lipgloss.Width(word)
+		appendToken := func(token string) {
+			tokenWidth := lipgloss.Width(token)
+			if tokenWidth <= width {
+				currentLine.WriteString(token)
+				currentWidth += tokenWidth
+				return
+			}
 
-			if wordWidth > width {
-				// Word exceeds width - split into chunks
-				if currentLine.Len() > 0 {
-					result.WriteString(currentLine.String())
+			runes := []rune(token)
+			chunkWidth := 0
+			chunkStart := 0
+
+			for chunkStart < len(runes) {
+				chunkEnd := chunkStart
+				for chunkEnd < len(runes) && chunkWidth < width {
+					chunkWidth += lipgloss.Width(string(runes[chunkEnd]))
+					if chunkWidth > width {
+						break
+					}
+					chunkEnd++
+				}
+
+				chunk := string(runes[chunkStart:chunkEnd])
+				if chunkEnd == len(runes) {
+					currentLine.WriteString(chunk)
+					currentWidth = lipgloss.Width(chunk)
+				} else {
+					result.WriteString(chunk)
 					result.WriteString("\n")
-					currentLine.Reset()
 				}
+				chunkStart = chunkEnd
+				chunkWidth = 0
+			}
+		}
 
-				// Split word into width-sized chunks (rune-aware)
-				runes := []rune(word)
-				chunkWidth := 0
-				chunkStart := 0
-
-				for chunkStart < len(runes) {
-					chunkEnd := chunkStart
-					for chunkEnd < len(runes) && chunkWidth < width {
-						chunkWidth += lipgloss.Width(string(runes[chunkEnd]))
-						if chunkWidth > width {
-							break
-						}
-						chunkEnd++
-					}
-
-					chunk := string(runes[chunkStart:chunkEnd])
-					if chunkEnd == len(runes) {
-						currentLine.WriteString(chunk)
-					} else {
-						result.WriteString(chunk)
-						result.WriteString("\n")
-					}
-					chunkStart = chunkEnd
-					chunkWidth = 0
+		for _, token := range tokens {
+			tokenWidth := lipgloss.Width(token)
+			if strings.TrimSpace(token) == "" {
+				if currentWidth == 0 {
+					appendToken(token)
+				} else {
+					pendingWhitespace += token
 				}
-			} else if currentLine.Len() == 0 {
-				currentLine.WriteString(word)
-			} else if currentLine.Len()+1+wordWidth <= width {
-				currentLine.WriteString(" ")
-				currentLine.WriteString(word)
-			} else {
-				// Line would exceed width
+				continue
+			}
+
+			separator := pendingWhitespace
+			if currentWidth == 0 && separator == " " {
+				separator = ""
+			}
+			combinedWidth := lipgloss.Width(separator) + tokenWidth
+
+			if currentWidth > 0 && currentWidth+combinedWidth > width {
 				result.WriteString(currentLine.String())
 				result.WriteString("\n")
 				currentLine.Reset()
-				currentLine.WriteString(word)
+				currentWidth = 0
+				separator = pendingWhitespace
+				if separator == " " {
+					separator = ""
+				}
 			}
+
+			if separator != "" {
+				appendToken(separator)
+			}
+			appendToken(token)
+			pendingWhitespace = ""
+		}
+
+		if pendingWhitespace != "" {
+			if currentWidth+lipgloss.Width(pendingWhitespace) > width && currentLine.Len() > 0 {
+				result.WriteString(currentLine.String())
+				result.WriteString("\n")
+				currentLine.Reset()
+				currentWidth = 0
+			}
+			appendToken(pendingWhitespace)
 		}
 
 		// Write the last line
@@ -477,8 +513,11 @@ func (m *Model) initViewport() {
 		viewport.WithWidth(layout.viewportWidth),
 		viewport.WithHeight(layout.viewportHeight),
 	)
-	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
+	m.rebuildRenderedContent(layout.viewportWidth)
+	if m.main.autoScroll {
+		m.main.viewport.GotoBottom()
+	}
 }
 
 // resizeMainViewport keeps the viewport dimensions and rendered content aligned

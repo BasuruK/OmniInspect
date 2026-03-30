@@ -80,22 +80,22 @@ func TestWrapTextBasic(t *testing.T) {
 			expected: "Hello\n\nworld",
 		},
 		{
-			name:     "multiple spaces collapsed to single",
+			name:     "multiple spaces preserved",
 			text:     "Hello  world",
 			width:    80,
-			expected: "Hello world",
+			expected: "Hello  world",
 		},
 		{
-			name:     "leading spaces collapsed",
+			name:     "leading spaces preserved",
 			text:     "  Hello",
 			width:    80,
-			expected: "Hello",
+			expected: "  Hello",
 		},
 		{
-			name:     "trailing spaces collapsed",
+			name:     "trailing spaces preserved",
 			text:     "Hello  ",
 			width:    80,
-			expected: "Hello",
+			expected: "Hello  ",
 		},
 	}
 
@@ -139,6 +139,45 @@ func TestWrapTextPreservesSingleSpaces(t *testing.T) {
 	expected := "Hello world this is a test"
 	if result != expected {
 		t.Errorf("expected single spaces preserved, got %q want %q", result, expected)
+	}
+}
+
+func TestWrapTextPreservesWhitespaceRunsAndIndentation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		text     string
+		width    int
+		expected string
+	}{
+		{
+			name:     "repeated spaces kept when wrapped",
+			text:     "alpha  beta",
+			width:    7,
+			expected: "alpha\n  beta",
+		},
+		{
+			name:     "indentation kept on wrapped line",
+			text:     "    alpha beta",
+			width:    10,
+			expected: "    alpha\nbeta",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := wrapText(tt.text, tt.width)
+			if result != tt.expected {
+				t.Fatalf("wrapText(%q, %d) = %q, want %q", tt.text, tt.width, result, tt.expected)
+			}
+
+			for i, line := range strings.Split(result, "\n") {
+				if lipgloss.Width(line) > tt.width {
+					t.Fatalf("line %d exceeds width %d: %q (width %d)", i+1, tt.width, line, lipgloss.Width(line))
+				}
+			}
+		})
 	}
 }
 
@@ -258,6 +297,89 @@ func TestMainViewStaysWithinTerminalAfterResize(t *testing.T) {
 	assertRenderedWithinTerminal(t, rendered, updated.width, updated.height)
 }
 
+func TestQueueMessageBeforeViewportReadyBuffersWithoutRendering(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 30)
+	msg := newTestQueueMessage(t)
+
+	updated, _ := m.updateMain(queueMessageMsg{message: msg})
+
+	if len(updated.main.messages) != 1 {
+		t.Fatalf("expected one buffered message, got %d", len(updated.main.messages))
+	}
+	if updated.main.messages[0] != msg {
+		t.Fatalf("expected buffered message to be retained before viewport init")
+	}
+	if updated.main.renderedContent.Len() != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	}
+}
+
+func TestQueueMessageBeforeViewportReadyEvictsWithoutRendering(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 30)
+	oldest := newTestQueueMessageWithPayload(t, "msg-old", "oldest payload")
+	filler := newTestQueueMessageWithPayload(t, "msg-fill", "filler payload")
+	newest := newTestQueueMessageWithPayload(t, "msg-new", "newest payload")
+
+	m.main.messages = append(m.main.messages, oldest)
+	for i := 1; i < maxMessages; i++ {
+		m.main.messages = append(m.main.messages, filler)
+	}
+	m.main.cachedLevelWidth = 9
+	m.main.cachedAPIWidth = 17
+	m.main.cachedWidthKey = 88
+
+	updated, _ := m.updateMain(queueMessageMsg{message: newest})
+
+	if len(updated.main.messages) != maxMessages {
+		t.Fatalf("expected ring buffer size %d, got %d", maxMessages, len(updated.main.messages))
+	}
+	if updated.main.messages[0] == oldest {
+		t.Fatalf("expected oldest message to be evicted before viewport init")
+	}
+	if updated.main.messages[len(updated.main.messages)-1] != newest {
+		t.Fatalf("expected newest message to be appended after eviction")
+	}
+	if updated.main.renderedContent.Len() != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	}
+	if updated.main.cachedLevelWidth != 0 || updated.main.cachedAPIWidth != 0 || updated.main.cachedWidthKey != 0 {
+		t.Fatalf(
+			"expected cache invalidation on pre-ready eviction, got level=%d api=%d widthKey=%d",
+			updated.main.cachedLevelWidth,
+			updated.main.cachedAPIWidth,
+			updated.main.cachedWidthKey,
+		)
+	}
+}
+
+func TestInitViewportRebuildsBufferedMessagesAtViewportWidth(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 30)
+	msg := newTestQueueMessage(t)
+
+	updated, _ := m.updateMain(queueMessageMsg{message: msg})
+	updated.initViewport()
+
+	expected := renderTraceColumns(parseTraceLine(msg), updated.traceColumnLayout(updated.main.viewport.Width())) + "\n"
+	if updated.main.renderedContent.String() != expected {
+		t.Fatalf("expected viewport init to rebuild buffered messages with actual width\n got: %q\nwant: %q", updated.main.renderedContent.String(), expected)
+	}
+	if updated.main.viewport.TotalLineCount() == 0 {
+		t.Fatalf("expected viewport content to be populated after init")
+	}
+	if !updated.main.ready {
+		t.Fatalf("expected viewport to be marked ready after init")
+	}
+	if !updated.main.viewport.AtBottom() {
+		t.Fatalf("expected auto-scroll viewport to land at bottom after init")
+	}
+}
+
 func TestTraceColumnLayoutShrinksAPIColumnForShortNames(t *testing.T) {
 	t.Parallel()
 
@@ -300,11 +422,21 @@ func newTestMainModel(t *testing.T, width, height int) *Model {
 func newTestQueueMessage(t *testing.T) *domain.QueueMessage {
 	t.Helper()
 
-	msg, err := domain.NewQueueMessage(
+	return newTestQueueMessageWithPayload(
+		t,
 		"msg-1",
+		"Hello world! This is a test string to verify that resizing the tracer viewport changes the panel size without making the frame wrap beyond the terminal width.",
+	)
+}
+
+func newTestQueueMessageWithPayload(t *testing.T, id, payload string) *domain.QueueMessage {
+	t.Helper()
+
+	msg, err := domain.NewQueueMessage(
+		id,
 		"OMNI_TRACER_API",
 		domain.LogLevelError,
-		"Hello world! This is a test string to verify that resizing the tracer viewport changes the panel size without making the frame wrap beyond the terminal width.",
+		payload,
 		time.Date(2026, time.March, 30, 12, 37, 28, 0, time.UTC),
 	)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
@@ -197,10 +198,8 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 		lipgloss.Height(footer) -
 		sectionGapCount
 
-	panelHeight := max(availableForPanel, 1)
-	if availableForPanel >= minPanelHeight {
-		panelHeight = availableForPanel
-	}
+	// Ensure the panel height doesn't shrink below the minimum usable height, even on very small terminals.
+	panelHeight := max(availableForPanel, minPanelHeight, 1)
 	panelWidth, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
 
 	return mainLayoutParts{
@@ -214,16 +213,9 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 	}
 }
 
+// repeatSectionGaps
 func repeatSectionGaps(count int) []string {
-	if count <= 0 {
-		return nil
-	}
-
-	gaps := make([]string, count)
-	for i := 0; i < count; i++ {
-		gaps[i] = ""
-	}
-	return gaps
+	return slices.Repeat([]string{""}, count)
 }
 
 // ==========================================
@@ -278,22 +270,7 @@ func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
 
-	// Choose color based on log level
-	var levelStyle lipgloss.Style
-	switch msg.LogLevel() {
-	case domain.LogLevelDebug:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.DebugColor)
-	case domain.LogLevelInfo:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.InfoColor)
-	case domain.LogLevelWarning:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.WarningColor)
-	case domain.LogLevelError:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.ErrorColor)
-	case domain.LogLevelCritical:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.CriticalColor)
-	default:
-		levelStyle = styles.LogLevelStyle.Foreground(styles.MutedColor)
-	}
+	levelStyle := getLevelStyle(msg.LogLevel())
 
 	renderedTimestamp := styles.LogTimestampStyle.Render(timestamp)
 	renderedLevel := levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel()))
@@ -403,8 +380,8 @@ func wrapText(text string, width int) string {
 
 	for _, word := range words {
 		// Truncate words longer than width
-		if len(word) > width {
-			word = word[:width-1] + "…"
+		if lipgloss.Width(word) > width {
+			word = truncateToWidth(word, width-1) + "…"
 		}
 
 		if currentLine == "" {
@@ -507,25 +484,49 @@ func (m *Model) rebuildRenderedContent(viewportWidth int) {
 
 func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
 	separatorWidth := len(colSeparator) * 3
-	levelWidth := colMinLevelWidth
-	for _, queuedMsg := range m.main.messages {
-		width := lipgloss.Width(formatTraceLevel(queuedMsg.LogLevel()))
-		if width > levelWidth {
-			levelWidth = width
+
+	// Use cached values if availableWidth matches the cached width key
+	// (messages were added incrementally and width hasn't changed)
+	var levelWidth int
+	if m.main.cachedWidthKey == availableWidth && len(m.main.messages) > 0 {
+		// Fast path: use cached column widths
+		levelWidth = m.main.cachedLevelWidth
+	} else {
+		// Slow path: full scan needed (width changed, messages removed, or initial build)
+		levelWidth = colMinLevelWidth
+		for _, queuedMsg := range m.main.messages {
+			width := lipgloss.Width(formatTraceLevel(queuedMsg.LogLevel()))
+			if width > levelWidth {
+				levelWidth = width
+			}
 		}
+		levelWidth = min(max(levelWidth, colMinLevelWidth), colMaxLevelWidth)
+
+		// Update cache
+		m.main.cachedLevelWidth = levelWidth
 	}
-	levelWidth = min(max(levelWidth, colMinLevelWidth), colMaxLevelWidth)
 
 	baseWidth := colTimestampWidth + levelWidth + separatorWidth
 	maxAllowedAPIWidth := max(availableWidth-baseWidth-colMinPayloadWidth, colMinAPIWidth)
 	apiWidth := min(colMaxAPIWidth, maxAllowedAPIWidth)
 
-	longestAPI := 0
-	for _, queuedMsg := range m.main.messages {
-		width := lipgloss.Width(truncate(sanitizeLogString(queuedMsg.ProcessName()), colMaxAPIWidth))
-		if width > longestAPI {
-			longestAPI = width
+	// Use cached API width if availableWidth matches
+	var longestAPI int
+	if m.main.cachedWidthKey == availableWidth && len(m.main.messages) > 0 {
+		longestAPI = m.main.cachedAPIWidth
+	} else {
+		// Full scan for API width
+		longestAPI = 0
+		for _, queuedMsg := range m.main.messages {
+			width := lipgloss.Width(truncate(sanitizeLogString(queuedMsg.ProcessName()), colMaxAPIWidth))
+			if width > longestAPI {
+				longestAPI = width
+			}
 		}
+
+		// Update cache
+		m.main.cachedAPIWidth = longestAPI
+		m.main.cachedWidthKey = availableWidth
 	}
 
 	if longestAPI > 0 {
@@ -607,32 +608,75 @@ func (m *Model) mainFooterText() string {
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.
 // If the message widens any column (new max level or API width), it falls back to a
-// full rebuild so existing lines stay aligned. This keeps the common path O(1).
+// full rebuild so existing lines stay aligned. This avoids the O(n) re-render in the
+// common case where column widths are unchanged.
 // Precondition: msg must already be the last element of m.main.messages.
 func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int) {
 	useColumns := viewportWidth >= colMinWidth
 
 	if useColumns {
-		// Compute layout with and without the new message to detect column-width changes.
-		// Temporarily shrink the slice (no allocation — cap is unchanged).
-		all := m.main.messages
-		m.main.messages = all[:len(all)-1]
-		prevLayout := m.traceColumnLayout(viewportWidth)
-		m.main.messages = all // restore
+		// Incrementally update cached column widths for the new message
+		newLevelWidth := lipgloss.Width(formatTraceLevel(msg.LogLevel()))
+		newAPIWidth := lipgloss.Width(truncate(sanitizeLogString(msg.ProcessName()), colMaxAPIWidth))
 
-		newLayout := m.traceColumnLayout(viewportWidth)
+		// Clamp new widths to valid range
+		newLevelWidth = min(max(newLevelWidth, colMinLevelWidth), colMaxLevelWidth)
+		newAPIWidth = min(max(newAPIWidth, colMinAPIWidth), colMaxAPIWidth)
 
-		if newLayout != prevLayout {
-			// Column widths shifted — rebuild all lines for alignment.
-			m.rebuildRenderedContent(viewportWidth)
-			return
+		// Update cached values if new message exceeds current maxima
+		cacheUpdated := false
+		if newLevelWidth > m.main.cachedLevelWidth {
+			m.main.cachedLevelWidth = newLevelWidth
+			cacheUpdated = true
+		}
+		if newAPIWidth > m.main.cachedAPIWidth {
+			m.main.cachedAPIWidth = newAPIWidth
+			cacheUpdated = true
 		}
 
-		m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(msg), newLayout))
+		// Invalidate cache if viewport width changed
+		if m.main.cachedWidthKey != viewportWidth {
+			m.main.cachedWidthKey = viewportWidth
+			cacheUpdated = true
+		}
+
+		// If cache was updated, recompute layout using cached values
+		layout := m.traceColumnLayout(viewportWidth)
+
+		// Check if column widths actually changed by comparing with what we would have
+		// without the incremental update (only if cache was updated)
+		if cacheUpdated {
+			// Temporarily shrink the slice to compute previous layout
+			all := m.main.messages
+			m.main.messages = all[:len(all)-1]
+			prevLayout := m.traceColumnLayout(viewportWidth)
+			m.main.messages = all // restore
+
+			if prevLayout.levelWidth != layout.levelWidth || prevLayout.apiWidth != layout.apiWidth {
+				// Column widths shifted — rebuild all lines for alignment.
+				m.rebuildRenderedContent(viewportWidth)
+				return
+			}
+		}
+
+		m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(msg), layout))
 	} else {
 		m.main.renderedContent.WriteString(m.formatLogLine(msg))
 	}
 
 	m.main.renderedContent.WriteString("\n")
 	m.main.viewport.SetContent(m.main.renderedContent.String())
+}
+
+// truncateToWidth truncates a string to fit within the specified width, accounting for character widths and adding an ellipsis if truncated.
+func truncateToWidth(s string, maxWidth int) string {
+	var width int
+	for i, r := range s {
+		w := lipgloss.Width(string(r))
+		if width+w > maxWidth {
+			return s[:i]
+		}
+		width += w
+	}
+	return s
 }

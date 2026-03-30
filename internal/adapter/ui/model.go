@@ -62,6 +62,12 @@ type mainState struct {
 	viewport        viewport.Model         // Scrollable viewport for messages
 	autoScroll      bool                   // Whether to auto-scroll to the latest message
 	ready           bool                   // Whether the main screen is ready to display messages
+
+	// Cached column widths for trace layout optimization
+	// Avoids O(n) full scan of messages on each new message
+	cachedLevelWidth int // Cached maximum level column width
+	cachedAPIWidth   int // Cached maximum API/process name column width
+	cachedWidthKey   int // Last viewport width used to compute cached values (0 if invalid)
 }
 
 // onboardingState holds the state for the database configuration onboarding form.

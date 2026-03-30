@@ -13,6 +13,196 @@ import (
 )
 
 // ==========================================
+// wrapText Tests
+// ==========================================
+
+func TestWrapTextBasic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		text     string
+		width    int
+		expected string
+	}{
+		{
+			name:     "empty string",
+			text:     "",
+			width:    80,
+			expected: "",
+		},
+		{
+			name:     "width zero returns original",
+			text:     "Hello world",
+			width:    0,
+			expected: "Hello world",
+		},
+		{
+			name:     "width negative returns original",
+			text:     "Hello world",
+			width:    -1,
+			expected: "Hello world",
+		},
+		{
+			name:     "single word fits",
+			text:     "Hello",
+			width:    80,
+			expected: "Hello",
+		},
+		{
+			name:     "multiple words fit on one line",
+			text:     "Hello world",
+			width:    80,
+			expected: "Hello world",
+		},
+		{
+			name:     "simple word wrap",
+			text:     "Hello world this is a test",
+			width:    15,
+			expected: "Hello world\nthis is a test",
+		},
+		{
+			name:     "preserves newlines",
+			text:     "Hello\nworld",
+			width:    80,
+			expected: "Hello\nworld",
+		},
+		{
+			name:     "newlines with wrapping",
+			text:     "Hello world this\nis a test",
+			width:    15,
+			expected: "Hello world\nthis\nis a test",
+		},
+		{
+			name:     "empty lines preserved",
+			text:     "Hello\n\nworld",
+			width:    80,
+			expected: "Hello\n\nworld",
+		},
+		{
+			name:     "multiple spaces collapsed to single",
+			text:     "Hello  world",
+			width:    80,
+			expected: "Hello world",
+		},
+		{
+			name:     "leading spaces collapsed",
+			text:     "  Hello",
+			width:    80,
+			expected: "Hello",
+		},
+		{
+			name:     "trailing spaces collapsed",
+			text:     "Hello  ",
+			width:    80,
+			expected: "Hello",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := wrapText(tt.text, tt.width)
+			if result != tt.expected {
+				t.Errorf("wrapText(%q, %d) = %q, want %q", tt.text, tt.width, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWrapTextLongWords(t *testing.T) {
+	t.Parallel()
+
+	// Test that long words are split rather than truncated
+	result := wrapText("superlongword", 10)
+	// Should NOT contain ellipsis
+	if strings.Contains(result, "…") {
+		t.Errorf("wrapText should split long words, not truncate with ellipsis; got %q", result)
+	}
+	// Should preserve full word content
+	fullWord := strings.ReplaceAll(result, "\n", "")
+	if fullWord != "superlongword" {
+		t.Errorf("wrapText should preserve entire word; got %q which concatenates to %q", result, fullWord)
+	}
+	// No line should exceed width
+	for i, line := range strings.Split(result, "\n") {
+		if lipgloss.Width(line) > 10 {
+			t.Errorf("line %d exceeds width 10: %q (width %d)", i+1, line, lipgloss.Width(line))
+		}
+	}
+}
+
+func TestWrapTextPreservesSingleSpaces(t *testing.T) {
+	t.Parallel()
+
+	// Input has single spaces, output should have single spaces
+	result := wrapText("Hello world this is a test", 80)
+	expected := "Hello world this is a test"
+	if result != expected {
+		t.Errorf("expected single spaces preserved, got %q want %q", result, expected)
+	}
+}
+
+func TestWrapTextNoEllipsis(t *testing.T) {
+	t.Parallel()
+
+	// Long words should be split, not truncated with ellipsis
+	result := wrapText("superlongword", 10)
+	// Should NOT contain ellipsis character
+	if strings.Contains(result, "…") {
+		t.Errorf("wrapText should split long words, not truncate with ellipsis; got %q", result)
+	}
+	// The word should be fully preserved (just split into chunks)
+	fullWord := strings.ReplaceAll(result, "\n", "")
+	if fullWord != "superlongword" {
+		t.Errorf("wrapText should preserve entire word content; got %q", result)
+	}
+}
+
+func TestWrapTextRealWorldPayloads(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		text  string
+		width int
+	}{
+		{
+			name:  "SQL statement",
+			text:  "SELECT user_id, username, email FROM users WHERE created_at > '2024-01-01'",
+			width: 50,
+		},
+		{
+			name:  "stack trace line",
+			text:  "at com.example.app.service.UserService.getUser(UserService.java:42)",
+			width: 60,
+		},
+		{
+			name:  "long UUID",
+			text:  "550e8400-e29b-41d4-a716-446655440000",
+			width: 30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := wrapText(tt.text, tt.width)
+
+			// Verify no line exceeds width
+			for i, line := range strings.Split(result, "\n") {
+				if lipgloss.Width(line) > tt.width {
+					t.Errorf("line %d exceeds width %d: %q (width %d)", i+1, tt.width, line, lipgloss.Width(line))
+				}
+			}
+
+			// Verify no ellipsis
+			if strings.Contains(result, "…") {
+				t.Errorf("result should not contain ellipsis: %q", result)
+			}
+		})
+	}
+}
+
+// ==========================================
 // Main Screen Layout Tests
 // ==========================================
 

@@ -49,7 +49,11 @@ func main() {
 		App:         omniApp,
 		BoltAdapter: boltAdapter,
 		DBFactory: func(settings *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
-			return oracle.NewOracleAdapter(settings), nil
+			adapter := oracle.NewOracleAdapter(settings)
+			if adapter == nil {
+				return nil, fmt.Errorf("failed to create oracle adapter: nil settings")
+			}
+			return adapter, nil
 		},
 		DBSettingsRepo: dbSettingsRepo,
 		EventChannel:   eventCh,

@@ -577,11 +577,12 @@ func (m *Model) rebuildRenderedContent(viewportWidth int) {
 
 func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
 	separatorWidth := len(colSeparator) * 3
+	cacheValid := m.main.cachedWidthKey == availableWidth && len(m.main.messages) > 0
 
 	// Use cached values if availableWidth matches the cached width key
 	// (messages were added incrementally and width hasn't changed)
 	var levelWidth int
-	if m.main.cachedWidthKey == availableWidth && len(m.main.messages) > 0 {
+	if cacheValid {
 		// Fast path: use cached column widths
 		levelWidth = m.main.cachedLevelWidth
 	} else {
@@ -605,7 +606,7 @@ func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
 
 	// Use cached API width if availableWidth matches
 	var longestAPI int
-	if m.main.cachedWidthKey == availableWidth && len(m.main.messages) > 0 {
+	if cacheValid {
 		longestAPI = m.main.cachedAPIWidth
 	} else {
 		// Full scan for API width

@@ -128,11 +128,19 @@ func (f *AddDatabaseForm) validate() string {
 // ─────────────────────────
 
 // Update: handles keyboard input for the add database form including navigation, character input, and form submission.
-func (f AddDatabaseForm) Update(msg tea.KeyPressMsg) (AddDatabaseForm, tea.Cmd) {
+func (f AddDatabaseForm) Update(msg tea.Msg) (AddDatabaseForm, tea.Cmd) {
 	if f.submitted || f.cancelled {
 		return f, nil
 	}
 
+	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		if f.cursor < formFieldCount {
+			f.fields[f.cursor].Value += msg.String()
+			f.errMsg = ""
+		}
+		return f, nil
+	case tea.KeyPressMsg:
 	key := msg.String()
 
 	switch key {
@@ -205,6 +213,8 @@ func (f AddDatabaseForm) Update(msg tea.KeyPressMsg) (AddDatabaseForm, tea.Cmd) 
 		f.errMsg = ""
 	}
 
+	return f, nil
+	}
 	return f, nil
 }
 

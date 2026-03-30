@@ -36,6 +36,14 @@ var onboardingFields = []onboardingField{
 func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
+	case tea.PasteMsg:
+		if !m.onboarding.submitted {
+			val := m.onboarding.fieldValue(m.onboarding.step)
+			*val += msg.String()
+			m.onboarding.errMsg = ""
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		return m.handleOnboardingKey(msg)
 

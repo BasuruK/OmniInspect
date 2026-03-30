@@ -110,8 +110,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.cancel()
 				return m, tea.Quit
 			}
-			var cmd tea.Cmd
-			m.dbSettings.addForm, cmd = m.dbSettings.addForm.Update(keyMsg)
+		}
+		var cmd tea.Cmd
+		m.dbSettings.addForm, cmd = m.dbSettings.addForm.Update(msg)
 			if m.dbSettings.addForm.IsCancelled() {
 				m.dbSettings.showAddForm = false
 				return m, nil
@@ -121,8 +122,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				return m, m.saveAddFormCmd()
 			}
 			return m, cmd
-		}
-		return m, nil
+		// return m, nil
 	}
 
 	switch msg := msg.(type) {

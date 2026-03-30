@@ -20,7 +20,47 @@ import (
 // maxMessages is the maximum number of messages to retain in the ring buffer.
 // Oldest messages are dropped when capacity is reached.
 // TODO: Make this configurable if users want to adjust memory usage vs. log history depth, consider when implementing main settings flow.
-const maxMessages = 1000
+const (
+	maxMessages         = 1000
+	maxProcessNameWidth = 20
+	mainGapAfterHeader  = 1
+	mainGapAfterStatus  = 0
+	mainGapAfterPanel   = 0
+)
+
+// ==========================================
+// Trace Column Definitions
+// ==========================================
+
+const (
+	// Column widths for trace line formatting
+	colTimestampWidth  = 19 // "2006-01-02 15:04:05"
+	colLevelWidth      = 10 // "[CRITICAL]" - max level length with brackets
+	colMinAPIWidth     = 10
+	colMaxAPIWidth     = 20
+	colMinPayloadWidth = 24
+	colMinWidth        = colTimestampWidth + colLevelWidth + colMinAPIWidth + colMinPayloadWidth + 3
+
+	// Column separator - simple spacing without visible dividers
+	colSeparator = " " // Single space between columns
+)
+
+// traceLine represents a parsed trace message with columnar data
+type traceLine struct {
+	timestamp  string
+	level      string
+	levelStyle lipgloss.Style
+	api        string
+	payload    string
+	raw        *domain.QueueMessage
+}
+
+type traceColumnLayout struct {
+	timestampWidth int
+	levelWidth     int
+	apiWidth       int
+	payloadWidth   int
+}
 
 // ansiEscape matches ANSI escape sequences for sanitization.
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\x1b[0-9;]*[~^KL]|\x1b[12;[0-9]*[0-9]|[^\x20-\x7E]`)
@@ -67,19 +107,9 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		// Drop oldest message if at capacity to prevent unbounded growth
 		if len(m.main.messages) >= maxMessages {
 			m.main.messages = m.main.messages[1:]
-			// Buffer exceeded — rebuild rendered content from trimmed slice
-			m.main.renderedContent.Reset()
-			for _, queuedMsg := range m.main.messages {
-				m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
-				m.main.renderedContent.WriteString("\n")
-			}
-		} else {
-			// Incrementally append the new message to rendered content
-			m.main.renderedContent.WriteString(m.formatLogLine(msg.message))
-			m.main.renderedContent.WriteString("\n")
 		}
 		m.main.messages = append(m.main.messages, msg.message)
-		m.main.viewport.SetContent(m.main.renderedContent.String())
+		m.rebuildRenderedContent(m.main.viewport.Width())
 		if m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
@@ -154,10 +184,19 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 	statusBar := renderInfoBar(contentWidth, m.mainStatusText())
 	footer := renderFooterBar(contentWidth, m.mainFooterText())
 
-	panelHeight := max(
-		contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
-		minPanelHeight,
-	)
+	// Reserve one blank spacer line between each main section so the panel height
+	// calculation matches the final rendered layout exactly.
+	sectionGapCount := mainGapAfterHeader + mainGapAfterStatus + mainGapAfterPanel
+	availableForPanel := contentHeight -
+		lipgloss.Height(header) -
+		lipgloss.Height(statusBar) -
+		lipgloss.Height(footer) -
+		sectionGapCount
+
+	panelHeight := max(availableForPanel, 1)
+	if availableForPanel >= minPanelHeight {
+		panelHeight = availableForPanel
+	}
 	panelWidth, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
 
 	return mainLayoutParts{
@@ -171,6 +210,18 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 	}
 }
 
+func repeatSectionGaps(count int) []string {
+	if count <= 0 {
+		return nil
+	}
+
+	gaps := make([]string, count)
+	for i := 0; i < count; i++ {
+		gaps[i] = ""
+	}
+	return gaps
+}
+
 // ==========================================
 // Main View
 // ==========================================
@@ -179,31 +230,27 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 func (m *Model) viewMain() string {
 	layout := m.computeMainLayout()
 
-	viewportView := styles.ViewportStyle.
-		Width(layout.viewportWidth).
-		Height(layout.viewportHeight).
-		Render(m.main.viewport.View())
+	viewportView := m.main.viewport.View()
 
-	logPanel := applyTotalSize(styles.PrimaryPanelStyle, layout.panelWidth, layout.panelHeight).
-		Render(lipgloss.JoinVertical(
-			lipgloss.Left,
-			styles.SectionTitleStyle.Render("Live Trace Feed"),
-			styles.SubtitleStyle.Render("Awaiting Trace Messages..."),
-			"",
-			viewportView,
-		))
-
-	return renderScreen(
-		m.width,
-		m.height,
-		layout.header,
+	logPanelContent := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.SectionTitleStyle.Render("Live Trace Feed"),
+		styles.SubtitleStyle.Render("Awaiting Trace Messages..."),
 		"",
-		layout.statusBar,
-		"",
-		logPanel,
-		"",
-		layout.footer,
+		viewportView,
 	)
+
+	logPanel := applyTotalSize(styles.PrimaryPanelStyle, layout.panelWidth, layout.panelHeight).Render(logPanelContent)
+
+	sections := []string{layout.header}
+	sections = append(sections, repeatSectionGaps(mainGapAfterHeader)...)
+	sections = append(sections, layout.statusBar)
+	sections = append(sections, repeatSectionGaps(mainGapAfterStatus)...)
+	sections = append(sections, logPanel)
+	sections = append(sections, repeatSectionGaps(mainGapAfterPanel)...)
+	sections = append(sections, layout.footer)
+
+	return renderScreen(m.width, m.height, sections...)
 }
 
 // ==========================================
@@ -221,10 +268,10 @@ func (m *Model) renderLogContent() string {
 	return m.main.renderedContent.String()
 }
 
-// formatLogLine applies color styling based on log level and wraps the payload
-// column to fit within the terminal width. Continuation lines are indented to
-// align with the start of the payload column.
+// formatLogLine applies color styling based on log level and returns a plain
+// prefix-plus-payload line.
 func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
+
 	timestamp := msg.Timestamp().Format("2006-01-02 15:04:05")
 
 	// Choose color based on log level
@@ -244,13 +291,144 @@ func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 		levelStyle = styles.LogLevelStyle.Foreground(styles.MutedColor)
 	}
 
-	return fmt.Sprintf(
-		"%s %s %s %s",
-		styles.LogTimestampStyle.Render(timestamp),
-		levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel())),
-		styles.LogProcessStyle.Render(sanitizeLogString(msg.ProcessName())),
-		sanitizeLogString(msg.Payload()),
-	)
+	renderedTimestamp := styles.LogTimestampStyle.Render(timestamp)
+	renderedLevel := levelStyle.Render(fmt.Sprintf("[%-8s]", msg.LogLevel()))
+	renderedProcess := styles.LogProcessStyle.Render(truncate(sanitizeLogString(msg.ProcessName()), maxProcessNameWidth))
+	prefix := renderedTimestamp + " " + renderedLevel + " " + renderedProcess + " "
+
+	payload := sanitizeLogString(msg.Payload())
+	if payload == "" {
+		return prefix
+	}
+
+	return prefix + payload
+}
+
+// parseTraceLine extracts structured data from a QueueMessage
+func parseTraceLine(msg *domain.QueueMessage) traceLine {
+	return traceLine{
+		timestamp:  msg.Timestamp().Format("2006-01-02 15:04:05"),
+		level:      fmt.Sprintf("[%s]", msg.LogLevel()),
+		levelStyle: getLevelStyle(msg.LogLevel()),
+		api:        truncate(sanitizeLogString(msg.ProcessName()), colMaxAPIWidth),
+		payload:    sanitizeLogString(msg.Payload()),
+		raw:        msg,
+	}
+}
+
+// getLevelStyle returns the lipgloss style for a given log level
+func getLevelStyle(level domain.LogLevel) lipgloss.Style {
+	base := styles.LogLevelStyle
+	switch level {
+	case domain.LogLevelDebug:
+		return base.Foreground(styles.DebugColor)
+	case domain.LogLevelInfo:
+		return base.Foreground(styles.InfoColor)
+	case domain.LogLevelWarning:
+		return base.Foreground(styles.WarningColor)
+	case domain.LogLevelError:
+		return base.Foreground(styles.ErrorColor)
+	case domain.LogLevelCritical:
+		return base.Foreground(styles.CriticalColor)
+	default:
+		return base.Foreground(styles.MutedColor)
+	}
+}
+
+// renderTraceColumns renders a traceLine as a fixed-width formatted string with word-wrap.
+func renderTraceColumns(line traceLine, layout traceColumnLayout) string {
+	if layout.payloadWidth < 5 {
+		// Fallback to compact format if too narrow
+		return renderCompactLine(line)
+	}
+
+	// Build column styles
+	tsStyle := styles.LogTimestampStyle.Width(layout.timestampWidth)
+	lvlStyle := line.levelStyle.Width(layout.levelWidth)
+	apiStyle := styles.LogProcessStyle.Width(layout.apiWidth)
+	payStyle := lipgloss.NewStyle().Width(layout.payloadWidth)
+
+	// Word-wrap the payload text to fit within payloadWidth
+	wrappedPayload := wrapText(line.payload, layout.payloadWidth)
+	payloadLines := strings.Split(wrappedPayload, "\n")
+
+	// Build continuation line indent (spaces for fixed columns + separator)
+	indent := strings.Repeat(" ", layout.timestampWidth+layout.levelWidth+layout.apiWidth+(len(colSeparator)*3))
+
+	var result strings.Builder
+
+	// Render first line with columns
+	result.WriteString(lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		tsStyle.Render(line.timestamp),
+		colSeparator,
+		lvlStyle.Render(line.level),
+		colSeparator,
+		apiStyle.Render(line.api),
+		colSeparator,
+		payStyle.Render(payloadLines[0]),
+	))
+
+	// Render continuation lines if payload wrapped
+	for i := 1; i < len(payloadLines); i++ {
+		result.WriteString("\n")
+		result.WriteString(indent)
+		result.WriteString(payloadLines[i])
+	}
+
+	return result.String()
+}
+
+// wrapText wraps text to fit within the specified width using simple word-wrapping
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+	currentLine := ""
+
+	for _, word := range words {
+		if currentLine == "" {
+			currentLine = word
+		} else if len(currentLine)+1+len(word) <= width {
+			currentLine += " " + word
+		} else {
+			// Line would exceed width, start new line
+			if result.Len() > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(currentLine)
+			currentLine = word
+		}
+	}
+
+	// Write the last line
+	if currentLine != "" {
+		if result.Len() > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(currentLine)
+	}
+
+	return result.String()
+}
+
+// renderCompactLine is a fallback format for narrow terminals
+func renderCompactLine(line traceLine) string {
+	tsStyle := styles.LogTimestampStyle
+	lvlStyle := line.levelStyle
+	apiStyle := styles.LogProcessStyle
+
+	return tsStyle.Render(line.timestamp) + " " +
+		lvlStyle.Render(line.level) + " " +
+		apiStyle.Render(truncate(line.api, 15)) + " " +
+		line.payload
 }
 
 // initViewport creates and configures the viewport for the main screen.
@@ -264,29 +442,93 @@ func (m *Model) initViewport() {
 	)
 	m.main.viewport.SetContent(m.renderLogContent())
 	m.main.ready = true
+}
 
-	// Rebuild rendered content with real viewport width in case messages were
-	// buffered before the viewport was initialized (formatted with the fallback
-	// column width). No-op when there are no messages.
-	if len(m.main.messages) > 0 {
-		m.main.renderedContent.Reset()
-		for _, queuedMsg := range m.main.messages {
-			m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
-			m.main.renderedContent.WriteString("\n")
+// resizeMainViewport keeps the viewport dimensions and rendered content aligned
+// with the current terminal size. Width changes require a full content rebuild
+// because trace payload wrapping is derived from the viewport width.
+func (m *Model) resizeMainViewport() {
+	layout := m.computeMainLayout()
+	oldWidth := m.main.viewport.Width()
+	oldYOffset := m.main.viewport.YOffset()
+	wasAtBottom := m.main.viewport.AtBottom()
+
+	m.main.viewport.SetWidth(layout.viewportWidth)
+	m.main.viewport.SetHeight(layout.viewportHeight)
+
+	if oldWidth != layout.viewportWidth {
+		m.rebuildRenderedContent(layout.viewportWidth)
+		if m.main.autoScroll || wasAtBottom {
+			m.main.viewport.GotoBottom()
+			return
 		}
-		m.main.viewport.SetContent(m.main.renderedContent.String())
+
+		maxOffset := max(m.main.viewport.TotalLineCount()-m.main.viewport.Height(), 0)
+		m.main.viewport.SetYOffset(min(oldYOffset, maxOffset))
+		return
+	}
+
+	if m.main.autoScroll && wasAtBottom {
+		m.main.viewport.GotoBottom()
+	}
+}
+
+// rebuildRenderedContent regenerates the viewport buffer for the current width
+// without changing the trace formatting rules.
+func (m *Model) rebuildRenderedContent(viewportWidth int) {
+	useColumns := viewportWidth >= colMinWidth
+	layout := m.traceColumnLayout(viewportWidth)
+
+	m.main.renderedContent.Reset()
+	for _, queuedMsg := range m.main.messages {
+		if useColumns {
+			m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(queuedMsg), layout))
+		} else {
+			m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+		}
+		m.main.renderedContent.WriteString("\n")
+	}
+
+	m.main.viewport.SetContent(m.main.renderedContent.String())
+}
+
+func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
+	separatorWidth := len(colSeparator) * 3
+	baseWidth := colTimestampWidth + colLevelWidth + separatorWidth
+	maxAllowedAPIWidth := max(availableWidth-baseWidth-colMinPayloadWidth, colMinAPIWidth)
+	apiWidth := min(colMaxAPIWidth, maxAllowedAPIWidth)
+
+	longestAPI := 0
+	for _, queuedMsg := range m.main.messages {
+		width := lipgloss.Width(truncate(sanitizeLogString(queuedMsg.ProcessName()), colMaxAPIWidth))
+		if width > longestAPI {
+			longestAPI = width
+		}
+	}
+
+	if longestAPI > 0 {
+		apiWidth = min(apiWidth, max(longestAPI, colMinAPIWidth))
+	}
+
+	payloadWidth := max(availableWidth-baseWidth-apiWidth, 1)
+
+	return traceColumnLayout{
+		timestampWidth: colTimestampWidth,
+		levelWidth:     colLevelWidth,
+		apiWidth:       apiWidth,
+		payloadWidth:   payloadWidth,
 	}
 }
 
 // mainViewportDimensions: calculates panel and viewport dimensions accounting for borders and text elements.
 func (m *Model) mainViewportDimensions(contentWidth, panelHeight int) (int, int, int) {
-	panelWidth := max(contentWidth, 20)
+	panelWidth := max(contentWidth, 1)
 	panelHorizontalFrame, panelVerticalFrame := styles.PrimaryPanelStyle.GetFrameSize()
 	panelTextHeight := lipgloss.Height(styles.SectionTitleStyle.Render("Live Trace Feed")) +
 		lipgloss.Height(styles.SubtitleStyle.Render("Awaiting Trace Messages...")) +
 		1
 
-	viewportWidth := max(panelWidth-panelHorizontalFrame, 10)
+	viewportWidth := max(panelWidth-panelHorizontalFrame, 1)
 	viewportHeight := max(panelHeight-panelVerticalFrame-panelTextHeight, 1)
 
 	return panelWidth, viewportWidth, viewportHeight

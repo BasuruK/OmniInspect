@@ -12,22 +12,23 @@ import (
 // Shared Screen Layout
 // ==========================================
 
-// screenContentSize: calculates the usable content area by subtracting frame/border dimensions from terminal size.
+// screenContentSize: calculates the usable content area by subtracting frame/padding
+// dimensions from terminal size. The returned size must never exceed the actual
+// terminal area, otherwise bordered sections can wrap into the next line.
 func screenContentSize(termWidth, termHeight int) (int, int) {
 	horizontalFrame, verticalFrame := styles.ScreenStyle.GetFrameSize()
-	contentWidth := max(termWidth-horizontalFrame, 20)
-	contentHeight := max(termHeight-verticalFrame, 8)
+	contentWidth := max(termWidth-horizontalFrame, 1)
+	contentHeight := max(termHeight-verticalFrame, 1)
 	return contentWidth, contentHeight
 }
 
 // renderScreen: assembles vertical sections into a screen with proper content dimensions.
 func renderScreen(width, height int, sections ...string) string {
-	contentWidth, contentHeight := screenContentSize(width, height)
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	return styles.ScreenStyle.
-		Width(contentWidth).
-		Height(contentHeight).
+		Width(max(width, 1)).
+		Height(max(height, 1)).
 		Render(content)
 }
 
@@ -94,8 +95,11 @@ func renderInfoBar(width int, text string) string {
 }
 
 // renderFooterBar: renders a footer bar with the given text at the specified width.
+// Text is aligned to fill the width for a flush appearance.
 func renderFooterBar(width int, text string) string {
-	return applyTotalWidth(styles.FooterStyle, width).Render(text)
+	// Use AlignHorizontal to stretch content across full width
+	style := applyTotalWidth(styles.FooterStyle, width).AlignHorizontal(lipgloss.Left)
+	return style.Render(text)
 }
 
 // renderPanel: renders a titled panel with the given body content at the specified width.
@@ -144,18 +148,18 @@ func renderFramedPanel(title string, width int, blocks ...string) string {
 	return b.String()
 }
 
-// applyTotalWidth: adjusts a style's width to account for border frame, returning the usable content width.
+// applyTotalWidth: applies the desired rendered width directly. In Lip Gloss v2,
+// Width controls the total rendered box width, including border and padding.
 func applyTotalWidth(style lipgloss.Style, totalWidth int) lipgloss.Style {
-	horizontalFrame, _ := style.GetFrameSize()
-	return style.Width(max(totalWidth-horizontalFrame, 1))
+	return style.Width(max(totalWidth, 1))
 }
 
-// applyTotalSize: adjusts a style's width and height to account for border frame dimensions.
+// applyTotalSize: applies the desired rendered width and height directly. In
+// Lip Gloss v2, Width and Height control the total rendered box size.
 func applyTotalSize(style lipgloss.Style, totalWidth, totalHeight int) lipgloss.Style {
-	horizontalFrame, verticalFrame := style.GetFrameSize()
 	return style.
-		Width(max(totalWidth-horizontalFrame, 1)).
-		Height(max(totalHeight-verticalFrame, 1))
+		Width(max(totalWidth, 1)).
+		Height(max(totalHeight, 1))
 }
 
 // ==========================================

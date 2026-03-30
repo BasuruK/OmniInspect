@@ -20,7 +20,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // ==========================================
@@ -37,6 +36,12 @@ const (
 	panelHeightCompensation = 3
 	// Minimum usable panel height to ensure viewport remains functional
 	minPanelHeight = 7
+
+	// Boundary margin as percentage of terminal dimension
+	// Applied to all sides (top, bottom, left, right) to create visual breathing room
+	boundaryMarginPercent = 0.10 // 10%
+	// Minimum boundary margin in characters (prevents zero-margin on small terminals)
+	minBoundaryMargin = 2
 )
 
 // ==========================================
@@ -271,33 +276,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Resize viewport if on Main Screen
 		if m.screen == screenMain && m.main.ready {
-			contentWidth, contentHeight := screenContentSize(m.width, m.height)
-			header := renderScreenHeader(
-				contentWidth,
-				"OmniView Trace Console",
-				m.mainSubtitle(),
-				m.mainConnectionMeta(),
-			)
-			statusBar := renderInfoBar(contentWidth, m.mainStatusText())
-			footer := renderFooterBar(contentWidth, m.mainFooterText())
-			// Compute panel height: subtract header, status bar, footer, and border/padding
-			// Enforce minimum height to remain usable
-			panelHeight := max(
-				contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
-				minPanelHeight,
-			)
-			_, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
-			m.main.viewport.SetWidth(viewportWidth)
-			m.main.viewport.SetHeight(viewportHeight)
-			// Re-wrap all messages at the new terminal width
-			if len(m.main.messages) > 0 {
-				m.main.renderedContent.Reset()
-				for _, queuedMsg := range m.main.messages {
-					m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
-					m.main.renderedContent.WriteString("\n")
-				}
-				m.main.viewport.SetContent(m.main.renderedContent.String())
-			}
+			m.resizeMainViewport()
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)

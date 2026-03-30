@@ -2,7 +2,6 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/service/tracer"
@@ -250,7 +249,7 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	}
 	m.appConfig = &selected
 	// Reinitialize adapter with new config
-	m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+	m.dbAdapter = m.dbFactory(m.appConfig)
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil
 	m.tracerService = nil

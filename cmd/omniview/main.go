@@ -2,9 +2,11 @@ package main
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	updaterSvc "OmniView/internal/service/updater"
 	"OmniView/internal/updater"
 	"fmt"
@@ -44,8 +46,11 @@ func main() {
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
 	model, err := ui.NewModel(ui.ModelOpts{
-		App:            omniApp,
-		BoltAdapter:    boltAdapter,
+		App:         omniApp,
+		BoltAdapter: boltAdapter,
+		DBFactory: func(settings *domain.DatabaseSettings) ports.DatabaseRepository {
+			return oracle.NewOracleAdapter(settings)
+		},
 		DBSettingsRepo: dbSettingsRepo,
 		EventChannel:   eventCh,
 		UpdaterService: updaterService,

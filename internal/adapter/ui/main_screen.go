@@ -35,11 +35,12 @@ const (
 const (
 	// Column widths for trace line formatting
 	colTimestampWidth  = 19 // "2006-01-02 15:04:05"
-	colLevelWidth      = 10 // "[CRITICAL]" - max level length with brackets
+	colMinLevelWidth   = 7
+	colMaxLevelWidth   = 10 // "[CRITICAL]" - max level length with brackets
 	colMinAPIWidth     = 10
 	colMaxAPIWidth     = 20
 	colMinPayloadWidth = 24
-	colMinWidth        = colTimestampWidth + colLevelWidth + colMinAPIWidth + colMinPayloadWidth + 3
+	colMinWidth        = colTimestampWidth + colMinLevelWidth + colMinAPIWidth + colMinPayloadWidth + 3
 
 	// Column separator - simple spacing without visible dividers
 	colSeparator = " " // Single space between columns
@@ -308,7 +309,7 @@ func (m *Model) formatLogLine(msg *domain.QueueMessage) string {
 func parseTraceLine(msg *domain.QueueMessage) traceLine {
 	return traceLine{
 		timestamp:  msg.Timestamp().Format("2006-01-02 15:04:05"),
-		level:      fmt.Sprintf("[%s]", msg.LogLevel()),
+		level:      formatTraceLevel(msg.LogLevel()),
 		levelStyle: getLevelStyle(msg.LogLevel()),
 		api:        truncate(sanitizeLogString(msg.ProcessName()), colMaxAPIWidth),
 		payload:    sanitizeLogString(msg.Payload()),
@@ -333,6 +334,10 @@ func getLevelStyle(level domain.LogLevel) lipgloss.Style {
 	default:
 		return base.Foreground(styles.MutedColor)
 	}
+}
+
+func formatTraceLevel(level domain.LogLevel) string {
+	return fmt.Sprintf("[%s]", level)
 }
 
 // renderTraceColumns renders a traceLine as a fixed-width formatted string with word-wrap.
@@ -494,7 +499,16 @@ func (m *Model) rebuildRenderedContent(viewportWidth int) {
 
 func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
 	separatorWidth := len(colSeparator) * 3
-	baseWidth := colTimestampWidth + colLevelWidth + separatorWidth
+	levelWidth := colMinLevelWidth
+	for _, queuedMsg := range m.main.messages {
+		width := lipgloss.Width(formatTraceLevel(queuedMsg.LogLevel()))
+		if width > levelWidth {
+			levelWidth = width
+		}
+	}
+	levelWidth = min(max(levelWidth, colMinLevelWidth), colMaxLevelWidth)
+
+	baseWidth := colTimestampWidth + levelWidth + separatorWidth
 	maxAllowedAPIWidth := max(availableWidth-baseWidth-colMinPayloadWidth, colMinAPIWidth)
 	apiWidth := min(colMaxAPIWidth, maxAllowedAPIWidth)
 
@@ -514,7 +528,7 @@ func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
 
 	return traceColumnLayout{
 		timestampWidth: colTimestampWidth,
-		levelWidth:     colLevelWidth,
+		levelWidth:     levelWidth,
 		apiWidth:       apiWidth,
 		payloadWidth:   payloadWidth,
 	}

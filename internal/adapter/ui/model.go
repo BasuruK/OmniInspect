@@ -2,7 +2,6 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
@@ -117,10 +116,11 @@ type Model struct {
 
 	// BoltDB adapter for config read/write (used by onboarding)
 	boltAdapter *boltdb.BoltAdapter
+	dbFactory   DatabaseAdapterFactory
 
 	// Application Services (injected via NewModel)
 	dbSettingsRepo    ports.DatabaseSettingsRepository
-	dbAdapter         *oracle.OracleAdapter
+	dbAdapter         ports.DatabaseRepository
 	permissionService *permissions.PermissionService
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
@@ -142,8 +142,9 @@ type Model struct {
 type ModelOpts struct {
 	App                *app.App
 	BoltAdapter        *boltdb.BoltAdapter
+	DBFactory          DatabaseAdapterFactory
 	DBSettingsRepo     ports.DatabaseSettingsRepository
-	DBAdapter          *oracle.OracleAdapter
+	DBAdapter          ports.DatabaseRepository
 	PermissionService  *permissions.PermissionService
 	TracerService      *tracer.TracerService
 	SubscriberService  *subscribers.SubscriberService
@@ -164,6 +165,9 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}
 	if opts.DBSettingsRepo == nil {
 		errs = append(errs, "DBSettingsRepo is required")
+	}
+	if opts.DBFactory == nil {
+		errs = append(errs, "DBFactory is required")
 	}
 	if opts.UpdaterService == nil {
 		errs = append(errs, "UpdaterService is required")
@@ -193,6 +197,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		ctx:                ctx,
 		cancel:             cancel,
 		boltAdapter:        opts.BoltAdapter,
+		dbFactory:          opts.DBFactory,
 		dbSettingsRepo:     opts.DBSettingsRepo,
 		app:                opts.App,
 		dbAdapter:          opts.DBAdapter,
@@ -219,7 +224,7 @@ func (m *Model) initializeServices() error {
 	}
 
 	if m.dbAdapter == nil {
-		m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+		m.dbAdapter = m.dbFactory(m.appConfig)
 	}
 
 	if m.permissionService == nil {

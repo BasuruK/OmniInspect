@@ -92,13 +92,16 @@ func TestTraceColumnLayoutShrinksAPIColumnForShortNames(t *testing.T) {
 	}
 
 	layout := m.traceColumnLayout(100)
+	if layout.levelWidth != lipgloss.Width("[ERROR]") {
+		t.Fatalf("expected level column to shrink to visible content width, got %d", layout.levelWidth)
+	}
 	if layout.apiWidth >= colMaxAPIWidth {
 		t.Fatalf("expected API column to shrink below max width, got %d", layout.apiWidth)
 	}
 	if layout.apiWidth < lipgloss.Width("OMNI_TRACER_API") {
 		t.Fatalf("expected API column to fit process name, got %d", layout.apiWidth)
 	}
-	if layout.payloadWidth <= 100-(colTimestampWidth+colLevelWidth+colMaxAPIWidth+3) {
+	if layout.payloadWidth <= 100-(colTimestampWidth+colMaxLevelWidth+colMaxAPIWidth+3) {
 		t.Fatalf("expected payload width to grow when API column shrinks, got %d", layout.payloadWidth)
 	}
 }

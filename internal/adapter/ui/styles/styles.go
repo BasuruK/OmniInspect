@@ -10,7 +10,7 @@ import (
 
 var (
 	TextColor                 = lipgloss.Color("#E6EDF3")
-	MutedColor                = lipgloss.Color("#9FB3C8")
+	MutedColor                = lipgloss.Color("#5b636d")
 	PrimaryColor              = lipgloss.Color("#00BFFF")
 	SecondaryColor            = lipgloss.Color("#4FD1C5")
 	AccentColor               = lipgloss.Color("#38BDF8")
@@ -29,6 +29,7 @@ var (
 	CriticalColor             = lipgloss.Color("#FF8A8A")
 	PrimaryButtonFocusColor   = lipgloss.Color("#0A8A11")
 	SecondaryButtonFocusColor = lipgloss.Color("#CC1414")
+	ApiCallerColor            = lipgloss.Color("#da5de6")
 )
 
 // ==========================================
@@ -41,7 +42,7 @@ var (
 
 	ScreenStyle = lipgloss.NewStyle().
 			Foreground(TextColor).
-			Padding(1, 2)
+			Padding(0, 2)
 
 	PrimaryPanelStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
@@ -72,7 +73,7 @@ var (
 			Foreground(MutedColor).
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(SurfaceColor).
-			Padding(0, 1)
+			Padding(0, 0) // No horizontal padding to fill full width
 
 	SectionTitleStyle = lipgloss.NewStyle().
 				Foreground(SecondaryColor).
@@ -142,7 +143,7 @@ var (
 				Foreground(MutedColor)
 
 	LogProcessStyle = lipgloss.NewStyle().
-			Foreground(SecondaryColor)
+			Foreground(ApiCallerColor)
 
 	LogLevelStyle = lipgloss.NewStyle().
 			Foreground(TextColor).

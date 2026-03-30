@@ -5,9 +5,10 @@ go 1.24.2
 toolchain go1.24.4
 
 require (
+	charm.land/bubbles/v2 v2.0.0
 	charm.land/bubbletea/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.0
-	charm.land/bubbles/v2 v2.0.0
+	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/google/uuid v1.6.0
 	go.etcd.io/bbolt v1.4.3
 )
@@ -15,7 +16,6 @@ require (
 require (
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff // indirect
-	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect

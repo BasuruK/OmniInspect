@@ -2,7 +2,6 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
@@ -20,7 +19,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // ==========================================
@@ -64,6 +62,12 @@ type mainState struct {
 	viewport        viewport.Model         // Scrollable viewport for messages
 	autoScroll      bool                   // Whether to auto-scroll to the latest message
 	ready           bool                   // Whether the main screen is ready to display messages
+
+	// Cached column widths for trace layout optimization
+	// Avoids O(n) full scan of messages on each new message
+	cachedLevelWidth int // Cached maximum level column width
+	cachedAPIWidth   int // Cached maximum API/process name column width
+	cachedWidthKey   int // Last viewport width used to compute cached values (0 if invalid)
 }
 
 // onboardingState holds the state for the database configuration onboarding form.
@@ -112,10 +116,11 @@ type Model struct {
 
 	// BoltDB adapter for config read/write (used by onboarding)
 	boltAdapter *boltdb.BoltAdapter
+	dbFactory   DatabaseAdapterFactory
 
 	// Application Services (injected via NewModel)
 	dbSettingsRepo    ports.DatabaseSettingsRepository
-	dbAdapter         *oracle.OracleAdapter
+	dbAdapter         ports.DatabaseRepository
 	permissionService *permissions.PermissionService
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
@@ -137,8 +142,9 @@ type Model struct {
 type ModelOpts struct {
 	App                *app.App
 	BoltAdapter        *boltdb.BoltAdapter
+	DBFactory          DatabaseAdapterFactory
 	DBSettingsRepo     ports.DatabaseSettingsRepository
-	DBAdapter          *oracle.OracleAdapter
+	DBAdapter          ports.DatabaseRepository
 	PermissionService  *permissions.PermissionService
 	TracerService      *tracer.TracerService
 	SubscriberService  *subscribers.SubscriberService
@@ -160,8 +166,14 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	if opts.DBSettingsRepo == nil {
 		errs = append(errs, "DBSettingsRepo is required")
 	}
+	if opts.DBFactory == nil {
+		errs = append(errs, "DBFactory is required")
+	}
 	if opts.UpdaterService == nil {
 		errs = append(errs, "UpdaterService is required")
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("new model: %s", strings.Join(errs, "; "))
 	}
 
 	// Determine channel values — use injected channels if provided, otherwise create default buffered channels
@@ -188,6 +200,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		ctx:                ctx,
 		cancel:             cancel,
 		boltAdapter:        opts.BoltAdapter,
+		dbFactory:          opts.DBFactory,
 		dbSettingsRepo:     opts.DBSettingsRepo,
 		app:                opts.App,
 		dbAdapter:          opts.DBAdapter,
@@ -214,7 +227,14 @@ func (m *Model) initializeServices() error {
 	}
 
 	if m.dbAdapter == nil {
-		m.dbAdapter = oracle.NewOracleAdapter(m.appConfig)
+		var err error
+		m.dbAdapter, err = m.dbFactory(m.appConfig)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create db adapter: %w", err)
+		}
+		if m.dbAdapter == nil {
+			return fmt.Errorf("initializeServices: db factory returned nil adapter")
+		}
 	}
 
 	if m.permissionService == nil {
@@ -271,33 +291,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Resize viewport if on Main Screen
 		if m.screen == screenMain && m.main.ready {
-			contentWidth, contentHeight := screenContentSize(m.width, m.height)
-			header := renderScreenHeader(
-				contentWidth,
-				"OmniView Trace Console",
-				m.mainSubtitle(),
-				m.mainConnectionMeta(),
-			)
-			statusBar := renderInfoBar(contentWidth, m.mainStatusText())
-			footer := renderFooterBar(contentWidth, m.mainFooterText())
-			// Compute panel height: subtract header, status bar, footer, and border/padding
-			// Enforce minimum height to remain usable
-			panelHeight := max(
-				contentHeight-lipgloss.Height(header)-lipgloss.Height(statusBar)-lipgloss.Height(footer)-panelHeightCompensation,
-				minPanelHeight,
-			)
-			_, viewportWidth, viewportHeight := m.mainViewportDimensions(contentWidth, panelHeight)
-			m.main.viewport.SetWidth(viewportWidth)
-			m.main.viewport.SetHeight(viewportHeight)
-			// Re-wrap all messages at the new terminal width
-			if len(m.main.messages) > 0 {
-				m.main.renderedContent.Reset()
-				for _, queuedMsg := range m.main.messages {
-					m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
-					m.main.renderedContent.WriteString("\n")
-				}
-				m.main.viewport.SetContent(m.main.renderedContent.String())
-			}
+			m.resizeMainViewport()
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)

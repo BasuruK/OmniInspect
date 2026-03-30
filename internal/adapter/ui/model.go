@@ -227,7 +227,14 @@ func (m *Model) initializeServices() error {
 	}
 
 	if m.dbAdapter == nil {
-		m.dbAdapter = m.dbFactory(m.appConfig)
+		var err error
+		m.dbAdapter, err = m.dbFactory(m.appConfig)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create db adapter: %w", err)
+		}
+		if m.dbAdapter == nil {
+			return fmt.Errorf("initializeServices: db factory returned nil adapter")
+		}
 	}
 
 	if m.permissionService == nil {

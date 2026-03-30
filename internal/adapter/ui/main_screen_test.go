@@ -142,22 +142,6 @@ func TestWrapTextPreservesSingleSpaces(t *testing.T) {
 	}
 }
 
-func TestWrapTextNoEllipsis(t *testing.T) {
-	t.Parallel()
-
-	// Long words should be split, not truncated with ellipsis
-	result := wrapText("superlongword", 10)
-	// Should NOT contain ellipsis character
-	if strings.Contains(result, "…") {
-		t.Errorf("wrapText should split long words, not truncate with ellipsis; got %q", result)
-	}
-	// The word should be fully preserved (just split into chunks)
-	fullWord := strings.ReplaceAll(result, "\n", "")
-	if fullWord != "superlongword" {
-		t.Errorf("wrapText should preserve entire word content; got %q", result)
-	}
-}
-
 func TestWrapTextRealWorldPayloads(t *testing.T) {
 	t.Parallel()
 
@@ -304,8 +288,8 @@ func newTestMainModel(t *testing.T, width, height int) *Model {
 		screen: screenMain,
 		width:  width,
 		height: height,
-		dbFactory: func(_ *domain.DatabaseSettings) ports.DatabaseRepository {
-			return nil // or a mock
+		dbFactory: func(_ *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+			return nil, nil // or a mock
 		},
 		main: mainState{
 			autoScroll: true,

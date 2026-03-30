@@ -423,8 +423,13 @@ func wrapText(text string, width int) string {
 						chunkEnd++
 					}
 
-					result.WriteString(string(runes[chunkStart:chunkEnd]))
-					result.WriteString("\n")
+					chunk := string(runes[chunkStart:chunkEnd])
+					if chunkEnd == len(runes) {
+						currentLine.WriteString(chunk)
+					} else {
+						result.WriteString(chunk)
+						result.WriteString("\n")
+					}
 					chunkStart = chunkEnd
 					chunkWidth = 0
 				}
@@ -508,6 +513,13 @@ func (m *Model) resizeMainViewport() {
 // rebuildRenderedContent regenerates the viewport buffer for the current width
 // without changing the trace formatting rules.
 func (m *Model) rebuildRenderedContent(viewportWidth int) {
+	// Preserve the empty-state content on rebuild.
+	if len(m.main.messages) == 0 {
+		m.main.renderedContent.Reset()
+		m.main.viewport.SetContent(m.renderLogContent())
+		return
+	}
+
 	useColumns := viewportWidth >= colMinWidth
 	layout := m.traceColumnLayout(viewportWidth)
 

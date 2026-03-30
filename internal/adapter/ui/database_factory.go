@@ -6,4 +6,4 @@ import (
 )
 
 // DatabaseAdapterFactory creates a database adapter for a given settings object.
-type DatabaseAdapterFactory func(*domain.DatabaseSettings) ports.DatabaseRepository
+type DatabaseAdapterFactory func(*domain.DatabaseSettings) (ports.DatabaseRepository, error)

@@ -48,8 +48,8 @@ func main() {
 	model, err := ui.NewModel(ui.ModelOpts{
 		App:         omniApp,
 		BoltAdapter: boltAdapter,
-		DBFactory: func(settings *domain.DatabaseSettings) ports.DatabaseRepository {
-			return oracle.NewOracleAdapter(settings)
+		DBFactory: func(settings *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+			return oracle.NewOracleAdapter(settings), nil
 		},
 		DBSettingsRepo: dbSettingsRepo,
 		EventChannel:   eventCh,

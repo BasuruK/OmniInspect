@@ -249,7 +249,12 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	}
 	m.appConfig = &selected
 	// Reinitialize adapter with new config
-	m.dbAdapter = m.dbFactory(m.appConfig)
+	var err error
+	m.dbAdapter, err = m.dbFactory(m.appConfig)
+	if err != nil {
+		log.Printf("[UI] Failed to create database adapter: %v", err)
+		return m, nil
+	}
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil
 	m.tracerService = nil

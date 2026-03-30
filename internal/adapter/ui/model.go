@@ -172,6 +172,9 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	if opts.UpdaterService == nil {
 		errs = append(errs, "UpdaterService is required")
 	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("new model: %s", strings.Join(errs, "; "))
+	}
 
 	// Determine channel values — use injected channels if provided, otherwise create default buffered channels
 	eventChannel := opts.EventChannel

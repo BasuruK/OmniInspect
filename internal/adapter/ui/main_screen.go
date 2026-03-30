@@ -110,6 +110,10 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			// Ring-buffer shift — old content is invalid; full rebuild required.
 			m.main.messages = m.main.messages[1:]
 			m.main.messages = append(m.main.messages, msg.message)
+			// Invalidate the cached column widths when the ring buffer evicts a row.
+			m.main.cachedLevelWidth = 0
+			m.main.cachedAPIWidth = 0
+			m.main.cachedWidthKey = 0
 			m.rebuildRenderedContent(m.main.viewport.Width())
 		} else {
 			// Fast path: append the message, then render only the new line.
@@ -364,46 +368,84 @@ func renderTraceColumns(line traceLine, layout traceColumnLayout) string {
 	return result.String()
 }
 
-// wrapText wraps text to fit within the specified width using simple word-wrapping
+// wrapText wraps text to fit within the specified width using simple word-wrapping.
+// It preserves original newlines and splits long tokens into width-sized chunks
+// rather than truncating with an ellipsis.
 func wrapText(text string, width int) string {
 	if width <= 0 {
 		return text
 	}
 
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return ""
-	}
-
+	// Split by newlines to preserve original line structure
+	lines := strings.Split(text, "\n")
 	var result strings.Builder
-	currentLine := ""
 
-	for _, word := range words {
-		// Truncate words longer than width
-		if lipgloss.Width(word) > width {
-			word = truncateToWidth(word, width-1) + "…"
-		}
-
-		if currentLine == "" {
-			currentLine = word
-		} else if len(currentLine)+1+len(word) <= width {
-			currentLine += " " + word
-		} else {
-			// Line would exceed width, start new line
-			if result.Len() > 0 {
-				result.WriteString("\n")
-			}
-			result.WriteString(currentLine)
-			currentLine = word
-		}
-	}
-
-	// Write the last line
-	if currentLine != "" {
-		if result.Len() > 0 {
+	for lineIndex, line := range lines {
+		if lineIndex > 0 {
 			result.WriteString("\n")
 		}
-		result.WriteString(currentLine)
+
+		if line == "" {
+			continue
+		}
+
+		// Use strings.Fields to split on whitespace (collapses multiple spaces)
+		words := strings.Fields(line)
+		if len(words) == 0 {
+			continue
+		}
+
+		var currentLine strings.Builder
+
+		for _, word := range words {
+			wordWidth := lipgloss.Width(word)
+
+			if wordWidth > width {
+				// Word exceeds width - split into chunks
+				if currentLine.Len() > 0 {
+					result.WriteString(currentLine.String())
+					result.WriteString("\n")
+					currentLine.Reset()
+				}
+
+				// Split word into width-sized chunks (rune-aware)
+				runes := []rune(word)
+				chunkWidth := 0
+				chunkStart := 0
+
+				for chunkStart < len(runes) {
+					chunkEnd := chunkStart
+					for chunkEnd < len(runes) && chunkWidth < width {
+						chunkWidth += lipgloss.Width(string(runes[chunkEnd]))
+						if chunkWidth > width {
+							break
+						}
+						chunkEnd++
+					}
+
+					result.WriteString(string(runes[chunkStart:chunkEnd]))
+					result.WriteString("\n")
+					chunkStart = chunkEnd
+					chunkWidth = 0
+				}
+			} else if currentLine.Len() == 0 {
+				currentLine.WriteString(word)
+			} else if currentLine.Len()+1+wordWidth <= width {
+				currentLine.WriteString(" ")
+				currentLine.WriteString(word)
+			} else {
+				// Line would exceed width
+				result.WriteString(currentLine.String())
+				result.WriteString("\n")
+				currentLine.Reset()
+				currentLine.WriteString(word)
+			}
+		}
+
+		// Write the last line
+		if currentLine.Len() > 0 {
+			result.WriteString(currentLine.String())
+		}
 	}
 
 	return result.String()
@@ -615,6 +657,11 @@ func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int)
 	useColumns := viewportWidth >= colMinWidth
 
 	if useColumns {
+		all := m.main.messages
+		m.main.messages = all[:len(all)-1]
+		prevLayout := m.traceColumnLayout(viewportWidth)
+		m.main.messages = all
+
 		// Incrementally update cached column widths for the new message
 		newLevelWidth := lipgloss.Width(formatTraceLevel(msg.LogLevel()))
 		newAPIWidth := lipgloss.Width(truncate(sanitizeLogString(msg.ProcessName()), colMaxAPIWidth))
@@ -643,15 +690,8 @@ func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int)
 		// If cache was updated, recompute layout using cached values
 		layout := m.traceColumnLayout(viewportWidth)
 
-		// Check if column widths actually changed by comparing with what we would have
-		// without the incremental update (only if cache was updated)
+		// Compare against the pre-append layout.
 		if cacheUpdated {
-			// Temporarily shrink the slice to compute previous layout
-			all := m.main.messages
-			m.main.messages = all[:len(all)-1]
-			prevLayout := m.traceColumnLayout(viewportWidth)
-			m.main.messages = all // restore
-
 			if prevLayout.levelWidth != layout.levelWidth || prevLayout.apiWidth != layout.apiWidth {
 				// Column widths shifted — rebuild all lines for alignment.
 				m.rebuildRenderedContent(viewportWidth)
@@ -666,17 +706,4 @@ func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int)
 
 	m.main.renderedContent.WriteString("\n")
 	m.main.viewport.SetContent(m.main.renderedContent.String())
-}
-
-// truncateToWidth truncates a string to fit within the specified width, accounting for character widths and adding an ellipsis if truncated.
-func truncateToWidth(s string, maxWidth int) string {
-	var width int
-	for i, r := range s {
-		w := lipgloss.Width(string(r))
-		if width+w > maxWidth {
-			return s[:i]
-		}
-		width += w
-	}
-	return s
 }

@@ -35,12 +35,6 @@ const (
 	panelHeightCompensation = 3
 	// Minimum usable panel height to ensure viewport remains functional
 	minPanelHeight = 7
-
-	// Boundary margin as percentage of terminal dimension
-	// Applied to all sides (top, bottom, left, right) to create visual breathing room
-	boundaryMarginPercent = 0.10 // 10%
-	// Minimum boundary margin in characters (prevents zero-margin on small terminals)
-	minBoundaryMargin = 2
 )
 
 // ==========================================

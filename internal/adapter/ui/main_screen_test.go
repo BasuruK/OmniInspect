@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -113,6 +114,9 @@ func newTestMainModel(t *testing.T, width, height int) *Model {
 		screen: screenMain,
 		width:  width,
 		height: height,
+		dbFactory: func(_ *domain.DatabaseSettings) ports.DatabaseRepository {
+			return nil // or a mock
+		},
 		main: mainState{
 			autoScroll: true,
 		},

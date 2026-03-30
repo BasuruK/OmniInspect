@@ -105,16 +105,19 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// New log message from event listener
 	case queueMessageMsg:
-		// Drop oldest message if at capacity to prevent unbounded growth
 		if len(m.main.messages) >= maxMessages {
+			// Ring-buffer shift — old content is invalid; full rebuild required.
 			m.main.messages = m.main.messages[1:]
+			m.main.messages = append(m.main.messages, msg.message)
+			m.rebuildRenderedContent(m.main.viewport.Width())
+		} else {
+			// Fast path: append the message, then render only the new line.
+			m.main.messages = append(m.main.messages, msg.message)
+			m.appendSingleMessage(msg.message, m.main.viewport.Width())
 		}
-		m.main.messages = append(m.main.messages, msg.message)
-		m.rebuildRenderedContent(m.main.viewport.Width())
 		if m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
-		// Re-subscribe to wait for next message
 		return m, waitForEventCmd(m.ctx, m.eventChannel)
 
 	// Event channel closed (shutdown)
@@ -399,6 +402,11 @@ func wrapText(text string, width int) string {
 	currentLine := ""
 
 	for _, word := range words {
+		// Truncate words longer than width
+		if len(word) > width {
+			word = word[:width-1] + "…"
+		}
+
 		if currentLine == "" {
 			currentLine = word
 		} else if len(currentLine)+1+len(word) <= width {
@@ -579,14 +587,14 @@ func (m *Model) mainStatusText() string {
 
 	subscriberName := "pending"
 	if m.subscriber != nil {
-		subscriberName = truncate(m.subscriber.Name(), 20)
+		subscriberName = m.subscriber.Name()
 	}
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Center,
 		styles.BodyTextStyle.Render("Sub "+subscriberName),
 		styles.SubtitleStyle.Render("  •  "),
-		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll "+autoScrollText),
+		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll ["+autoScrollText+"]"),
 		styles.SubtitleStyle.Render("  •  "),
 		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
 	)
@@ -595,4 +603,36 @@ func (m *Model) mainStatusText() string {
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
 	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  D Database Settings  •  Q Quit"
+}
+
+// appendSingleMessage appends only the newly-arrived message to the rendered buffer.
+// If the message widens any column (new max level or API width), it falls back to a
+// full rebuild so existing lines stay aligned. This keeps the common path O(1).
+// Precondition: msg must already be the last element of m.main.messages.
+func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int) {
+	useColumns := viewportWidth >= colMinWidth
+
+	if useColumns {
+		// Compute layout with and without the new message to detect column-width changes.
+		// Temporarily shrink the slice (no allocation — cap is unchanged).
+		all := m.main.messages
+		m.main.messages = all[:len(all)-1]
+		prevLayout := m.traceColumnLayout(viewportWidth)
+		m.main.messages = all // restore
+
+		newLayout := m.traceColumnLayout(viewportWidth)
+
+		if newLayout != prevLayout {
+			// Column widths shifted — rebuild all lines for alignment.
+			m.rebuildRenderedContent(viewportWidth)
+			return
+		}
+
+		m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(msg), newLayout))
+	} else {
+		m.main.renderedContent.WriteString(m.formatLogLine(msg))
+	}
+
+	m.main.renderedContent.WriteString("\n")
+	m.main.viewport.SetContent(m.main.renderedContent.String())
 }

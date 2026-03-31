@@ -51,6 +51,18 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Generate Windows icon .syso
+        env:
+          ICON_PATH: resources/icon.ico
+        run: |
+          if (Test-Path $env:ICON_PATH) {
+            go run github.com/akavel/rsrc@v0.10.2 -ico "$env:ICON_PATH" -o cmd/omniview/omniview.syso
+            Write-Host "Icon embedded successfully"
+          } else {
+            Write-Host "Warning: $env:ICON_PATH not found, skipping icon embedding"
+          }
+        shell: pwsh
+
       - name: Build release binary
         run: go build -v -ldflags "-X OmniView/internal/app.Version=${{ github.ref_name }}" -o omniview.exe ./cmd/omniview
         env:

@@ -39,6 +39,17 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleOnboardingKey(msg)
 
+	case tea.PasteMsg:
+		step := m.onboarding.step
+		value := m.onboarding.fieldValue(step)
+		for _, r := range msg.Content {
+			if r >= 0x20 && r < 0x7F {
+				*value += string(r)
+			}
+		}
+		m.onboarding.errMsg = ""
+		return m, nil
+
 	case onboardingCompleteMsg:
 		if msg.err != nil {
 			m.onboarding.errMsg = msg.err.Error()

@@ -291,7 +291,7 @@ internal/
 
 # context-mode — MANDATORY routing rules
 
-You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump 56 KB into context and waste the entire session.
+You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump tens of kilobytes of data into context and waste the entire session.
 
 ## BLOCKED commands — do NOT attempt these
 
@@ -314,7 +314,8 @@ Instead use:
 ## REDIRECTED tools — use sandbox equivalents
 
 ### Shell (>20 lines output)
-Shell is ONLY for: `git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, `npm install`, `pip install`, and other short-output commands.
+Shell is ONLY for: `git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, `npm install`, `pip install`, `make` (including `make build`, `make test`, `make run`, `make lint`, `make fmt`), and `go` (including `go test` and similar test/package commands).
+Heavy build/test commands are permitted in shell usage for normal CI and development workflows.
 For everything else, use:
 - `context-mode_ctx_batch_execute(commands, queries)` — run multiple commands + search in ONE call
 - `context-mode_ctx_execute(language: "shell", code: "...")` — run in sandbox, only stdout enters context
@@ -339,6 +340,12 @@ Search results can flood context. Use `context-mode_ctx_execute(language: "shell
 - Keep responses under 500 words.
 - Write artifacts (code, configs, PRDs) to FILES — never return them as inline text. Return only: file path + 1-line description.
 - When indexing content, use descriptive source labels so others can `search(source: "label")` later.
+
+### Code Review / Collaboration Mode
+
+When the task is a code review, PR review, or iterative collaboration on a patch, the directives "Keep responses under 500 words" and "Write artifacts (code, configs, PRDs) to FILES — never return them as inline text" do not prohibit useful inline review material.
+
+In Code Review / Collaboration Mode, reviewers may return inline diffs, multiple per-file comments, fuller explanations, and short code snippets or patch blocks when needed to make review feedback actionable. Large generated artifacts should still be written to files when practical, but review feedback should not be constrained in ways that weaken the quality or completeness of the review.
 
 ## ctx commands
 

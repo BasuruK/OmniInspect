@@ -46,11 +46,14 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		step := m.onboarding.step
 		value := m.onboarding.fieldValue(step)
+		var builder strings.Builder
+		builder.Grow(len(msg.Content))
 		for _, r := range msg.Content {
 			if r >= 0x20 && r < 0x7F {
-				*value += string(r)
+				builder.WriteRune(r)
 			}
 		}
+		*value += builder.String()
 		m.onboarding.errMsg = ""
 		return m, nil
 

@@ -86,7 +86,7 @@ func (f AddDatabaseForm) FieldValues() (string, string, string, string, string, 
 // Validation
 // ─────────────────────────
 
-// sanitizePasteInput: filters pasted content to only include printable ASCII characters (0x20-0x7F),
+// sanitizePasteInput: filters pasted content to only include printable ASCII characters (0x20-0x7E),
 // removing control characters, newlines, and other non-printable characters to match keyboard input validation.
 func sanitizePasteInput(content string) string {
 	var result strings.Builder

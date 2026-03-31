@@ -171,7 +171,7 @@ ifeq ($(DETECTED_OS),Windows)
     ifeq ($(USE_BASH),1)
 	@if test -e resources/icon.ico; then \
 		echo "[ICON] Generating .syso file from resources/icon.ico..."; \
-		go run github.com/akavel/rsrc@latest -ico resources/icon.ico -o cmd/omniview/omniview.syso; \
+		go run github.com/akavel/rsrc@v0.10.2 -ico resources/icon.ico -o cmd/omniview/omniview.syso; \
 		echo "[ICON] Icon embedded successfully"; \
 	else \
 		echo "[ICON] resources/icon.ico not found, skipping icon embedding"; \
@@ -179,7 +179,7 @@ ifeq ($(DETECTED_OS),Windows)
     else
 	@if exist resources\icon.ico ( \
 		echo "[ICON] Generating .syso file from resources\icon.ico..." && \
-		go run github.com/akavel/rsrc@latest -ico resources\icon.ico -o cmd\omniview\omniview.syso && \
+		go run github.com/akavel/rsrc@v0.10.2 -ico resources\icon.ico -o cmd\omniview\omniview.syso && \
 		echo "[ICON] Icon embedded successfully" \
 	) else ( \
 		echo "[ICON] resources\icon.ico not found, skipping icon embedding" \
@@ -195,11 +195,14 @@ clean-icon:
 ifeq ($(DETECTED_OS),Windows)
     ifeq ($(USE_BASH),1)
 	@rm -f cmd/omniview/omniview.syso
+	@echo "[OK] Icon artifacts cleaned"
     else
 	@if exist cmd\omniview\omniview.syso del /f /q cmd\omniview\omniview.syso
-    endif
-endif
 	@echo "[OK] Icon artifacts cleaned"
+    endif
+else
+	@echo "[INFO] No icon artifacts to clean on $(DETECTED_OS)"
+endif
 
 # Run the application
 .PHONY: run

@@ -40,6 +40,10 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 		return m.handleOnboardingKey(msg)
 
 	case tea.PasteMsg:
+		// Ignore paste operations during submission
+		if m.onboarding.submitted {
+			return m, nil
+		}
 		step := m.onboarding.step
 		value := m.onboarding.fieldValue(step)
 		for _, r := range msg.Content {

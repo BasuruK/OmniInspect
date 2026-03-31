@@ -85,6 +85,18 @@ func (f AddDatabaseForm) FieldValues() (string, string, string, string, string, 
 // Validation
 // ─────────────────────────
 
+// sanitizePasteInput: filters pasted content to only include printable ASCII characters (0x20-0x7F),
+// removing control characters, newlines, and other non-printable characters to match keyboard input validation.
+func sanitizePasteInput(content string) string {
+	var result strings.Builder
+	for _, r := range content {
+		if r >= 0x20 && r < 0x7F {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
 // validate: validates all form fields and returns an error message if any field is invalid, or empty string if valid.
 func (f *AddDatabaseForm) validate() string {
 	for i, field := range f.fields {
@@ -136,7 +148,8 @@ func (f AddDatabaseForm) Update(msg tea.Msg) (AddDatabaseForm, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.PasteMsg:
 		if f.cursor < formFieldCount {
-			f.fields[f.cursor].Value += msg.Content
+			sanitized := sanitizePasteInput(msg.Content)
+			f.fields[f.cursor].Value += sanitized
 			f.errMsg = ""
 		}
 		return f, nil

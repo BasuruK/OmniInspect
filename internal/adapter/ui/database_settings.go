@@ -104,24 +104,23 @@ func (m *Model) closeDatabaseSettings() {
 func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	// Delegate to add-form overlay when open
 	if m.dbSettings.showAddForm {
-		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-			if keyMsg.String() == "ctrl+c" {
-				m.cancel()
-				return m, tea.Quit
-			}
-			var cmd tea.Cmd
-			m.dbSettings.addForm, cmd = m.dbSettings.addForm.Update(keyMsg)
-			if m.dbSettings.addForm.IsCancelled() {
-				m.dbSettings.showAddForm = false
-				return m, nil
-			}
-			if m.dbSettings.addForm.IsSubmitted() {
-				m.dbSettings.showAddForm = false
-				return m, m.saveAddFormCmd()
-			}
-			return m, cmd
+		// Handle ctrl+c specially to quit
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "ctrl+c" {
+			m.cancel()
+			return m, tea.Quit
 		}
-		return m, nil
+		// Forward the original msg to allow paste and other message types
+		var cmd tea.Cmd
+		m.dbSettings.addForm, cmd = m.dbSettings.addForm.Update(msg)
+		if m.dbSettings.addForm.IsCancelled() {
+			m.dbSettings.showAddForm = false
+			return m, nil
+		}
+		if m.dbSettings.addForm.IsSubmitted() {
+			m.dbSettings.showAddForm = false
+			return m, m.saveAddFormCmd()
+		}
+		return m, cmd
 	}
 
 	switch msg := msg.(type) {

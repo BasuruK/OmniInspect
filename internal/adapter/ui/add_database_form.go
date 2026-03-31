@@ -4,6 +4,8 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -81,9 +83,31 @@ func (f AddDatabaseForm) FieldValues() (string, string, string, string, string, 
 		f.fields[formFieldPass].Value
 }
 
+// WithDimensions: returns a copy of the form with updated terminal dimensions.
+// This preserves all field values, cursor position, and error state while allowing
+// the form to adapt to terminal resize events.
+func (f AddDatabaseForm) WithDimensions(width, height int) AddDatabaseForm {
+	f.width = width
+	f.height = height
+	return f
+}
+
 // ─────────────────────────
 // Validation
 // ─────────────────────────
+
+// sanitizePasteInput: filters pasted content to only include printable ASCII characters (0x20-0x7E),
+// removing control characters, newlines, and other non-printable characters to match keyboard input validation.
+func sanitizePasteInput(content string) string {
+	var result strings.Builder
+	for _, r := range content {
+		if r == '\n' || r == '\r' || r == '\t' || unicode.IsControl(r) {
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
 
 // validate: validates all form fields and returns an error message if any field is invalid, or empty string if valid.
 func (f *AddDatabaseForm) validate() string {
@@ -128,81 +152,95 @@ func (f *AddDatabaseForm) validate() string {
 // ─────────────────────────
 
 // Update: handles keyboard input for the add database form including navigation, character input, and form submission.
-func (f AddDatabaseForm) Update(msg tea.KeyPressMsg) (AddDatabaseForm, tea.Cmd) {
+func (f AddDatabaseForm) Update(msg tea.Msg) (AddDatabaseForm, tea.Cmd) {
 	if f.submitted || f.cancelled {
 		return f, nil
 	}
 
-	key := msg.String()
-
-	switch key {
-	case "esc":
-		f.cancelled = true
-		return f, nil
-
-	case "up", "shift+tab":
-		if f.cursor > 0 {
-			f.cursor--
+	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		if f.cursor < formFieldCount {
+			sanitized := sanitizePasteInput(msg.Content)
+			f.fields[f.cursor].Value += sanitized
+			f.errMsg = ""
 		}
-		f.errMsg = ""
 		return f, nil
 
-	case "down":
-		if f.cursor < formMaxCursor {
-			f.cursor++
-		}
-		f.errMsg = ""
-		return f, nil
+	case tea.KeyPressMsg:
+		key := msg.String()
 
-	case "tab":
-		f.cursor = (f.cursor + 1) % (formMaxCursor + 1)
-		f.errMsg = ""
-		return f, nil
-
-	case "enter":
-		if f.cursor == formBtnCancel {
+		switch key {
+		case "esc":
 			f.cancelled = true
 			return f, nil
-		}
-		if f.cursor == formBtnSave {
-			if errMsg := f.validate(); errMsg != "" {
-				f.errMsg = errMsg
+
+		case "up", "shift+tab":
+			if f.cursor > 0 {
+				f.cursor--
+			}
+			f.errMsg = ""
+			return f, nil
+
+		case "down":
+			if f.cursor < formMaxCursor {
+				f.cursor++
+			}
+			f.errMsg = ""
+			return f, nil
+
+		case "tab":
+			f.cursor = (f.cursor + 1) % (formMaxCursor + 1)
+			f.errMsg = ""
+			return f, nil
+
+		case "enter":
+			if f.cursor == formBtnCancel {
+				f.cancelled = true
 				return f, nil
 			}
-			f.submitted = true
-			return f, nil
-		}
-		// On a field — advance to next field
-		if f.cursor < formFieldCount-1 {
-			f.cursor++
-		} else {
-			f.cursor = formBtnSave
-		}
-		f.errMsg = ""
-		return f, nil
-
-	case "backspace":
-		if f.cursor < formFieldCount {
-			v := f.fields[f.cursor].Value
-			if len(v) > 0 {
-				f.fields[f.cursor].Value = v[:len(v)-1]
+			if f.cursor == formBtnSave {
+				if errMsg := f.validate(); errMsg != "" {
+					f.errMsg = errMsg
+					return f, nil
+				}
+				f.submitted = true
+				return f, nil
+			}
+			// On a field — advance to next field
+			if f.cursor < formFieldCount-1 {
+				f.cursor++
+			} else {
+				f.cursor = formBtnSave
 			}
 			f.errMsg = ""
-		}
-		return f, nil
+			return f, nil
 
-	case "ctrl+u":
-		if f.cursor < formFieldCount {
-			f.fields[f.cursor].Value = ""
+		case "backspace":
+			if f.cursor < formFieldCount {
+				v := f.fields[f.cursor].Value
+				if len(v) > 0 {
+					_, size := utf8.DecodeLastRuneInString(v)
+					if size > 0 {
+						f.fields[f.cursor].Value = v[:len(v)-size]
+					}
+				}
+				f.errMsg = ""
+			}
+			return f, nil
+
+		case "ctrl+u":
+			if f.cursor < formFieldCount {
+				f.fields[f.cursor].Value = ""
+				f.errMsg = ""
+			}
+			return f, nil
+		}
+
+		// Character input — only when a field is focused
+		if f.cursor < formFieldCount && len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModCtrl) {
+			f.fields[f.cursor].Value += msg.Text
 			f.errMsg = ""
 		}
-		return f, nil
-	}
-
-	// Character input — only when a field is focused
-	if f.cursor < formFieldCount && len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModCtrl) {
-		f.fields[f.cursor].Value += msg.Text
-		f.errMsg = ""
 	}
 
 	return f, nil

@@ -151,7 +151,7 @@ deps: $(TARGET)
 
 # Build Go application (CGO will compile subscription/*.c automatically)
 .PHONY: build
-build: deps
+build: deps icon
 	@echo "[BUILD] Building $(BINARY_NAME) (version: $(VERSION))..."
 	@echo "   CGO_CFLAGS=$(CGO_CFLAGS)"
 	@echo "   CGO_LDFLAGS=$(CGO_LDFLAGS)"
@@ -161,6 +161,48 @@ else
 	go build -v $(GO_LDFLAGS) -o $(BINARY_NAME) ./$(MAIN_PATH)
 endif
 	@echo "[OK] Build complete: $(BINARY_NAME) ($(VERSION))"
+
+# Generate icon .syso file for Windows executable
+# Place your icon.ico file in the resources folder
+.PHONY: icon
+icon:
+ifeq ($(DETECTED_OS),Windows)
+	@echo "[ICON] Checking for icon resources..."
+    ifeq ($(USE_BASH),1)
+	@if test -e resources/icon.ico; then \
+		echo "[ICON] Generating .syso file from resources/icon.ico..."; \
+		go run github.com/akavel/rsrc@v0.10.2 -ico resources/icon.ico -o cmd/omniview/omniview.syso; \
+		echo "[ICON] Icon embedded successfully"; \
+	else \
+		echo "[ICON] resources/icon.ico not found, skipping icon embedding"; \
+	fi
+    else
+	@if exist resources\icon.ico ( \
+		echo "[ICON] Generating .syso file from resources\icon.ico..." && \
+		go run github.com/akavel/rsrc@v0.10.2 -ico resources\icon.ico -o cmd\omniview\omniview.syso && \
+		echo "[ICON] Icon embedded successfully" \
+	) else ( \
+		echo "[ICON] resources\icon.ico not found, skipping icon embedding" \
+	)
+    endif
+else
+	@echo "[ICON] Icon embedding is Windows-only for now"
+endif
+
+# Clean icon artifacts
+.PHONY: clean-icon
+clean-icon:
+ifeq ($(DETECTED_OS),Windows)
+    ifeq ($(USE_BASH),1)
+	@rm -f cmd/omniview/omniview.syso
+	@echo "[OK] Icon artifacts cleaned"
+    else
+	@if exist cmd\omniview\omniview.syso del /f /q cmd\omniview\omniview.syso
+	@echo "[OK] Icon artifacts cleaned"
+    endif
+else
+	@echo "[INFO] No icon artifacts to clean on $(DETECTED_OS)"
+endif
 
 # Run the application
 .PHONY: run
@@ -281,11 +323,12 @@ ifeq ($(DETECTED_OS),Windows)
     ifeq ($(USE_BASH),1)
 	@$(RM_CMD) $(ODPI_BASE)/build
 	@$(RM_CMD) $(ODPI_BASE)/src
-	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe odpi.dll *.db
+	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe odpi.dll *.db cmd/omniview/omniview.syso
     else
 	@if exist $(subst /,\,$(ODPI_BASE)\build) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\build)
 	@if exist $(subst /,\,$(ODPI_BASE)\src) $(RM_CMD) $(subst /,\,$(ODPI_BASE)\src)
 	@if exist $(BINARY_NAME).exe $(DEL_CMD) $(BINARY_NAME).exe
+	@if exist cmd\omniview\omniview.syso $(DEL_CMD) cmd\omniview\omniview.syso
 	@if exist *.db $(DEL_CMD) *.db
     endif
 else

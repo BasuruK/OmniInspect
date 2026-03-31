@@ -43,10 +43,10 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case onboardingCompleteMsg:
 		if msg.err != nil {
-			m.onboarding.errMsg = msg.err.Error()
-			m.onboarding.submitted = false
-			// Reset form state to allow retry with proper dimensions
-			m.onboarding.AddDatabaseForm = NewAddDatabaseForm(m.width, m.height)
+			form := m.onboarding.AddDatabaseForm
+			form.submitted = false
+			form.errMsg = msg.err.Error()
+			m.onboarding.AddDatabaseForm = form
 			return m, nil
 		}
 		m.onboarding.submitted = false

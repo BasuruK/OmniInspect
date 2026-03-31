@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -100,9 +101,10 @@ func (f AddDatabaseForm) WithDimensions(width, height int) AddDatabaseForm {
 func sanitizePasteInput(content string) string {
 	var result strings.Builder
 	for _, r := range content {
-		if r >= 0x20 && r < 0x7F {
-			result.WriteRune(r)
+		if r == '\n' || r == '\r' || r == '\t' || unicode.IsControl(r) {
+			continue
 		}
+		result.WriteRune(r)
 	}
 	return result.String()
 }

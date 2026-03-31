@@ -104,6 +104,11 @@ func (m *Model) closeDatabaseSettings() {
 func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	// Delegate to add-form overlay when open
 	if m.dbSettings.showAddForm {
+		// Handle window resize to adjust form dimensions
+		if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+			m.resizeDatabaseSettings(sizeMsg.Width, sizeMsg.Height)
+		}
+
 		// Handle ctrl+c specially to quit
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "ctrl+c" {
 			m.cancel()

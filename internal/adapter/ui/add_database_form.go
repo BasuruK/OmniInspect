@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/adapter/ui/styles"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -207,7 +208,10 @@ func (f AddDatabaseForm) Update(msg tea.Msg) (AddDatabaseForm, tea.Cmd) {
 			if f.cursor < formFieldCount {
 				v := f.fields[f.cursor].Value
 				if len(v) > 0 {
-					f.fields[f.cursor].Value = v[:len(v)-1]
+					_, size := utf8.DecodeLastRuneInString(v)
+					if size > 0 {
+						f.fields[f.cursor].Value = v[:len(v)-size]
+					}
 				}
 				f.errMsg = ""
 			}

@@ -82,6 +82,15 @@ func (f AddDatabaseForm) FieldValues() (string, string, string, string, string, 
 		f.fields[formFieldPass].Value
 }
 
+// WithDimensions: returns a copy of the form with updated terminal dimensions.
+// This preserves all field values, cursor position, and error state while allowing
+// the form to adapt to terminal resize events.
+func (f AddDatabaseForm) WithDimensions(width, height int) AddDatabaseForm {
+	f.width = width
+	f.height = height
+	return f
+}
+
 // ─────────────────────────
 // Validation
 // ─────────────────────────

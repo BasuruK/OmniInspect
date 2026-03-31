@@ -71,16 +71,11 @@ type mainState struct {
 }
 
 // onboardingState holds the state for the database configuration onboarding form.
+// It embeds AddDatabaseForm to reuse the well-tested form component.
 type onboardingState struct {
-	step        int // 0=DatabaseID, 1=Host, 2=Port, 3=ServiceName, 4=Username, 5=Password
-	DatabaseID  string
-	Host        string
-	Port        string
-	ServiceName string
-	Username    string
-	Password    string
-	errMsg      string
-	submitted   bool
+	AddDatabaseForm AddDatabaseForm
+	errMsg          string
+	submitted       bool
 }
 
 // updateState holds the state for update checking and application.
@@ -295,6 +290,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)
+
+		// Resize AddDatabaseForm if on Onboarding Screen
+		if m.screen == screenOnboarding {
+			m.onboarding.AddDatabaseForm = m.onboarding.AddDatabaseForm.WithDimensions(m.width, m.height)
+		}
 
 		// Initialize viewport on first size message if we are on the main screen
 		if m.screen == screenMain && !m.main.ready {

@@ -71,6 +71,8 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			// No config — go to onboarding
 			m.screen = screenOnboarding
+			// Initialize AddDatabaseForm with current terminal dimensions
+			m.onboarding.AddDatabaseForm = NewAddDatabaseForm(m.width, m.height)
 			return m, nil
 		}
 

@@ -135,6 +135,12 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		// Channel is closed — do not re-subscribe; goroutine exits cleanly
 		return m, nil
 
+	// Paste events — delegate to database settings overlay when visible
+	case tea.PasteMsg:
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
+
 	// Keyboard input
 	case tea.KeyPressMsg:
 		if m.dbSettings.visible {

@@ -244,25 +244,28 @@ func (m *Model) viewDatabaseSettings() string {
 // ==========================================
 
 // handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
-func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Model, tea.Cmd) {
+func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Model, tea.Cmd) {
+	// Try to create new adapter first before closing old resources
+	newAdapter, err := m.dbFactory(&selectedDb)
+	if err != nil {
+		log.Printf("[UI] Failed to create database adapter: %v", err)
+		m.dbSettings.visible = true
+		m.dbSettings.dialogMsg = fmt.Sprintf("Failed to initialize database: %v", err)
+		m.dbSettings.showDialog = true
+		return m, nil
+	}
+
+	// Only now tear down old resources
 	if m.tracerService != nil {
 		tracer.StopAll(m.tracerService)
 	}
 	if m.dbAdapter != nil {
 		m.dbAdapter.Close(m.ctx)
 	}
-	m.appConfig = &selected
-	// Reinitialize adapter with new config
-	var err error
-	m.dbAdapter, err = m.dbFactory(m.appConfig)
-	if err != nil {
-		log.Printf("[UI] Failed to create database adapter: %v", err)
-		// Restore settings panel visibility and show error to user
-		m.dbSettings.visible = true
-		m.dbSettings.dialogMsg = fmt.Sprintf("Failed to initialize database: %v", err)
-		m.dbSettings.showDialog = true
-		return m, nil
-	}
+
+	m.appConfig = &selectedDb
+	m.dbAdapter = newAdapter
+
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil
 	m.tracerService = nil

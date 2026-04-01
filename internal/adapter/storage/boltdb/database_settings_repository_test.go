@@ -5,8 +5,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-
-	bolt "go.etcd.io/bbolt"
 )
 
 // TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs verifies that raw and
@@ -89,23 +87,16 @@ func newTestBoltAdapter(t *testing.T) *BoltAdapter {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test.bolt")
-	db, err := bolt.Open(dbPath, 0600, nil)
-	if err != nil {
-		t.Fatalf("bolt.Open: %v", err)
+	adapter := &BoltAdapter{dbPath: dbPath}
+	if err := adapter.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
 	}
 
 	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
+		if err := adapter.db.Close(); err != nil {
 			t.Fatalf("db.Close: %v", err)
 		}
 	})
 
-	if err := db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(DatabaseConfigBucket))
-		return err
-	}); err != nil {
-		t.Fatalf("create bucket: %v", err)
-	}
-
-	return &BoltAdapter{db: db}
+	return adapter
 }

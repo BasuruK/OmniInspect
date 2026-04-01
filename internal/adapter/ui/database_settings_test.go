@@ -386,7 +386,7 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	}
 }
 
-func TestHandleSettingsSetAsMain_FactoryError_OldAdapterStillClosed(t *testing.T) {
+func TestHandleSettingsSetAsMain_FactoryError_OldAdapterRemainsOpen(t *testing.T) {
 	t.Parallel()
 
 	m := newTestModelForSettings(t)
@@ -402,11 +402,14 @@ func TestHandleSettingsSetAsMain_FactoryError_OldAdapterStillClosed(t *testing.T
 	}
 
 	// Execute
-	m.handleSettingsSetAsMain(*selected)
+	updated, _ := m.handleSettingsSetAsMain(*selected)
 
-	// Old adapter should still be closed even if factory fails
-	if len(oldMockDB.CloseCalls) != 1 {
-		t.Errorf("expected old dbAdapter.Close to be called even on factory error, got %d calls", len(oldMockDB.CloseCalls))
+	// The existing adapter should remain usable when creating the replacement fails.
+	if len(oldMockDB.CloseCalls) != 0 {
+		t.Errorf("expected old dbAdapter.Close not to be called on factory error, got %d calls", len(oldMockDB.CloseCalls))
+	}
+	if updated.dbAdapter != oldMockDB {
+		t.Error("expected existing dbAdapter to remain active on factory error")
 	}
 }
 

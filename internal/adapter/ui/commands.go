@@ -22,6 +22,9 @@ func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 // checkPermissionsCmd deploys and verifies database permissions.
 func checkPermissionsCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
+		if m.permissionService == nil {
+			return permissionsCheckedMsg{err: errors.New("permission service not initialized")}
+		}
 		_, err := m.permissionService.DeployAndCheck(m.ctx, m.appConfig.Username())
 		return permissionsCheckedMsg{err: err}
 	}
@@ -30,6 +33,9 @@ func checkPermissionsCmd(m *Model) tea.Cmd {
 // deployTracerCmd deploys and verifies the tracer package.
 func deployTracerCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
+		if m.tracerService == nil {
+			return tracerDeployedMsg{err: errors.New("tracer service not initialized")}
+		}
 		err := m.tracerService.DeployAndCheck(m.ctx)
 		return tracerDeployedMsg{err: err}
 	}
@@ -38,6 +44,9 @@ func deployTracerCmd(m *Model) tea.Cmd {
 // registerSubscriberCmd registers a queue subscriber.
 func registerSubscriberCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
+		if m.subscriberService == nil {
+			return subscriberRegisteredMsg{subscriber: nil, err: errors.New("subscriber service not initialized")}
+		}
 		subscriber, err := m.subscriberService.RegisterSubscriber(m.ctx)
 		return subscriberRegisteredMsg{subscriber: subscriber, err: err}
 	}

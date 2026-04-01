@@ -152,6 +152,12 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Defensive nil check for tracerService
+		if m.tracerService == nil {
+			m.loading.err = fmt.Errorf("tracer service not initialized")
+			return m, nil
+		}
+
 		// Start event listener before transitioning to main screen
 		if err := m.tracerService.StartEventListener(m.ctx, msg.subscriber, m.appConfig.Username()); err != nil {
 			m.loading.err = fmt.Errorf("failed to start event listener: %w", err)

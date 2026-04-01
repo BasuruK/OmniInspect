@@ -158,8 +158,8 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			// Clear all messages
 			m.main.messages = nil
 			m.main.renderedContent.Reset()
-			m.main.viewport.SetContent("")
 			m.main.viewport.GotoTop()
+			m.renderLogContent()
 			return m, nil
 		case "d":
 			// Open database settings

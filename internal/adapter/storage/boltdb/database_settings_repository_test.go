@@ -30,7 +30,7 @@ func TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs(t *testing.T) {
 		{
 			name: "literal cfg prefix in raw id normalizes to escaped form",
 			id:   "cfg:team/database",
-			want: "cfg:cfg%3Ateam%2Fdatabase",
+			want: "cfg:team%2Fdatabase",
 		},
 	}
 

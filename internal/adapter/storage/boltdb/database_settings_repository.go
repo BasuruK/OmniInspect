@@ -221,12 +221,12 @@ func databaseSettingsStorageKey(id string) string {
 	unescaped, unescapeErr := url.PathUnescape(rawID)
 
 	// If unescaping succeeded and re-escaping produces the same result,
-	// the input was already a valid storage key (properly escaped).
-	// Return it unchanged to avoid double-escaping.
+	// the content was already properly escaped - use the escaped form.
 	if unescapeErr == nil {
 		reEscaped := url.PathEscape(unescaped)
 		if reEscaped == rawID {
-			return id // Already a valid storage key
+			// rawID is properly escaped content, return properly formatted key
+			return "cfg:" + rawID
 		}
 	}
 

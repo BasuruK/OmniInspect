@@ -103,6 +103,11 @@ func getWebhookDispatcher() *webhookDispatcher {
 // StopAll stops the webhook dispatcher and event listener goroutines, then waits for them to complete.
 // Note: The caller (Model) owns the channel lifecycle. The channel is closed by the Model, not here.
 func StopAll(tracerService *TracerService) {
+	// Stop webhook dispatcher first to stop accepting new webhook jobs
+	if globalWebhookDispatcher != nil {
+		globalWebhookDispatcher.Stop()
+	}
+
 	// Cancel the event listener context and wait for goroutines to finish
 	if tracerService != nil && tracerService.listenerCancel != nil {
 		tracerService.listenerCancel()

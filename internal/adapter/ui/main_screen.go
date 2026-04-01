@@ -158,6 +158,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			// Clear all messages
 			m.main.messages = nil
 			m.main.renderedContent.Reset()
+			m.main.viewport.SetContent(m.renderLogContent())
 			m.main.viewport.GotoTop()
 			m.renderLogContent()
 			return m, nil

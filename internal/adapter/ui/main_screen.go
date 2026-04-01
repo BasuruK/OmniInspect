@@ -160,7 +160,6 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			m.main.renderedContent.Reset()
 			m.main.viewport.SetContent(m.renderLogContent())
 			m.main.viewport.GotoTop()
-			m.renderLogContent()
 			return m, nil
 		case "d":
 			// Open database settings

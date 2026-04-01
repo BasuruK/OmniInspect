@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -47,7 +49,7 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 			return fmt.Errorf("failed to marshal database settings: %w", err)
 		}
 
-		key := settings.ID()
+		key := settings.StorageKey()
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save database settings: %w", err)
 		}
@@ -89,6 +91,9 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 		}
 
 		data := b.Get([]byte(id))
+		if data == nil {
+			data = b.Get([]byte(databaseSettingsStorageKey(id)))
+		}
 		if data == nil {
 			return fmt.Errorf("database settings not found for id: %s", id)
 		}
@@ -193,17 +198,26 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		if err := b.Delete([]byte(id)); err != nil {
+		storageKey := databaseSettingsStorageKey(id)
+		if err := b.Delete([]byte(storageKey)); err != nil {
 			return err
 		}
 
 		// If the deleted config was the default, clear the default pointer key
 		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
-		if defaultKey != nil && string(defaultKey) == id {
+		if defaultKey != nil && string(defaultKey) == storageKey {
 			if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
 				return fmt.Errorf("failed to clear default database settings key: %w", err)
 			}
 		}
 		return nil
 	})
+}
+
+func databaseSettingsStorageKey(id string) string {
+	if strings.HasPrefix(id, "cfg:") {
+		return id
+	}
+
+	return "cfg:" + url.PathEscape(id)
 }

@@ -15,6 +15,7 @@ const (
 	MinPort           Port = 1
 	MaxPort           Port = 65535
 	DefaultOraclePort Port = 1521
+	settingsIDPrefix       = "cfg:"
 )
 
 // ==========================================
@@ -51,7 +52,7 @@ type DatabaseSettings struct {
 
 // makeSettingsID constructs a stable unique ID from the user-facing database ID.
 func makeSettingsID(databaseID string) string {
-	return "cfg:" + url.PathEscape(databaseID)
+	return settingsIDPrefix + url.PathEscape(databaseID)
 }
 
 // NewDatabaseSettings creates new database settings with validation
@@ -108,7 +109,15 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 // Getters (Read-Only Accessors)
 // ==========================================
 
-func (dbs *DatabaseSettings) ID() string         { return dbs.id }
+func (dbs *DatabaseSettings) ID() string {
+	trimmed := strings.TrimPrefix(dbs.id, settingsIDPrefix)
+	if unescaped, err := url.PathUnescape(trimmed); err == nil {
+		return unescaped
+	}
+	return trimmed
+}
+
+func (dbs *DatabaseSettings) StorageKey() string { return dbs.id }
 func (dbs *DatabaseSettings) DatabaseID() string { return dbs.databaseID }
 func (dbs *DatabaseSettings) Database() string   { return dbs.database }
 func (dbs *DatabaseSettings) Host() string       { return dbs.host }

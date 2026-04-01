@@ -671,11 +671,12 @@ func (m *Model) mainSubtitle() string {
 	}
 
 	return fmt.Sprintf(
-		"%s@%s • %s:%d",
+		"%s@%s • %s:%d • %s",
 		m.appConfig.Username(),
 		m.appConfig.Database(),
 		m.appConfig.Host(),
 		m.appConfig.Port().Int(),
+		m.appConfig.ID(),
 	)
 }
 

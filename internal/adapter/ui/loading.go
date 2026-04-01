@@ -112,7 +112,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		// When switching databases, skip permission checks (already validated at registration)
 		// Just verify tracer package is deployed
 		if msg.isSwitch {
-			m.loading.steps = append(m.loading.steps, "✓ Permissions verified (cached)")
+			m.loading.steps = append(m.loading.steps, "✓ Permissions already checked during registration, skipping...")
 			m.loading.current = "Deploying tracer package..."
 			return m, deployTracerCmd(m)
 		}

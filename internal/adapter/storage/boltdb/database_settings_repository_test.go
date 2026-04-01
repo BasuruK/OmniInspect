@@ -81,6 +81,37 @@ func TestDatabaseSettingsRepository_GetByID_NormalizesPrefixedIDs(t *testing.T) 
 	}
 }
 
+func TestDatabaseSettingsRepository_Save_PersistsPermissionValidationMarker(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("OPS-PRIMARY", "OMNI", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	settings.MarkPermissionsValidated()
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), settings.ID())
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+
+	if !got.PermissionsValidated() {
+		t.Fatal("expected persisted settings to retain the permission validation marker")
+	}
+}
+
 // newTestBoltAdapter creates an isolated BoltDB adapter with the database
 // settings bucket initialized for repository tests.
 func newTestBoltAdapter(t *testing.T) *BoltAdapter {

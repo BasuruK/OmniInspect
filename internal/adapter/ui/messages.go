@@ -26,7 +26,7 @@ type welcomeCompleteMsg struct{}
 type startLoadingMsg struct{}
 
 // dbConnectedMsg is returned after Oracle DB connection attempt.
-// isSwitch indicates whether this is a database switch (skip permission checks).
+// isSwitch indicates whether this connection attempt is part of a database switch.
 type dbConnectedMsg struct {
 	err      error
 	isSwitch bool

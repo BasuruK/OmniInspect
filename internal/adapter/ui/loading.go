@@ -109,15 +109,12 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// When switching databases, skip permission checks (already validated at registration)
-		// Just verify tracer package is deployed
-		if msg.isSwitch {
-			m.loading.steps = append(m.loading.steps, "✓ Permissions already checked during registration, skipping...")
+		if m.appConfig != nil && m.appConfig.PermissionsValidated() {
+			m.loading.steps = append(m.loading.steps, "✓ Permissions verified (cached)")
 			m.loading.current = "Deploying tracer package..."
 			return m, deployTracerCmd(m)
 		}
 
-		// First-time connection: run full permission checks
 		m.loading.current = "Checking permissions..."
 		return m, checkPermissionsCmd(m)
 
@@ -125,6 +122,10 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	case permissionsCheckedMsg:
 		if msg.err != nil {
 			m.loading.err = fmt.Errorf("permission check failed: %w", msg.err)
+			return m, nil
+		}
+		if err := m.markActiveConnectionPermissionsValidated(); err != nil {
+			m.loading.err = fmt.Errorf("failed to persist permission validation: %w", err)
 			return m, nil
 		}
 		m.loading.steps = append(m.loading.steps, "✓ Permissions verified")

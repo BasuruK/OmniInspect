@@ -10,8 +10,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+var (
+	ErrPermissionServiceNotInitialized = errors.New("permission service not initialized")
+	ErrTracerServiceNotInitialized     = errors.New("tracer service not initialized")
+	ErrSubscriberServiceNotInitialized = errors.New("subscriber service not initialized")
+	ErrUpdaterServiceNotAvailable      = errors.New("updater service not available")
+)
+
 // connectDBCmd connects to the Oracle database.
-// isSwitch indicates whether this is a database switch (skip permission checks).
+// isSwitch indicates whether this connection attempt is part of a database switch.
 func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 	return func() tea.Msg {
 		err := m.dbAdapter.Connect(m.ctx)
@@ -23,7 +30,7 @@ func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 func checkPermissionsCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.permissionService == nil {
-			return permissionsCheckedMsg{err: errors.New("permission service not initialized")}
+			return permissionsCheckedMsg{err: fmt.Errorf("%w: checkPermissionsCmd", ErrPermissionServiceNotInitialized)}
 		}
 		_, err := m.permissionService.DeployAndCheck(m.ctx, m.appConfig.Username())
 		return permissionsCheckedMsg{err: err}
@@ -34,7 +41,7 @@ func checkPermissionsCmd(m *Model) tea.Cmd {
 func deployTracerCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.tracerService == nil {
-			return tracerDeployedMsg{err: errors.New("tracer service not initialized")}
+			return tracerDeployedMsg{err: fmt.Errorf("%w: deployTracerCmd", ErrTracerServiceNotInitialized)}
 		}
 		err := m.tracerService.DeployAndCheck(m.ctx)
 		return tracerDeployedMsg{err: err}
@@ -45,7 +52,7 @@ func deployTracerCmd(m *Model) tea.Cmd {
 func registerSubscriberCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.subscriberService == nil {
-			return subscriberRegisteredMsg{subscriber: nil, err: errors.New("subscriber service not initialized")}
+			return subscriberRegisteredMsg{subscriber: nil, err: fmt.Errorf("%w: registerSubscriberCmd", ErrSubscriberServiceNotInitialized)}
 		}
 		subscriber, err := m.subscriberService.RegisterSubscriber(m.ctx)
 		return subscriberRegisteredMsg{subscriber: subscriber, err: err}
@@ -99,7 +106,7 @@ func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
 func checkForUpdateCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.updaterService == nil {
-			return updateCheckResultMsg{info: nil, err: errors.New("updater service not available")}
+			return updateCheckResultMsg{info: nil, err: fmt.Errorf("%w: checkForUpdateCmd", ErrUpdaterServiceNotAvailable)}
 		}
 		info, err := m.updaterService.CheckForUpdate(m.ctx)
 		if err != nil {

@@ -21,11 +21,12 @@ const (
 
 // webhookDispatcher handles bounded webhook delivery
 type webhookDispatcher struct {
-	service *webhook.WebhookService
-	queue   chan webhookJob
-	wg      sync.WaitGroup
-	stopped bool
-	mu      sync.RWMutex
+	service  *webhook.WebhookService
+	queue    chan webhookJob
+	wg       sync.WaitGroup
+	stopped  bool
+	mu       sync.RWMutex
+	stopOnce sync.Once
 }
 
 // webhookJob represents a single webhook delivery task
@@ -62,12 +63,11 @@ func (d *webhookDispatcher) worker() {
 // Enqueue adds a webhook job to the dispatcher's queue if not stopped
 func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.WebhookMetadata) {
 	d.mu.RLock()
+	defer d.mu.RUnlock()
 	if d.stopped {
-		d.mu.RUnlock()
 		log.Printf("[Tracer] Webhook dispatcher stopped, dropping message")
 		return
 	}
-	d.mu.RUnlock()
 
 	select {
 	case d.queue <- webhookJob{payload: payload, url: url, meta: meta}:
@@ -80,11 +80,13 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 
 // Stop signals the dispatcher to stop accepting new jobs and waits for in-flight deliveries to complete
 func (d *webhookDispatcher) Stop() {
-	d.mu.Lock()
-	d.stopped = true
-	d.mu.Unlock()
-	close(d.queue)
-	d.wg.Wait()
+	d.stopOnce.Do(func() {
+		d.mu.Lock()
+		d.stopped = true
+		close(d.queue)
+		d.mu.Unlock()
+		d.wg.Wait()
+	})
 }
 
 // Global webhook dispatcher (initialized on first use)
@@ -101,11 +103,6 @@ func getWebhookDispatcher() *webhookDispatcher {
 // StopAll stops the webhook dispatcher and event listener goroutines, then waits for them to complete.
 // Note: The caller (Model) owns the channel lifecycle. The channel is closed by the Model, not here.
 func StopAll(tracerService *TracerService) {
-	// Stop webhook dispatcher first to stop accepting new webhook jobs
-	if globalWebhookDispatcher != nil {
-		globalWebhookDispatcher.Stop()
-	}
-
 	// Cancel the event listener context and wait for goroutines to finish
 	if tracerService != nil && tracerService.listenerCancel != nil {
 		tracerService.listenerCancel()

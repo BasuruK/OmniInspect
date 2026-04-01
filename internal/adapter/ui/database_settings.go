@@ -243,24 +243,61 @@ func (m *Model) viewDatabaseSettings() string {
 // Database Switching
 // ==========================================
 
-// handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
-func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Model, tea.Cmd) {
-	// Try to create new adapter first before closing old resources
-	newAdapter, err := m.dbFactory(&selectedDb)
-	if err != nil {
-		log.Printf("[UI] Failed to create database adapter: %v", err)
-		m.dbSettings.visible = true
-		m.dbSettings.dialogMsg = fmt.Sprintf("Failed to initialize database: %v", err)
-		m.dbSettings.showDialog = true
-		return m, nil
+func (m *Model) showDatabaseSwitchError(err error) (*Model, tea.Cmd) {
+	log.Printf("[UI] Database switch failed: %v", err)
+	m.loading.err = err
+	m.dbSettings.visible = true
+	m.dbSettings.dialogMsg = err.Error()
+	m.dbSettings.showDialog = true
+	return m, nil
+}
+
+func (m *Model) markActiveConnectionPermissionsValidated() error {
+	if m.appConfig == nil {
+		return fmt.Errorf("active database configuration is required")
 	}
 
-	// Only now tear down old resources
+	m.appConfig.MarkPermissionsValidated()
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+	if err := settingsRepo.Save(m.ctx, *m.appConfig); err != nil {
+		return fmt.Errorf("save validated connection %q: %w", m.appConfig.DatabaseID(), err)
+	}
+
+	for index := range m.dbSettings.databases {
+		if m.dbSettings.databases[index].ID() == m.appConfig.ID() {
+			m.dbSettings.databases[index].MarkPermissionsValidated()
+			break
+		}
+	}
+
+	return nil
+}
+
+// handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
+func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Model, tea.Cmd) {
+	newAdapter, err := m.dbFactory(&selectedDb)
+	if err != nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: %w", selectedDb.DatabaseID(), err))
+	}
+	if newAdapter == nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: adapter is nil", selectedDb.DatabaseID()))
+	}
+
+	if err := newAdapter.Connect(m.ctx); err != nil {
+		_ = newAdapter.Close(m.ctx)
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to connect to database %q: %w", selectedDb.DatabaseID(), err))
+	}
+	if err := newAdapter.Close(m.ctx); err != nil {
+		log.Printf("[UI] Failed to close validated database adapter for %s: %v", selectedDb.DatabaseID(), err)
+	}
+
 	if m.tracerService != nil {
 		tracer.StopAll(m.tracerService)
 	}
 	if m.dbAdapter != nil {
-		m.dbAdapter.Close(m.ctx)
+		if err := m.dbAdapter.Close(m.ctx); err != nil {
+			log.Printf("[UI] Failed to close current database adapter: %v", err)
+		}
 	}
 
 	m.appConfig = &selectedDb

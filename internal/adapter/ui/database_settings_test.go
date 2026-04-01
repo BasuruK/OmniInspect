@@ -213,27 +213,33 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_DbAdapterClosed(t *testing.T) {
 	t.Parallel()
 
 	m := newTestModelForSettings(t)
-	mockDB := NewMockDatabaseRepository()
+	oldMockDB := NewMockDatabaseRepository()
+	newMockDB := NewMockDatabaseRepository()
 
 	// Setup existing db adapter
-	m.dbAdapter = mockDB
+	m.dbAdapter = oldMockDB
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
 	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
-		return mockDB, nil
+		return newMockDB, nil
 	}
 
 	// Execute
 	updated, _ := m.handleSettingsSetAsMain(*selected)
 
-	// Assert dbAdapter.Close was called
-	if len(mockDB.CloseCalls) != 1 {
-		t.Errorf("expected dbAdapter.Close to be called once, got %d calls", len(mockDB.CloseCalls))
+	if len(oldMockDB.CloseCalls) != 1 {
+		t.Errorf("expected old dbAdapter.Close to be called once, got %d calls", len(oldMockDB.CloseCalls))
+	}
+	if len(newMockDB.ConnectCalls) != 1 {
+		t.Errorf("expected replacement adapter.Connect to be called once for validation, got %d calls", len(newMockDB.ConnectCalls))
+	}
+	if len(newMockDB.CloseCalls) != 1 {
+		t.Errorf("expected replacement adapter.Close to be called once after validation, got %d calls", len(newMockDB.CloseCalls))
 	}
 
 	// Assert dbAdapter is now the new one
-	if updated.dbAdapter != mockDB {
+	if updated.dbAdapter != newMockDB {
 		t.Error("expected dbAdapter to be the new adapter from factory")
 	}
 }
@@ -319,9 +325,8 @@ func TestHandleSettingsSetAsMain_FactoryError(t *testing.T) {
 	// Execute
 	updated, cmd := m.handleSettingsSetAsMain(*selected)
 
-	// Assert the settings dialog owns the error state in this path.
-	if updated.loading.err != nil {
-		t.Error("expected loading.err to remain nil when factory error stays on settings UI")
+	if !errors.Is(updated.loading.err, expectedErr) {
+		t.Errorf("expected loading.err to wrap factory error, got %v", updated.loading.err)
 	}
 
 	// Assert dialog is shown
@@ -377,12 +382,57 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	if updated.dbSettings.dialogMsg == "" {
 		t.Error("expected dialog message to be set")
 	}
-	if updated.loading.err != nil {
-		t.Error("expected loading error to remain nil when dialog handles the error")
+	if !errors.Is(updated.loading.err, factoryErr) {
+		t.Errorf("expected loading.err to wrap factory error, got %v", updated.loading.err)
 	}
 	// Verify original error is wrapped
 	if updated.dbSettings.dialogMsg == factoryErr.Error() {
 		t.Error("expected dialog message to contain wrapped error, not just raw error")
+	}
+}
+
+func TestHandleSettingsSetAsMain_ConnectionValidationError_KeepsExistingSession(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	oldMockDB := NewMockDatabaseRepository()
+	newMockDB := NewMockDatabaseRepository().WithConnectError(errors.New("invalid credentials"))
+	initialConfig := newTestDatabaseSettings(t, "CURRENT-DB")
+	m.appConfig = initialConfig
+	m.dbAdapter = oldMockDB
+	m.tracerService = tracer.NewTracerService(oldMockDB, nil, make(chan *domain.QueueMessage, 16))
+
+	selected := newTestDatabaseSettings(t, "FAULTY-DB")
+
+	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return newMockDB, nil
+	}
+
+	updated, cmd := m.handleSettingsSetAsMain(*selected)
+
+	if cmd != nil {
+		t.Fatal("expected nil command when validation connect fails")
+	}
+	if updated.dbAdapter != oldMockDB {
+		t.Fatal("expected existing dbAdapter to remain active when validation fails")
+	}
+	if updated.appConfig != initialConfig {
+		t.Fatal("expected existing appConfig to remain active when validation fails")
+	}
+	if len(oldMockDB.CloseCalls) != 0 {
+		t.Errorf("expected existing adapter to remain open, got %d close calls", len(oldMockDB.CloseCalls))
+	}
+	if len(newMockDB.ConnectCalls) != 1 {
+		t.Errorf("expected replacement adapter.Connect to be called once, got %d calls", len(newMockDB.ConnectCalls))
+	}
+	if len(newMockDB.CloseCalls) != 1 {
+		t.Errorf("expected replacement adapter.Close to be called once after failed validation, got %d calls", len(newMockDB.CloseCalls))
+	}
+	if !updated.dbSettings.showDialog {
+		t.Fatal("expected settings dialog to remain visible on validation failure")
+	}
+	if updated.loading.err == nil {
+		t.Fatal("expected loading.err to be populated on validation failure")
 	}
 }
 

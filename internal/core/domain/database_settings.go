@@ -48,6 +48,7 @@ type DatabaseSettings struct {
 	username   string
 	password   string
 	isDefault  bool
+	validated  bool
 }
 
 // makeSettingsID constructs a stable unique ID from the user-facing database ID.
@@ -102,6 +103,7 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 		username:   username,
 		password:   password,
 		isDefault:  false,
+		validated:  false,
 	}, nil
 }
 
@@ -125,6 +127,9 @@ func (dbs *DatabaseSettings) Port() Port         { return dbs.port }
 func (dbs *DatabaseSettings) Username() string   { return dbs.username }
 func (dbs *DatabaseSettings) Password() string   { return dbs.password }
 func (dbs *DatabaseSettings) IsDefault() bool    { return dbs.isDefault }
+func (dbs *DatabaseSettings) PermissionsValidated() bool {
+	return dbs.validated
+}
 
 // ==========================================
 // Business Methods
@@ -150,6 +155,16 @@ func (dbs *DatabaseSettings) SetAsDefault() {
 	dbs.isDefault = true
 }
 
+// MarkPermissionsValidated records that permissions were successfully verified for this connection.
+func (dbs *DatabaseSettings) MarkPermissionsValidated() {
+	dbs.validated = true
+}
+
+// ClearPermissionsValidated removes the cached permission validation marker.
+func (dbs *DatabaseSettings) ClearPermissionsValidated() {
+	dbs.validated = false
+}
+
 // ==========================================
 // JSON Marshaling
 // ==========================================
@@ -163,6 +178,7 @@ type databaseSettingsJSON struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	IsDefault  bool   `json:"isDefault"`
+	Validated  bool   `json:"validated,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for DatabaseSettings
@@ -175,6 +191,7 @@ func (dbs *DatabaseSettings) MarshalJSON() ([]byte, error) {
 		Username:   dbs.username,
 		Password:   dbs.password,
 		IsDefault:  dbs.isDefault,
+		Validated:  dbs.validated,
 	}
 	return json.Marshal(j)
 }
@@ -207,6 +224,7 @@ func (dbs *DatabaseSettings) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	cfg.isDefault = dbSettingJson.IsDefault
+	cfg.validated = dbSettingJson.Validated
 	*dbs = *cfg
 
 	return nil

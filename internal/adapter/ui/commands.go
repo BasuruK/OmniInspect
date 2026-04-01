@@ -11,10 +11,11 @@ import (
 )
 
 // connectDBCmd connects to the Oracle database.
-func connectDBCmd(m *Model) tea.Cmd {
+// isSwitch indicates whether this is a database switch (skip permission checks).
+func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 	return func() tea.Msg {
 		err := m.dbAdapter.Connect(m.ctx)
-		return dbConnectedMsg{err: err}
+		return dbConnectedMsg{err: err, isSwitch: isSwitch}
 	}
 }
 

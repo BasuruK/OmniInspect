@@ -257,6 +257,10 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	m.dbAdapter, err = m.dbFactory(m.appConfig)
 	if err != nil {
 		log.Printf("[UI] Failed to create database adapter: %v", err)
+		// Restore settings panel visibility and show error to user
+		m.dbSettings.visible = true
+		m.dbSettings.dialogMsg = fmt.Sprintf("Failed to initialize database: %v", err)
+		m.dbSettings.showDialog = true
 		return m, nil
 	}
 	// Reset dependent services to be reinit with new adapter
@@ -271,7 +275,7 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	m.loading.steps = nil
 	m.loading.err = nil
 	m.loading.current = "Connecting..."
-	return m, connectDBCmd(m)
+	return m, connectDBCmd(m, true)
 }
 
 // reloadDatabaseList: reloads the database list from BoltDB storage and updates the UI list.

@@ -31,7 +31,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			log.Printf("[updater] Update check failed: %v\n", msg.err)
 			m.update.checking = false
 			m.loading.current = "Connecting to database..."
-			return m, connectDBCmd(m)
+			return m, connectDBCmd(m, false)
 		}
 		m.update.checking = false
 		if msg.info != nil {
@@ -43,7 +43,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		// No update available — proceed to database connection
 		m.loading.current = "Connecting to database..."
-		return m, connectDBCmd(m)
+		return m, connectDBCmd(m, false)
 
 	// Handle key input when prompting for update
 	case tea.KeyPressMsg:
@@ -59,7 +59,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 				// User declined update — proceed to database connection
 				m.update.prompting = false
 				m.loading.current = "Connecting to database..."
-				return m, connectDBCmd(m)
+				return m, connectDBCmd(m, false)
 			}
 		}
 		if m.update.err != nil {
@@ -69,7 +69,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 				// Continue without update
 				m.update.err = nil
 				m.loading.current = "Connecting to database..."
-				return m, connectDBCmd(m)
+				return m, connectDBCmd(m, false)
 			case "n", "N", "q":
 				// Quit
 				m.cancel()
@@ -102,6 +102,22 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading.steps = append(m.loading.steps, "✓ Connected to Oracle database")
+
+		// Initialize services before proceeding
+		if err := m.initializeServices(); err != nil {
+			m.loading.err = fmt.Errorf("service initialization failed: %w", err)
+			return m, nil
+		}
+
+		// When switching databases, skip permission checks (already validated at registration)
+		// Just verify tracer package is deployed
+		if msg.isSwitch {
+			m.loading.steps = append(m.loading.steps, "✓ Permissions verified (cached)")
+			m.loading.current = "Deploying tracer package..."
+			return m, deployTracerCmd(m)
+		}
+
+		// First-time connection: run full permission checks
 		m.loading.current = "Checking permissions..."
 		return m, checkPermissionsCmd(m)
 

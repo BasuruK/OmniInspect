@@ -229,5 +229,34 @@ cells:
       END;
     languageId: oracle-sql
   - kind: 2
+    value: >-
+      BEGIN
+          OMNI_TRACER_API.Trace_Message_To_Webhook('Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!', 'INFO');
+      END;
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      DECLARE
+          v_payload CLOB := q'~
+      {
+        "traceId": "dummy-trace-001",
+        "level": "INFO",
+        "source": "custom-notebook",
+        "message": "Hello world from dummy JSON payload",
+        "context": {
+          "module": "OmniInspect",
+          "feature": "webhook-trace",
+          "environment": "dev"
+        },
+        "tags": ["demo", "test", "notebook"],
+        "timestamp": "2026-03-30T00:00:00Z"
+      }
+      ~';
+      BEGIN
+          OMNI_TRACER_API.Trace_Message_To_Webhook(v_payload, 'INFO');
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
     value: ""
     languageId: oracle-sql

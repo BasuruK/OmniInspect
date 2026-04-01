@@ -64,7 +64,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 		m.screen = screenLoading
 		return m, tea.Batch(
 			m.loading.spinner.Tick,
-			connectDBCmd(m),
+			connectDBCmd(m, false),
 		)
 	}
 

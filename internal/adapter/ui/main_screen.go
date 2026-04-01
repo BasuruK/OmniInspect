@@ -154,6 +154,13 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				m.main.viewport.GotoBottom()
 			}
 			return m, nil
+		case "c":
+			// Clear all messages
+			m.main.messages = nil
+			m.main.renderedContent.Reset()
+			m.main.viewport.SetContent(m.renderLogContent())
+			m.main.viewport.GotoTop()
+			return m, nil
 		case "d":
 			// Open database settings
 			activeID := ""
@@ -703,7 +710,7 @@ func (m *Model) mainStatusText() string {
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
-	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  D Database Settings  •  Q Quit"
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  C Clear  •  D Database Settings  •  Q Quit"
 }
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.

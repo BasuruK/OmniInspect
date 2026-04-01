@@ -29,10 +29,13 @@ type BoltAdapter struct {
 }
 
 // Constructor: NewBoltAdapter creates a new instance of BoltAdapter
-func NewBoltAdapter(dbPath string) *BoltAdapter {
+func NewBoltAdapter(dbPath string) (*BoltAdapter, error) {
+	if dbPath == "" {
+		return nil, fmt.Errorf("NewBoltAdapter: dbPath cannot be empty")
+	}
 	return &BoltAdapter{
 		dbPath: dbPath,
-	}
+	}, nil
 }
 
 func (ba *BoltAdapter) Initialize() error {
@@ -42,25 +45,25 @@ func (ba *BoltAdapter) Initialize() error {
 
 	var err error
 	if ba.db, err = bolt.Open(ba.dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second}); err != nil {
-		return fmt.Errorf("failed to open BoltDB: %v", err)
+		return fmt.Errorf("failed to open BoltDB: %w", err)
 	}
 
 	// Initialize buckets
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(DatabaseConfigBucket)); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(ClientConfigBucket)); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(SubscriberBucket)); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(PermissionsBucket)); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(WebhookConfigBucket)); err != nil {
-			return fmt.Errorf("failed to create bucket: %v", err)
+			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 
 		return nil

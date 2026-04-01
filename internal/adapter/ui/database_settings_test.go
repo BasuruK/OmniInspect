@@ -1,13 +1,13 @@
 package ui
 
 import (
-	"context"
-	"errors"
-	"testing"
-
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/tracer"
+
+	"context"
+	"errors"
+	"testing"
 )
 
 // ==========================================
@@ -319,9 +319,9 @@ func TestHandleSettingsSetAsMain_FactoryError(t *testing.T) {
 	// Execute
 	updated, cmd := m.handleSettingsSetAsMain(*selected)
 
-	// Assert error handling - loading.err is set
-	if updated.loading.err == nil {
-		t.Error("expected loading.err to be set on factory error")
+	// Assert the settings dialog owns the error state in this path.
+	if updated.loading.err != nil {
+		t.Error("expected loading.err to remain nil when factory error stays on settings UI")
 	}
 
 	// Assert dialog is shown
@@ -377,8 +377,8 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	if updated.dbSettings.dialogMsg == "" {
 		t.Error("expected dialog message to be set")
 	}
-	if updated.loading.err == nil {
-		t.Error("expected loading error to be set")
+	if updated.loading.err != nil {
+		t.Error("expected loading error to remain nil when dialog handles the error")
 	}
 	// Verify original error is wrapped
 	if updated.dbSettings.dialogMsg == factoryErr.Error() {

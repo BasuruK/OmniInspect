@@ -23,7 +23,11 @@ func main() {
 	updater.CleanupOldBinary()
 
 	// Initialize BoltDB (fast, no UI needed)
-	boltAdapter := boltdb.NewBoltAdapter("omniview.bolt")
+	boltAdapter, err := boltdb.NewBoltAdapter("omniview.bolt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create BoltDB adapter: %v\n", err)
+		os.Exit(1)
+	}
 	if err := boltAdapter.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize BoltDB: %v\n", err)
 		os.Exit(1)

@@ -90,10 +90,7 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		data := b.Get([]byte(id))
-		if data == nil {
-			data = b.Get([]byte(databaseSettingsStorageKey(id)))
-		}
+		data := b.Get([]byte(databaseSettingsStorageKey(id)))
 		if data == nil {
 			return fmt.Errorf("database settings not found for id: %s", id)
 		}
@@ -215,9 +212,7 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 }
 
 func databaseSettingsStorageKey(id string) string {
-	if strings.HasPrefix(id, "cfg:") {
-		return id
-	}
+	rawID := strings.TrimPrefix(id, "cfg:")
 
-	return "cfg:" + url.PathEscape(id)
+	return "cfg:" + url.PathEscape(rawID)
 }

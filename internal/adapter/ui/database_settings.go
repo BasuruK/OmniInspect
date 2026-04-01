@@ -261,7 +261,6 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 		m.dbSettings.visible = true
 		m.dbSettings.dialogMsg = fmt.Sprintf("Failed to initialize database: %v", err)
 		m.dbSettings.showDialog = true
-		m.loading.err = fmt.Errorf("database reconnection failed: %w", err)
 		return m, nil
 	}
 	// Reset dependent services to be reinit with new adapter

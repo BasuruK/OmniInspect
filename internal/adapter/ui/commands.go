@@ -30,7 +30,7 @@ func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 func checkPermissionsCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.permissionService == nil {
-			return permissionsCheckedMsg{err: fmt.Errorf("%w: checkPermissionsCmd", ErrPermissionServiceNotInitialized)}
+			return permissionsCheckedMsg{err: fmt.Errorf("checkPermissionsCmd: %w", ErrPermissionServiceNotInitialized)}
 		}
 		_, err := m.permissionService.DeployAndCheck(m.ctx, m.appConfig.Username())
 		return permissionsCheckedMsg{err: err}
@@ -41,7 +41,7 @@ func checkPermissionsCmd(m *Model) tea.Cmd {
 func deployTracerCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.tracerService == nil {
-			return tracerDeployedMsg{err: fmt.Errorf("%w: deployTracerCmd", ErrTracerServiceNotInitialized)}
+			return tracerDeployedMsg{err: fmt.Errorf("deployTracerCmd: %w", ErrTracerServiceNotInitialized)}
 		}
 		err := m.tracerService.DeployAndCheck(m.ctx)
 		return tracerDeployedMsg{err: err}
@@ -52,7 +52,7 @@ func deployTracerCmd(m *Model) tea.Cmd {
 func registerSubscriberCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.subscriberService == nil {
-			return subscriberRegisteredMsg{subscriber: nil, err: fmt.Errorf("%w: registerSubscriberCmd", ErrSubscriberServiceNotInitialized)}
+			return subscriberRegisteredMsg{subscriber: nil, err: fmt.Errorf("registerSubscriberCmd: %w", ErrSubscriberServiceNotInitialized)}
 		}
 		subscriber, err := m.subscriberService.RegisterSubscriber(m.ctx)
 		return subscriberRegisteredMsg{subscriber: subscriber, err: err}
@@ -106,7 +106,7 @@ func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
 func checkForUpdateCmd(m *Model) tea.Cmd {
 	return func() tea.Msg {
 		if m.updaterService == nil {
-			return updateCheckResultMsg{info: nil, err: fmt.Errorf("%w: checkForUpdateCmd", ErrUpdaterServiceNotAvailable)}
+			return updateCheckResultMsg{info: nil, err: fmt.Errorf("checkForUpdateCmd: %w", ErrUpdaterServiceNotAvailable)}
 		}
 		info, err := m.updaterService.CheckForUpdate(m.ctx)
 		if err != nil {

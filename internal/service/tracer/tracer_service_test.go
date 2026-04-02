@@ -128,6 +128,9 @@ func TestStopWebhookDispatcher_DoesNotInitializeDispatcher(t *testing.T) {
 	}
 }
 
+// TestWebhookDispatcherStop_IsIdempotent verifies that calling Stop twice on a
+// dispatcher created by newWebhookDispatcher does not panic because Stop uses
+// sync.Once to guard the shutdown path.
 func TestWebhookDispatcherStop_IsIdempotent(t *testing.T) {
 	dispatcher := newWebhookDispatcher()
 	dispatcher.Stop()

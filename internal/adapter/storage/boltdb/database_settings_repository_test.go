@@ -207,7 +207,7 @@ func readBucketKey(t *testing.T, adapter *BoltAdapter, key string) []byte {
 func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 
 	legacyKey := "localhost:system"
 	legacyJSON := []byte(`{"database":"ORCL","host":"localhost","port":1521,"username":"system","password":"secret","isDefault":false}`)
@@ -246,7 +246,7 @@ func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
 func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 
 	legacyKey := "db-host:admin"
 	legacyJSON := []byte(`{"database":"FREEDB","host":"db-host","port":1521,"username":"admin","password":"pass","isDefault":true}`)
@@ -270,7 +270,7 @@ func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 func TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 	repo := NewDatabaseSettingsRepository(adapter)
 
 	port, err := domain.NewPort(1521)
@@ -305,7 +305,7 @@ func TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched(t *testing.T) {
 func TestMigrateLegacyDatabaseSettings_PreservesExistingDatabaseId(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 
 	legacyKey := "some-host:user"
 	legacyJSON := []byte(`{"databaseId":"MY-EXPLICIT-ID","database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
@@ -340,7 +340,7 @@ func TestMigrateLegacyDatabaseSettings_PreservesExistingDatabaseId(t *testing.T)
 func TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 
 	legacyKey := "some-host:user"
 	legacyJSON := []byte(`{"database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
@@ -370,7 +370,7 @@ func TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId(t *testing.T) {
 func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 	t.Parallel()
 
-	adapter := newRawBoltAdapter(t)
+	adapter := newTestBoltAdapter(t)
 
 	legacyKey := "idempotent-host:sa"
 	legacyJSON := []byte(`{"database":"TESTDB","host":"idempotent-host","port":1521,"username":"sa","password":"pw","isDefault":false}`)
@@ -390,27 +390,6 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 	if got := readBucketKey(t, adapter, legacyKey); got != nil {
 		t.Errorf("expected legacy key %q to remain absent after second migration pass", legacyKey)
 	}
-}
-
-// newRawBoltAdapter creates an isolated BoltDB adapter for tests that need to write
-// raw legacy entries directly. Unlike newTestBoltAdapter it skips Initialize so
-// tests can call migrateLegacyDatabaseSettings themselves when needed.
-func newRawBoltAdapter(t *testing.T) *BoltAdapter {
-	t.Helper()
-
-	dbPath := filepath.Join(t.TempDir(), "test.bolt")
-	adapter := &BoltAdapter{dbPath: dbPath}
-	if err := adapter.Initialize(); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-
-	t.Cleanup(func() {
-		if err := adapter.db.Close(); err != nil {
-			t.Errorf("db.Close: %v", err)
-		}
-	})
-
-	return adapter
 }
 
 // newTestBoltAdapter creates an isolated BoltDB adapter with the database

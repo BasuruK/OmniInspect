@@ -197,7 +197,7 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 
 		storageKey := databaseSettingsStorageKey(id)
 		if err := b.Delete([]byte(storageKey)); err != nil {
-			return err
+			return fmt.Errorf("delete database settings %q: %w", storageKey, err)
 		}
 
 		// If the deleted config was the default, clear the default pointer key

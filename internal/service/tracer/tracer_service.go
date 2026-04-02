@@ -111,10 +111,8 @@ func StopWebhookDispatcher() {
 // Note: The caller (Model) owns the channel lifecycle. The channel is closed by the Model, not here.
 // The global webhook dispatcher is stopped separately via StopWebhookDispatcher by the application shutdown owner.
 func StopAll(tracerService *TracerService) {
-	// Cancel the event listener context and wait for goroutines to finish
-	if tracerService != nil && tracerService.listenerCancel != nil {
-		tracerService.listenerCancel()
-		tracerService.listenerWg.Wait()
+	if tracerService != nil {
+		tracerService.CancelConnectionListener()
 	}
 }
 
@@ -137,10 +135,10 @@ func NewTracerService(
 	eventChannel chan *domain.QueueMessage,
 ) (*TracerService, error) {
 	if db == nil {
-		return nil, fmt.Errorf("NewTracerService: db repository cannot be nil")
+		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
 	}
 	if bolt == nil {
-		return nil, fmt.Errorf("NewTracerService: config repository cannot be nil")
+		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilConfig)
 	}
 
 	return &TracerService{
@@ -148,6 +146,14 @@ func NewTracerService(
 		bolt:         bolt,
 		eventChannel: eventChannel,
 	}, nil
+}
+
+// CancelConnectionListener stops the current connection-scoped listener and waits for its goroutines to exit.
+func (ts *TracerService) CancelConnectionListener() {
+	if ts != nil && ts.listenerCancel != nil {
+		ts.listenerCancel()
+		ts.listenerWg.Wait()
+	}
 }
 
 // StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them

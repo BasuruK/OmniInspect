@@ -128,7 +128,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.main.ready && m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
-		return m, waitForEventCmd(m.ctx, m.eventChannel)
+		return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
 
 	// Event channel closed (shutdown)
 	case eventChannelClosedMsg:

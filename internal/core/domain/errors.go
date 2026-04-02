@@ -30,6 +30,8 @@ var (
 	ErrInvalidConnection       = errors.New("invalid connection string")
 	ErrHostUnreachable         = errors.New("host is unreachable")
 	ErrDefaultSettingsNotFound = errors.New("default database settings not found")
+	ErrNilRepository           = errors.New("repository cannot be nil")
+	ErrNilConfig               = errors.New("config repository cannot be nil")
 
 	// Permission errors
 	ErrPermissionDenied      = errors.New("permission denied")

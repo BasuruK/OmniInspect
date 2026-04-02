@@ -160,7 +160,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 
 		// Start event listener before transitioning to main screen
-		if err := m.tracerService.StartEventListener(m.ctx, msg.subscriber, m.appConfig.Username()); err != nil {
+		if err := m.tracerService.StartEventListener(m.eventStreamCtx, msg.subscriber, m.appConfig.Username()); err != nil {
 			m.loading.err = fmt.Errorf("failed to start event listener: %w", err)
 			return m, nil
 		}
@@ -174,7 +174,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		m.screen = screenMain
 		m.initViewport()
 
-		return m, waitForEventCmd(m.ctx, m.eventChannel)
+		return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
 	}
 
 	return m, nil

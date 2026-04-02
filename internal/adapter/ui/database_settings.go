@@ -4,7 +4,6 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
-	"OmniView/internal/service/tracer"
 	"fmt"
 	"log"
 	"strconv"
@@ -291,8 +290,9 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		log.Printf("[UI] Failed to close validated database adapter for %s: %v", selectedDb.DatabaseID(), err)
 	}
 
+	m.resetConnectionEventStream()
 	if m.tracerService != nil {
-		tracer.StopAll(m.tracerService)
+		m.tracerService.CancelConnectionListener()
 	}
 	if m.dbAdapter != nil {
 		if err := m.dbAdapter.Close(m.ctx); err != nil {

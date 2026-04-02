@@ -146,11 +146,18 @@ func newTestDatabaseSettings(t *testing.T, id string) *domain.DatabaseSettings {
 func newTestModelForSettings(t *testing.T) *Model {
 	t.Helper()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
+
 	return &Model{
-		screen: screenMain,
-		width:  120,
-		height: 36,
-		ctx:    context.Background(),
+		screen:            screenMain,
+		width:             120,
+		height:            36,
+		ctx:               ctx,
+		cancel:            cancel,
+		eventStreamCtx:    eventStreamCtx,
+		eventStreamCancel: eventStreamCancel,
+		eventChannel:      make(chan *domain.QueueMessage, 16),
 		main: mainState{
 			autoScroll: true,
 			ready:      true,
@@ -521,8 +528,8 @@ func TestHandleSettingsSetAsMain_Success_LoadingState(t *testing.T) {
 	if updated.loading.err != nil {
 		t.Errorf("expected loading.err to be nil on success, got %v", updated.loading.err)
 	}
-	if updated.loading.steps != nil {
-		t.Error("expected loading.steps to be nil/empty on success")
+	if len(updated.loading.steps) != 0 {
+		t.Errorf("expected loading.steps to be empty on success, got %d steps", len(updated.loading.steps))
 	}
 }
 
@@ -740,5 +747,63 @@ func TestHandleSettingsSetAsMain_WithExistingMessages_ClearsAllMessages(t *testi
 	// Assert all messages are cleared
 	if len(updated.main.messages) != 0 {
 		t.Errorf("expected all messages to be cleared, got %d messages", len(updated.main.messages))
+	}
+}
+
+func TestHandleSettingsSetAsMain_CancelsPreviousConnectionEventStream(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	mockDB := NewMockDatabaseRepository()
+	oldEventCtx := m.eventStreamCtx
+	oldEventChannel := m.eventChannel
+
+	m.dbAdapter = mockDB
+	m.tracerService = mustNewTracerService(t, mockDB)
+
+	selected := newTestDatabaseSettings(t, "NEW-DB")
+	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return mockDB, nil
+	}
+
+	_, _ = m.handleSettingsSetAsMain(*selected)
+
+	select {
+	case <-oldEventCtx.Done():
+	default:
+		t.Fatal("expected previous event stream context to be cancelled during database switch")
+	}
+
+	msg := waitForEventCmd(oldEventCtx, oldEventChannel)()
+	if _, ok := msg.(eventChannelClosedMsg); !ok {
+		t.Fatalf("expected waitForEventCmd on cancelled stream to return eventChannelClosedMsg, got %T", msg)
+	}
+}
+
+func TestHandleSettingsSetAsMain_RotatesConnectionEventChannel(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	mockDB := NewMockDatabaseRepository()
+	oldEventChannel := m.eventChannel
+
+	m.dbAdapter = mockDB
+	m.tracerService = mustNewTracerService(t, mockDB)
+
+	selected := newTestDatabaseSettings(t, "NEW-DB")
+	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return mockDB, nil
+	}
+
+	updated, _ := m.handleSettingsSetAsMain(*selected)
+
+	if updated.eventChannel == nil {
+		t.Fatal("expected a replacement event channel after database switch")
+	}
+	if updated.eventChannel == oldEventChannel {
+		t.Fatal("expected database switch to rotate to a new event channel")
+	}
+	if updated.eventStreamCtx == nil {
+		t.Fatal("expected a replacement event stream context after database switch")
 	}
 }

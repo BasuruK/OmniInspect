@@ -5,6 +5,7 @@ import (
 	"OmniView/internal/core/ports"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -120,6 +121,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 		for _, entry := range toMigrate {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s%q: failed to unmarshal JSON: %v", LegacyConfigKeyPrefix, entry.oldKey, err)
 				continue
 			}
 
@@ -131,6 +133,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s%q (databaseId=%q): failed to re-marshal JSON: %v", LegacyConfigKeyPrefix, entry.oldKey, databaseId, err)
 				continue
 			}
 

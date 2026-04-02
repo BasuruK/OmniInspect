@@ -4,7 +4,6 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
-	"OmniView/internal/service/tracer"
 	"fmt"
 	"log"
 	"strconv"
@@ -243,22 +242,67 @@ func (m *Model) viewDatabaseSettings() string {
 // Database Switching
 // ==========================================
 
+func (m *Model) showDatabaseSwitchError(err error) (*Model, tea.Cmd) {
+	log.Printf("[UI] Database switch failed: %v", err)
+	m.loading.err = err
+	m.dbSettings.visible = true
+	m.dbSettings.dialogMsg = err.Error()
+	m.dbSettings.showDialog = true
+	return m, nil
+}
+
+func (m *Model) markActiveConnectionPermissionsValidated() error {
+	if m.appConfig == nil {
+		return fmt.Errorf("active database configuration is required")
+	}
+
+	m.appConfig.MarkPermissionsValidated()
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+	if err := settingsRepo.Save(m.ctx, *m.appConfig); err != nil {
+		return fmt.Errorf("save validated connection %q: %w", m.appConfig.DatabaseID(), err)
+	}
+
+	for index := range m.dbSettings.databases {
+		if m.dbSettings.databases[index].ID() == m.appConfig.ID() {
+			m.dbSettings.databases[index].MarkPermissionsValidated()
+			break
+		}
+	}
+
+	return nil
+}
+
 // handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
-func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Model, tea.Cmd) {
+func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Model, tea.Cmd) {
+	newAdapter, err := m.dbFactory(&selectedDb)
+	if err != nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: %w", selectedDb.DatabaseID(), err))
+	}
+	if newAdapter == nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: adapter is nil", selectedDb.DatabaseID()))
+	}
+
+	if err := newAdapter.Connect(m.ctx); err != nil {
+		_ = newAdapter.Close(m.ctx)
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to connect to database %q: %w", selectedDb.DatabaseID(), err))
+	}
+	if err := newAdapter.Close(m.ctx); err != nil {
+		log.Printf("[UI] Failed to close validated database adapter for %s: %v", selectedDb.DatabaseID(), err)
+	}
+
+	m.resetConnectionEventStream()
 	if m.tracerService != nil {
-		tracer.StopAll(m.tracerService)
+		m.tracerService.CancelConnectionListener()
 	}
 	if m.dbAdapter != nil {
-		m.dbAdapter.Close(m.ctx)
+		if err := m.dbAdapter.Close(m.ctx); err != nil {
+			log.Printf("[UI] Failed to close current database adapter: %v", err)
+		}
 	}
-	m.appConfig = &selected
-	// Reinitialize adapter with new config
-	var err error
-	m.dbAdapter, err = m.dbFactory(m.appConfig)
-	if err != nil {
-		log.Printf("[UI] Failed to create database adapter: %v", err)
-		return m, nil
-	}
+
+	m.appConfig = &selectedDb
+	m.dbAdapter = newAdapter
+
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil
 	m.tracerService = nil
@@ -271,7 +315,7 @@ func (m *Model) handleSettingsSetAsMain(selected domain.DatabaseSettings) (*Mode
 	m.loading.steps = nil
 	m.loading.err = nil
 	m.loading.current = "Connecting..."
-	return m, connectDBCmd(m)
+	return m, connectDBCmd(m, true)
 }
 
 // reloadDatabaseList: reloads the database list from BoltDB storage and updates the UI list.

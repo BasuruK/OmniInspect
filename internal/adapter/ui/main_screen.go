@@ -128,7 +128,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.main.ready && m.main.autoScroll {
 			m.main.viewport.GotoBottom()
 		}
-		return m, waitForEventCmd(m.ctx, m.eventChannel)
+		return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
 
 	// Event channel closed (shutdown)
 	case eventChannelClosedMsg:
@@ -671,11 +671,12 @@ func (m *Model) mainSubtitle() string {
 	}
 
 	return fmt.Sprintf(
-		"%s@%s • %s:%d",
+		"%s@%s • %s:%d • %s",
 		m.appConfig.Username(),
 		m.appConfig.Database(),
 		m.appConfig.Host(),
 		m.appConfig.Port().Int(),
+		m.appConfig.ID(),
 	)
 }
 

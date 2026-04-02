@@ -71,5 +71,10 @@ jobs:
         CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
         CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci
 
-    - name: Skip tests
-      run: echo "Skipping tests — no tests found."
+    - name: Test
+      run: make test
+      shell: cmd
+      env:
+        CGO_ENABLED: 1
+        CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include
+        CGO_LDFLAGS: -L${{ github.workspace }}/third_party/odpi/lib -lodpi -LC:/oracle_inst/instantclient_23_7 -loci

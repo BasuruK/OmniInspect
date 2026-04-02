@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -47,7 +49,7 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 			return fmt.Errorf("failed to marshal database settings: %w", err)
 		}
 
-		key := settings.ID()
+		key := settings.StorageKey()
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save database settings: %w", err)
 		}
@@ -88,7 +90,7 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		data := b.Get([]byte(id))
+		data := b.Get([]byte(databaseSettingsStorageKey(id)))
 		if data == nil {
 			return fmt.Errorf("database settings not found for id: %s", id)
 		}
@@ -193,17 +195,35 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		if err := b.Delete([]byte(id)); err != nil {
-			return err
+		storageKey := databaseSettingsStorageKey(id)
+		if err := b.Delete([]byte(storageKey)); err != nil {
+			return fmt.Errorf("delete database settings %q: %w", storageKey, err)
 		}
 
 		// If the deleted config was the default, clear the default pointer key
 		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
-		if defaultKey != nil && string(defaultKey) == id {
+		if defaultKey != nil && string(defaultKey) == storageKey {
 			if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
 				return fmt.Errorf("failed to clear default database settings key: %w", err)
 			}
 		}
 		return nil
 	})
+}
+
+// databaseSettingsStorageKey converts a user-facing database ID to a storage key.
+// It is idempotent: if the input is already a valid escaped storage key, it is returned unchanged.
+func databaseSettingsStorageKey(id string) string {
+	// Check if input appears to be an already-escaped storage key
+	if strings.HasPrefix(id, "cfg:") {
+		rawPart := strings.TrimPrefix(id, "cfg:")
+		unescaped, err := url.PathUnescape(rawPart)
+		if err == nil && url.PathEscape(unescaped) == rawPart {
+			// Already a valid storage key (properly escaped)
+			return id
+		}
+	}
+
+	// Treat the entire input as a raw ID that needs escaping
+	return "cfg:" + url.PathEscape(id)
 }

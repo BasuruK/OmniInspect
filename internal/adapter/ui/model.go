@@ -106,8 +106,10 @@ type Model struct {
 	update     updateState
 
 	// Cancellable contexts for all background operations
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx               context.Context
+	cancel            context.CancelFunc
+	eventStreamCtx    context.Context
+	eventStreamCancel context.CancelFunc
 
 	// BoltDB adapter for config read/write (used by onboarding)
 	boltAdapter *boltdb.BoltAdapter
@@ -183,6 +185,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
 
 	s := spinner.New(
 		spinner.WithSpinner(spinner.Dot),
@@ -194,6 +197,8 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		height:             24,
 		ctx:                ctx,
 		cancel:             cancel,
+		eventStreamCtx:     eventStreamCtx,
+		eventStreamCancel:  eventStreamCancel,
 		boltAdapter:        opts.BoltAdapter,
 		dbFactory:          opts.DBFactory,
 		dbSettingsRepo:     opts.DBSettingsRepo,
@@ -213,6 +218,20 @@ func NewModel(opts ModelOpts) (*Model, error) {
 			autoScroll: true,
 		},
 	}, nil
+}
+
+func (m *Model) resetConnectionEventStream() {
+	if m.eventStreamCancel != nil {
+		m.eventStreamCancel()
+	}
+
+	bufferSize := 16
+	if m.eventChannel != nil && cap(m.eventChannel) > 0 {
+		bufferSize = cap(m.eventChannel)
+	}
+
+	m.eventChannel = make(chan *domain.QueueMessage, bufferSize)
+	m.eventStreamCtx, m.eventStreamCancel = context.WithCancel(m.ctx)
 }
 
 // initializeServices: initializes or reinitializes database adapter and dependent services if they are not already set.
@@ -237,7 +256,11 @@ func (m *Model) initializeServices() error {
 		m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
 	}
 	if m.tracerService == nil {
-		m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+		var err error
+		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create tracer service: %w", err)
+		}
 	}
 	if m.subscriberService == nil {
 		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)

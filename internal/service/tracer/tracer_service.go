@@ -21,11 +21,12 @@ const (
 
 // webhookDispatcher handles bounded webhook delivery
 type webhookDispatcher struct {
-	service *webhook.WebhookService
-	queue   chan webhookJob
-	wg      sync.WaitGroup
-	stopped bool
-	mu      sync.RWMutex
+	service  *webhook.WebhookService
+	queue    chan webhookJob
+	wg       sync.WaitGroup
+	stopped  bool
+	mu       sync.RWMutex
+	stopOnce sync.Once
 }
 
 // webhookJob represents a single webhook delivery task
@@ -62,12 +63,11 @@ func (d *webhookDispatcher) worker() {
 // Enqueue adds a webhook job to the dispatcher's queue if not stopped
 func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.WebhookMetadata) {
 	d.mu.RLock()
+	defer d.mu.RUnlock()
 	if d.stopped {
-		d.mu.RUnlock()
 		log.Printf("[Tracer] Webhook dispatcher stopped, dropping message")
 		return
 	}
-	d.mu.RUnlock()
 
 	select {
 	case d.queue <- webhookJob{payload: payload, url: url, meta: meta}:
@@ -80,11 +80,13 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 
 // Stop signals the dispatcher to stop accepting new jobs and waits for in-flight deliveries to complete
 func (d *webhookDispatcher) Stop() {
-	d.mu.Lock()
-	d.stopped = true
-	d.mu.Unlock()
-	close(d.queue)
-	d.wg.Wait()
+	d.stopOnce.Do(func() {
+		d.mu.Lock()
+		d.stopped = true
+		close(d.queue)
+		d.mu.Unlock()
+		d.wg.Wait()
+	})
 }
 
 // Global webhook dispatcher (initialized on first use)
@@ -98,22 +100,18 @@ func getWebhookDispatcher() *webhookDispatcher {
 	return globalWebhookDispatcher
 }
 
-// StopAll stops the webhook dispatcher and event listener goroutines, then waits for them to complete
-func StopAll(tracerService *TracerService) {
-	// Stop webhook dispatcher first to stop accepting new webhook jobs
+// StopWebhookDispatcher flushes any queued webhook deliveries and stops the global dispatcher if it was initialized.
+func StopWebhookDispatcher() {
 	if globalWebhookDispatcher != nil {
 		globalWebhookDispatcher.Stop()
 	}
+}
 
-	// Cancel the event listener context and wait for goroutines to finish
-	if tracerService != nil && tracerService.listenerCancel != nil {
-		tracerService.listenerCancel()
-		tracerService.listenerWg.Wait()
-	}
-
-	// Close the event channel so waitForEventCmd goroutines unblock and exit
-	if tracerService != nil && tracerService.eventChannel != nil {
-		close(tracerService.eventChannel)
+// StopAll is deprecated. Use StopConnectionListener on TracerService and stop the
+// global webhook dispatcher separately via StopWebhookDispatcher.
+func StopAll(tracerService *TracerService) {
+	if tracerService != nil {
+		tracerService.StopConnectionListener()
 	}
 }
 
@@ -134,12 +132,39 @@ func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
-) *TracerService {
+) (*TracerService, error) {
+	if db == nil {
+		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
+	}
+	if bolt == nil {
+		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilConfig)
+	}
+
 	return &TracerService{
 		db:           db,
 		bolt:         bolt,
 		eventChannel: eventChannel,
+	}, nil
+}
+
+// StopConnectionListener stops the current connection-scoped listener and clears
+// any queued connection events that raced with cancellation.
+func (ts *TracerService) StopConnectionListener() {
+	ts.CancelConnectionListener()
+}
+
+// CancelConnectionListener stops the current connection-scoped listener and waits for its goroutines to exit.
+func (ts *TracerService) CancelConnectionListener() {
+	if ts == nil {
+		return
 	}
+	if ts.listenerCancel != nil {
+		ts.listenerCancel()
+		ts.listenerWg.Wait()
+		ts.listenerCancel = nil
+		ts.listenerCtx = nil
+	}
+	ts.drainEventChannel()
 }
 
 // StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them
@@ -147,6 +172,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
+	ts.StopConnectionListener()
 	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Create a cancellable context for event listeners
@@ -167,6 +193,19 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	go ts.blockingConsumerLoop(ts.listenerCtx, subscriber)
 
 	return nil
+}
+
+func (ts *TracerService) drainEventChannel() {
+	if ts == nil || ts.eventChannel == nil {
+		return
+	}
+	for {
+		select {
+		case <-ts.eventChannel:
+		default:
+			return
+		}
+	}
 }
 
 // blockingConsumerLoop continuously waits for new messages for the subscriber and processes them until the context is cancelled
@@ -230,7 +269,9 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 				continue
 			}
 			// Deliver while holding lock to preserve ordering
-			ts.handleTracerMessage(msg)
+			if !ts.handleTracerMessage(ctx, msg) {
+				return ctx.Err()
+			}
 		}
 		return nil
 	}()
@@ -239,10 +280,14 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 }
 
 // handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
-func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
+func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.QueueMessage) bool {
 	// Always send to TUI if channel is available
 	if ts.eventChannel != nil {
-		ts.eventChannel <- msg
+		select {
+		case ts.eventChannel <- msg:
+		case <-ctx.Done():
+			return false
+		}
 	} else {
 		fmt.Println(msg.Format())
 	}
@@ -250,13 +295,13 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 	// Dispatch to webhook if configured
 	webhookConfig, err := ts.bolt.GetWebhookConfig()
 	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {
-		return
+		return true
 	}
 
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("failed to marshal message for webhook: %v", err)
-		return
+		return true
 	}
 
 	meta := webhook.WebhookMetadata{
@@ -264,6 +309,7 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 		Timestamp: msg.Timestamp().Format(time.RFC3339),
 	}
 	getWebhookDispatcher().Enqueue(payload, webhookConfig.URL, meta)
+	return true
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

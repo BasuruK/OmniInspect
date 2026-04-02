@@ -7,6 +7,7 @@ import (
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"OmniView/internal/service/tracer"
 	updaterSvc "OmniView/internal/service/updater"
 	"OmniView/internal/updater"
 	"fmt"
@@ -23,7 +24,11 @@ func main() {
 	updater.CleanupOldBinary()
 
 	// Initialize BoltDB (fast, no UI needed)
-	boltAdapter := boltdb.NewBoltAdapter("omniview.bolt")
+	boltAdapter, err := boltdb.NewBoltAdapter("omniview.bolt")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create BoltDB adapter: %v\n", err)
+		os.Exit(1)
+	}
 	if err := boltAdapter.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize BoltDB: %v\n", err)
 		os.Exit(1)
@@ -66,8 +71,12 @@ func main() {
 
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {
+		tracer.StopWebhookDispatcher()
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Ensure all tracer goroutines are stopped before exiting
+	tracer.StopWebhookDispatcher()
 
 }

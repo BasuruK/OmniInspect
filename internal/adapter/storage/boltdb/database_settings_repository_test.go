@@ -3,8 +3,11 @@ package boltdb
 import (
 	"OmniView/internal/core/domain"
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // TestDatabaseSettingsStorageKey_HandlesRawAndStorageKeys verifies that raw IDs
@@ -138,6 +141,251 @@ func TestDatabaseSettingsRepository_Save_PersistsPermissionValidationMarker(t *t
 	if !got.PermissionsValidated() {
 		t.Fatal("expected persisted settings to retain the permission validation marker")
 	}
+}
+
+// ==========================================
+// Migration Tests
+// ==========================================
+
+// writeLegacyEntry writes a raw JSON payload under a legacy (non-"cfg:") key directly
+// into the DatabaseConfigBucket, simulating data written by an older version of the app.
+func writeLegacyEntry(t *testing.T, adapter *BoltAdapter, legacyKey string, rawJSON []byte) {
+	t.Helper()
+	err := adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket not found")
+		}
+		return b.Put([]byte(legacyKey), rawJSON)
+	})
+	if err != nil {
+		t.Fatalf("writeLegacyEntry: %v", err)
+	}
+}
+
+// setDefaultPointer sets the DefaultDatabaseConfigKey to point at the given key,
+// simulating the default pointer written by an older version of the app.
+func setDefaultPointer(t *testing.T, adapter *BoltAdapter, key string) {
+	t.Helper()
+	err := adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket not found")
+		}
+		return b.Put([]byte(DefaultDatabaseConfigKey), []byte(key))
+	})
+	if err != nil {
+		t.Fatalf("setDefaultPointer: %v", err)
+	}
+}
+
+// readBucketKey reads the raw bytes for a key from the DatabaseConfigBucket.
+// Returns nil if the key is absent.
+func readBucketKey(t *testing.T, adapter *BoltAdapter, key string) []byte {
+	t.Helper()
+	var value []byte
+	err := adapter.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket not found")
+		}
+		v := b.Get([]byte(key))
+		if v != nil {
+			value = make([]byte, len(v))
+			copy(value, v)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("readBucketKey: %v", err)
+	}
+	return value
+}
+
+// TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry verifies that a legacy entry
+// (stored under "host:username") is moved to the "cfg:"-prefixed key scheme.
+func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
+	t.Parallel()
+
+	adapter := newRawBoltAdapter(t)
+
+	legacyKey := "localhost:system"
+	legacyJSON := []byte(`{"database":"ORCL","host":"localhost","port":1521,"username":"system","password":"secret","isDefault":false}`)
+	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
+
+	if err := adapter.migrateLegacyDatabaseSettings(); err != nil {
+		t.Fatalf("migrateLegacyDatabaseSettings: %v", err)
+	}
+
+	// Old key must be gone.
+	if got := readBucketKey(t, adapter, legacyKey); got != nil {
+		t.Errorf("expected legacy key %q to be removed after migration, but it still exists", legacyKey)
+	}
+
+	// New key must exist. Note: url.PathEscape does not encode ':' (valid path char),
+	// so "localhost:system" → "cfg:localhost:system".
+	newKey := "cfg:localhost%20ORCL%20system"
+	newData := readBucketKey(t, adapter, newKey)
+	if newData == nil {
+		t.Fatalf("expected new key %q to exist after migration", newKey)
+	}
+
+	// The migrated record must be readable as DatabaseSettings with the dummy ID.
+	repo := NewDatabaseSettingsRepository(adapter)
+	settings, err := repo.GetByID(context.Background(), "cfg:localhost%20ORCL%20system")
+	if err != nil {
+		t.Fatalf("GetByID after migration: %v", err)
+	}
+	if settings.DatabaseID() != "localhost ORCL system" {
+		t.Errorf("expected DatabaseID() = %q, got %q", "localhost ORCL system", settings.DatabaseID())
+	}
+}
+
+// TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer verifies that when the
+// default pointer referred to a legacy key, it is updated to the new "cfg:" key.
+func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
+	t.Parallel()
+
+	adapter := newRawBoltAdapter(t)
+
+	legacyKey := "db-host:admin"
+	legacyJSON := []byte(`{"database":"FREEDB","host":"db-host","port":1521,"username":"admin","password":"pass","isDefault":true}`)
+	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
+	setDefaultPointer(t, adapter, legacyKey)
+
+	if err := adapter.migrateLegacyDatabaseSettings(); err != nil {
+		t.Fatalf("migrateLegacyDatabaseSettings: %v", err)
+	}
+
+	// ':' is not encoded by url.PathEscape (valid path segment char).
+	newKey := "cfg:db-host%20FREEDB%20admin"
+	defaultPtr := readBucketKey(t, adapter, DefaultDatabaseConfigKey)
+	if string(defaultPtr) != newKey {
+		t.Errorf("expected default pointer to be updated to %q, got %q", newKey, string(defaultPtr))
+	}
+}
+
+// TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched verifies that entries
+// already using the "cfg:" scheme are not modified.
+func TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched(t *testing.T) {
+	t.Parallel()
+
+	adapter := newRawBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+	settings, err := domain.NewDatabaseSettings("MY-DB", "ORCL", "localhost", port, "user", "pass")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Running migration again must be a no-op.
+	if err := adapter.migrateLegacyDatabaseSettings(); err != nil {
+		t.Fatalf("migrateLegacyDatabaseSettings (second pass): %v", err)
+	}
+
+	// Entry must still be readable under the same key.
+	got, err := repo.GetByID(context.Background(), settings.ID())
+	if err != nil {
+		t.Fatalf("GetByID after no-op migration: %v", err)
+	}
+	if got.ID() != settings.ID() {
+		t.Errorf("ID() changed: got %q, want %q", got.ID(), settings.ID())
+	}
+}
+
+// TestMigrateLegacyDatabaseSettings_PreservesDatabaseId verifies that when a legacy
+// entry already contains a non-empty databaseId field, that value is preserved and
+// the entry is still re-keyed to the "cfg:" scheme.
+func TestMigrateLegacyDatabaseSettings_PreservesDatabaseId(t *testing.T) {
+	t.Parallel()
+
+	adapter := newRawBoltAdapter(t)
+
+	legacyKey := "some-host:user"
+	// Old record that happens to already carry a databaseId (partial migration scenario).
+	legacyJSON := []byte(`{"databaseId":"MY-EXPLICIT-ID","database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
+	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
+
+	if err := adapter.migrateLegacyDatabaseSettings(); err != nil {
+		t.Fatalf("migrateLegacyDatabaseSettings: %v", err)
+	}
+
+	// Old key is gone.
+	if got := readBucketKey(t, adapter, legacyKey); got != nil {
+		t.Errorf("expected legacy key %q to be removed", legacyKey)
+	}
+
+	// New key is based on the legacy BoltDB key. ':' is not encoded by url.PathEscape.
+	newKey := "cfg:some-host%20ORCL%20user"
+	if got := readBucketKey(t, adapter, newKey); got == nil {
+		t.Fatalf("expected new key %q to exist after migration", newKey)
+	}
+
+	repo := NewDatabaseSettingsRepository(adapter)
+	// The new BoltDB key is based on host:database:username, but databaseId field is preserved.
+	// Look up by the new key format since legacy key no longer exists.
+	settings, err := repo.GetByID(context.Background(), "cfg:some-host%20ORCL%20user")
+	if err != nil {
+		t.Fatalf("GetByID by legacy key after migration: %v", err)
+	}
+	if settings.DatabaseID() != "MY-EXPLICIT-ID" {
+		t.Errorf("DatabaseID() = %q, want %q (explicit databaseId must be preserved)", settings.DatabaseID(), "MY-EXPLICIT-ID")
+	}
+}
+
+// TestMigrateLegacyDatabaseSettings_IsIdempotent verifies that running the migration
+// twice produces the same result as running it once.
+func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	adapter := newRawBoltAdapter(t)
+
+	legacyKey := "idempotent-host:sa"
+	legacyJSON := []byte(`{"database":"TESTDB","host":"idempotent-host","port":1521,"username":"sa","password":"pw","isDefault":false}`)
+	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
+
+	for i := range 2 {
+		if err := adapter.migrateLegacyDatabaseSettings(); err != nil {
+			t.Fatalf("migrateLegacyDatabaseSettings (pass %d): %v", i+1, err)
+		}
+	}
+
+	// ':' is not encoded by url.PathEscape (valid path segment char).
+	newKey := "cfg:idempotent-host%20TESTDB%20sa"
+	if got := readBucketKey(t, adapter, newKey); got == nil {
+		t.Fatalf("expected new key %q to exist after idempotent migration", newKey)
+	}
+	if got := readBucketKey(t, adapter, legacyKey); got != nil {
+		t.Errorf("expected legacy key %q to remain absent after second migration pass", legacyKey)
+	}
+}
+
+// newRawBoltAdapter creates an isolated BoltDB adapter for tests that need to write
+// raw legacy entries directly. Unlike newTestBoltAdapter it skips Initialize so
+// tests can call migrateLegacyDatabaseSettings themselves when needed.
+func newRawBoltAdapter(t *testing.T) *BoltAdapter {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "test.bolt")
+	adapter := &BoltAdapter{dbPath: dbPath}
+	if err := adapter.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := adapter.db.Close(); err != nil {
+			t.Errorf("db.Close: %v", err)
+		}
+	})
+
+	return adapter
 }
 
 // newTestBoltAdapter creates an isolated BoltDB adapter with the database

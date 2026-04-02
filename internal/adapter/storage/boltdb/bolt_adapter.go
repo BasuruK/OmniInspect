@@ -5,6 +5,9 @@ import (
 	"OmniView/internal/core/ports"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -49,7 +52,7 @@ func (ba *BoltAdapter) Initialize() error {
 	}
 
 	// Initialize buckets
-	return ba.db.Update(func(tx *bolt.Tx) error {
+	if err := ba.db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(DatabaseConfigBucket)); err != nil {
 			return fmt.Errorf("failed to create bucket: %w", err)
 		}
@@ -64,6 +67,97 @@ func (ba *BoltAdapter) Initialize() error {
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte(WebhookConfigBucket)); err != nil {
 			return fmt.Errorf("failed to create bucket: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Migrate any legacy database settings (pre-ID-column records) to the new key scheme.
+	return ba.migrateLegacyDatabaseSettings()
+}
+
+// migrateLegacyDatabaseSettings rewrites database config entries that were stored
+// under legacy "host:username" keys to the current "cfg:<escaped-id>" scheme.
+// This is a one-time idempotent migration; entries already using the "cfg:" prefix
+// are left untouched.
+func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return nil // bucket doesn't exist yet — nothing to migrate
+		}
+
+		// Collect legacy entries in a separate pass so we can safely mutate inside the transaction.
+		type legacyEntry struct {
+			oldKey  string
+			rawJSON []byte
+		}
+		var toMigrate []legacyEntry
+
+		if err := b.ForEach(func(k, v []byte) error {
+			key := string(k)
+			if key == DefaultDatabaseConfigKey {
+				return nil // skip the default pointer entry
+			}
+			if strings.HasPrefix(key, "cfg:") {
+				return nil // already on the new scheme
+			}
+			// Copy value so we own it outside the iteration.
+			copied := make([]byte, len(v))
+			copy(copied, v)
+			toMigrate = append(toMigrate, legacyEntry{oldKey: key, rawJSON: copied})
+			return nil
+		}); err != nil {
+			return fmt.Errorf("migrateLegacyDatabaseSettings: scan failed: %w", err)
+		}
+
+		if len(toMigrate) == 0 {
+			return nil
+		}
+
+		// Read the current default pointer so we can update it if needed.
+		defaultPtr := string(b.Get([]byte(DefaultDatabaseConfigKey)))
+
+		for _, entry := range toMigrate {
+			// Parse the raw JSON into a generic map so we can inject the databaseId field
+			// without losing any other data.
+			var rawMap map[string]interface{}
+			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
+				log.Printf("[BoltDB] Migration: skipping entry %q — failed to parse JSON: %v", entry.oldKey, err)
+				continue
+			}
+
+			// Inject databaseId = old key if the field is absent or empty.
+			// The old key was "host:username", which becomes the synthetic display ID.
+			if id, ok := rawMap["databaseId"].(string); !ok || strings.TrimSpace(id) == "" {
+				rawMap["databaseId"] = entry.oldKey
+			}
+
+			newJSON, err := json.Marshal(rawMap)
+			if err != nil {
+				log.Printf("[BoltDB] Migration: skipping entry %q — failed to re-marshal JSON: %v", entry.oldKey, err)
+				continue
+			}
+
+			newKey := "cfg:" + url.PathEscape(entry.oldKey)
+
+			if err := b.Put([]byte(newKey), newJSON); err != nil {
+				return fmt.Errorf("migrateLegacyDatabaseSettings: write new key %q: %w", newKey, err)
+			}
+			if err := b.Delete([]byte(entry.oldKey)); err != nil {
+				return fmt.Errorf("migrateLegacyDatabaseSettings: delete old key %q: %w", entry.oldKey, err)
+			}
+
+			// Update the default pointer if it was pointing at the old key.
+			if defaultPtr == entry.oldKey {
+				if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
+					return fmt.Errorf("migrateLegacyDatabaseSettings: update default pointer: %w", err)
+				}
+				defaultPtr = newKey
+			}
+
+			log.Printf("[BoltDB] Migration: re-keyed database config %q → %q", entry.oldKey, newKey)
 		}
 
 		return nil

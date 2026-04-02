@@ -244,7 +244,9 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 				continue
 			}
 			// Deliver while holding lock to preserve ordering
-			ts.handleTracerMessage(msg)
+			if !ts.handleTracerMessage(ctx, msg) {
+				return ctx.Err()
+			}
 		}
 		return nil
 	}()
@@ -253,10 +255,14 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 }
 
 // handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
-func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
+func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.QueueMessage) bool {
 	// Always send to TUI if channel is available
 	if ts.eventChannel != nil {
-		ts.eventChannel <- msg
+		select {
+		case ts.eventChannel <- msg:
+		case <-ctx.Done():
+			return false
+		}
 	} else {
 		fmt.Println(msg.Format())
 	}
@@ -264,13 +270,13 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 	// Dispatch to webhook if configured
 	webhookConfig, err := ts.bolt.GetWebhookConfig()
 	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {
-		return
+		return false
 	}
 
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("failed to marshal message for webhook: %v", err)
-		return
+		return false
 	}
 
 	meta := webhook.WebhookMetadata{
@@ -278,6 +284,7 @@ func (ts *TracerService) handleTracerMessage(msg *domain.QueueMessage) {
 		Timestamp: msg.Timestamp().Format(time.RFC3339),
 	}
 	getWebhookDispatcher().Enqueue(payload, webhookConfig.URL, meta)
+	return true
 }
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized

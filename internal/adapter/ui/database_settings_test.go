@@ -168,10 +168,10 @@ func newTestModelForSettings(t *testing.T) *Model {
 	}
 }
 
-func mustNewTracerService(t *testing.T, db ports.DatabaseRepository) *tracer.TracerService {
+func mustNewTracerService(t *testing.T, db ports.DatabaseRepository, eventChannel chan *domain.QueueMessage) *tracer.TracerService {
 	t.Helper()
 
-	service, err := tracer.NewTracerService(db, stubConfigRepository{}, make(chan *domain.QueueMessage, 16))
+	service, err := tracer.NewTracerService(db, stubConfigRepository{}, eventChannel)
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 
 	// Setup existing services
 	m.dbAdapter = mockDB
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -297,7 +297,7 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_NilDbAdapter(t *testing.T) {
 
 	// Setup only tracer service (no db adapter)
 	m.dbAdapter = nil
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -329,7 +329,7 @@ func TestHandleSettingsSetAsMain_FactoryError(t *testing.T) {
 	m := newTestModelForSettings(t)
 	mockDB := NewMockDatabaseRepository()
 	m.dbAdapter = mockDB
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	expectedErr := errors.New("connection failed: invalid credentials")
 
@@ -384,7 +384,7 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	m := newTestModelForSettings(t)
 	mockDB := NewMockDatabaseRepository()
 	m.dbAdapter = mockDB
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	factoryErr := errors.New("oracle connection refused")
 
@@ -418,7 +418,7 @@ func TestHandleSettingsSetAsMain_ConnectionValidationError_KeepsExistingSession(
 	initialConfig := newTestDatabaseSettings(t, "CURRENT-DB")
 	m.appConfig = initialConfig
 	m.dbAdapter = oldMockDB
-	m.tracerService = mustNewTracerService(t, oldMockDB)
+	m.tracerService = mustNewTracerService(t, oldMockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "FAULTY-DB")
 
@@ -460,7 +460,7 @@ func TestHandleSettingsSetAsMain_FactoryError_OldAdapterRemainsOpen(t *testing.T
 	m := newTestModelForSettings(t)
 	oldMockDB := NewMockDatabaseRepository()
 	m.dbAdapter = oldMockDB
-	m.tracerService = mustNewTracerService(t, oldMockDB)
+	m.tracerService = mustNewTracerService(t, oldMockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "FAULTY-DB")
 
@@ -672,7 +672,7 @@ func TestHandleSettingsSetAsMain_ClosesOldAdapterBeforeCreatingNew(t *testing.T)
 	newMockDB := NewMockDatabaseRepository()
 
 	m.dbAdapter = oldMockDB
-	m.tracerService = mustNewTracerService(t, oldMockDB)
+	m.tracerService = mustNewTracerService(t, oldMockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -759,7 +759,7 @@ func TestHandleSettingsSetAsMain_CancelsPreviousConnectionEventStream(t *testing
 	oldEventChannel := m.eventChannel
 
 	m.dbAdapter = mockDB
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
@@ -788,7 +788,7 @@ func TestHandleSettingsSetAsMain_RotatesConnectionEventChannel(t *testing.T) {
 	oldEventChannel := m.eventChannel
 
 	m.dbAdapter = mockDB
-	m.tracerService = mustNewTracerService(t, mockDB)
+	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {

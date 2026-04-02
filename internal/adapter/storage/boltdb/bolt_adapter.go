@@ -118,10 +118,19 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 		defaultPtr := string(b.Get([]byte(DefaultDatabaseConfigKey)))
 
+		redactLegacyKey := func(key string) string {
+			withoutPrefix := strings.TrimPrefix(key, LegacyConfigKeyPrefix)
+			parts := strings.SplitN(withoutPrefix, ":", 3)
+			if len(parts) >= 2 {
+				return LegacyConfigKeyPrefix + parts[0] + ":<redacted>:" + strings.Join(parts[2:], ":")
+			}
+			return LegacyConfigKeyPrefix + "<redacted>"
+		}
+
 		for _, entry := range toMigrate {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping %s%q: failed to unmarshal JSON: %v", LegacyConfigKeyPrefix, entry.oldKey, err)
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s: failed to unmarshal JSON: %v", redactLegacyKey(entry.oldKey), err)
 				continue
 			}
 
@@ -133,11 +142,15 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping %s%q (databaseId=%q): failed to re-marshal JSON: %v", LegacyConfigKeyPrefix, entry.oldKey, databaseId, err)
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s (databaseId=%q): failed to re-marshal JSON: %v", redactLegacyKey(entry.oldKey), databaseId, err)
 				continue
 			}
 
 			newKey := DatabaseConfigKeyPrefix + url.PathEscape(databaseId)
+
+			if existing := b.Get([]byte(newKey)); existing != nil {
+				return fmt.Errorf("migrateLegacyDatabaseSettings: key collision migrating %q -> %q", entry.oldKey, newKey)
+			}
 
 			if err := b.Put([]byte(newKey), newJSON); err != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: write new key %q: %w", newKey, err)

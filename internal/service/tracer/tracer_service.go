@@ -270,13 +270,13 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 	// Dispatch to webhook if configured
 	webhookConfig, err := ts.bolt.GetWebhookConfig()
 	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {
-		return false
+		return true
 	}
 
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("failed to marshal message for webhook: %v", err)
-		return false
+		return true
 	}
 
 	meta := webhook.WebhookMetadata{

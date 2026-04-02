@@ -133,30 +133,30 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 				continue
 			}
 
-			// Generate dummy databaseId: "<host> <database> <username>"
-			// This is a placeholder that users can reconfigure later.
-			var dummyID string
-			parts := []string{}
-			if host, ok := rawMap["host"].(string); ok && host != "" {
-				parts = append(parts, host)
+			finalID, _ := rawMap["databaseId"].(string)
+			finalID = strings.TrimSpace(finalID)
+			if finalID == "" && strings.HasPrefix(entry.oldKey, "cfg:") {
+				if rawID, err := url.PathUnescape(strings.TrimPrefix(entry.oldKey, "cfg:")); err == nil {
+					finalID = rawID
+				}
 			}
-			if db, ok := rawMap["database"].(string); ok && db != "" {
-				parts = append(parts, db)
+			if finalID == "" {
+				parts := []string{}
+				if host, ok := rawMap["host"].(string); ok && host != "" {
+					parts = append(parts, host)
+				}
+				if db, ok := rawMap["database"].(string); ok && db != "" {
+					parts = append(parts, db)
+				}
+				if username, ok := rawMap["username"].(string); ok && username != "" {
+					parts = append(parts, username)
+				}
+				finalID = strings.Join(parts, " ")
 			}
-			if username, ok := rawMap["username"].(string); ok && username != "" {
-				parts = append(parts, username)
+			if finalID == "" {
+				finalID = strings.TrimPrefix(entry.oldKey, "cfg:")
 			}
-			dummyID = strings.Join(parts, " ")
-
-			if dummyID == "" {
-				// Fallback: use old key if JSON lacks required fields
-				dummyID = entry.oldKey
-			}
-
-			// Set databaseId only if absent or empty (preserve explicit databaseId from partial migration)
-			if id, ok := rawMap["databaseId"].(string); !ok || strings.TrimSpace(id) == "" {
-				rawMap["databaseId"] = dummyID
-			}
+			rawMap["databaseId"] = finalID
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
@@ -165,7 +165,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 			}
 
 			// New key format: cfg:<dummyID> where dummyID uses spaces (no special chars needing escaping)
-		newKey := "cfg:" + url.PathEscape(dummyID)
+			newKey := "cfg:" + url.PathEscape(finalID)
 
 			if err := b.Put([]byte(newKey), newJSON); err != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: write new key %q: %w", newKey, err)

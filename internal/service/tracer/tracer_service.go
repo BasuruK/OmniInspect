@@ -107,12 +107,11 @@ func StopWebhookDispatcher() {
 	}
 }
 
-// StopAll stops the event listener goroutines and waits for them to complete.
-// Note: The caller (Model) owns the channel lifecycle. The channel is closed by the Model, not here.
-// The global webhook dispatcher is stopped separately via StopWebhookDispatcher by the application shutdown owner.
+// StopAll is deprecated. Use StopConnectionListener on TracerService and stop the
+// global webhook dispatcher separately via StopWebhookDispatcher.
 func StopAll(tracerService *TracerService) {
 	if tracerService != nil {
-		tracerService.CancelConnectionListener()
+		tracerService.StopConnectionListener()
 	}
 }
 
@@ -148,12 +147,24 @@ func NewTracerService(
 	}, nil
 }
 
+// StopConnectionListener stops the current connection-scoped listener and clears
+// any queued connection events that raced with cancellation.
+func (ts *TracerService) StopConnectionListener() {
+	ts.CancelConnectionListener()
+}
+
 // CancelConnectionListener stops the current connection-scoped listener and waits for its goroutines to exit.
 func (ts *TracerService) CancelConnectionListener() {
-	if ts != nil && ts.listenerCancel != nil {
+	if ts == nil {
+		return
+	}
+	if ts.listenerCancel != nil {
 		ts.listenerCancel()
 		ts.listenerWg.Wait()
+		ts.listenerCancel = nil
+		ts.listenerCtx = nil
 	}
+	ts.drainEventChannel()
 }
 
 // StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them
@@ -161,6 +172,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	if subscriber == nil {
 		return fmt.Errorf("subscriber cannot be nil")
 	}
+	ts.StopConnectionListener()
 	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Create a cancellable context for event listeners
@@ -181,6 +193,19 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	go ts.blockingConsumerLoop(ts.listenerCtx, subscriber)
 
 	return nil
+}
+
+func (ts *TracerService) drainEventChannel() {
+	if ts == nil || ts.eventChannel == nil {
+		return
+	}
+	for {
+		select {
+		case <-ts.eventChannel:
+		default:
+			return
+		}
+	}
 }
 
 // blockingConsumerLoop continuously waits for new messages for the subscriber and processes them until the context is cancelled

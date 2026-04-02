@@ -78,10 +78,9 @@ func (ba *BoltAdapter) Initialize() error {
 }
 
 // migrateLegacyDatabaseSettings rewrites database config entries stored under the
-// old "cfg:<host>:<database>" key scheme to the new "cfg:<databaseID>" scheme.
-// Since the user-provided databaseID is unknown during migration, a dummy ID is
-// generated in the format "cfg:<host> <database> <username>" which users can edit later.
-// This is a one-time idempotent migration; properly escaped keys are left untouched.
+// old key scheme to the canonical "cfg:<databaseID>" format.
+// Existing JSON databaseId values are preserved; otherwise the migration backfills
+// one from the legacy key or connection fields so the JSON and Bolt key stay aligned.
 func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
@@ -126,33 +125,35 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 		defaultPtr := string(b.Get([]byte(DefaultDatabaseConfigKey)))
 
 		for _, entry := range toMigrate {
-			// Parse the raw JSON to extract fields for dummy ID generation.
+			// Parse the raw JSON so we can preserve or backfill databaseId.
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
 				log.Printf("[BoltDB] Migration: skipping entry %q — failed to parse JSON: %v", entry.oldKey, err)
 				continue
 			}
 
-			// Generate databaseId from JSON fields (host:database:username format).
-			// This is the new standard - user can reconfigure later.
-			var databaseId string
-			parts := []string{}
-			if host, ok := rawMap["host"].(string); ok && host != "" {
-				parts = append(parts, host)
+			finalID, _ := rawMap["databaseId"].(string)
+			if finalID == "" {
+				if strings.HasPrefix(entry.oldKey, "cfg:") {
+					finalID = strings.TrimPrefix(entry.oldKey, "cfg:")
+				} else {
+					parts := []string{}
+					if host, ok := rawMap["host"].(string); ok && host != "" {
+						parts = append(parts, host)
+					}
+					if database, ok := rawMap["database"].(string); ok && database != "" {
+						parts = append(parts, database)
+					}
+					if username, ok := rawMap["username"].(string); ok && username != "" {
+						parts = append(parts, username)
+					}
+					finalID = strings.Join(parts, " ")
+				}
 			}
-			if db, ok := rawMap["database"].(string); ok && db != "" {
-				parts = append(parts, db)
+			if finalID == "" {
+				finalID = entry.oldKey
 			}
-			if username, ok := rawMap["username"].(string); ok && username != "" {
-				parts = append(parts, username)
-			}
-			if len(parts) > 0 {
-				databaseId = strings.Join(parts, " ")
-			}
-			if databaseId == "" {
-				databaseId = entry.oldKey
-			}
-			rawMap["databaseId"] = databaseId
+			rawMap["databaseId"] = finalID
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
@@ -160,8 +161,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 				continue
 			}
 
-			// New key format: cfg:<dummyID> where dummyID uses spaces (no special chars needing escaping)
-			newKey := "cfg:" + url.PathEscape(databaseId)
+			newKey := "cfg:" + url.PathEscape(finalID)
 
 			if err := b.Put([]byte(newKey), newJSON); err != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: write new key %q: %w", newKey, err)
@@ -186,9 +186,9 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 }
 
 // isNewStyleStorageKey returns true if the key is a properly migrated storage key.
-// A properly migrated key can be reconstructed by unescaping and re-escaping: 
+// A properly migrated key can be reconstructed by unescaping and re-escaping:
 // if makeSettingsID(url.PathUnescape(raw)) == key, then the key is new-style.
-// Old-style keys like "cfg:localhost:ORCL" don't match because re-escaping 
+// Old-style keys like "cfg:localhost:ORCL" don't match because re-escaping
 // "localhost:ORCL" gives "cfg:localhost%3AORCL", not the original key.
 func isNewStyleStorageKey(key string) bool {
 	if !strings.HasPrefix(key, "cfg:") {

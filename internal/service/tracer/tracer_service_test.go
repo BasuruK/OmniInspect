@@ -61,7 +61,7 @@ func TestNewTracerService_RejectsNilDependencies(t *testing.T) {
 	}
 }
 
-func TestStopAll_DoesNotStopGlobalWebhookDispatcher(t *testing.T) {
+func TestStopConnectionListener_DoesNotStopGlobalWebhookDispatcher(t *testing.T) {
 	previousDispatcher := globalWebhookDispatcher
 
 	dispatcher := newWebhookDispatcher()
@@ -73,10 +73,23 @@ func TestStopAll_DoesNotStopGlobalWebhookDispatcher(t *testing.T) {
 		dispatcherOnce = sync.Once{}
 	})
 
-	StopAll(&TracerService{})
+	(&TracerService{}).StopConnectionListener()
 
 	if dispatcher.stopped {
-		t.Fatal("expected StopAll to leave the global webhook dispatcher running")
+		t.Fatal("expected StopConnectionListener to leave the global webhook dispatcher running")
+	}
+}
+
+func TestStopAll_ForwardsToStopConnectionListener(t *testing.T) {
+	service := &TracerService{eventChannel: make(chan *domain.QueueMessage, 2)}
+	service.eventChannel <- &domain.QueueMessage{}
+
+	StopAll(service)
+
+	select {
+	case <-service.eventChannel:
+		t.Fatal("expected StopAll to forward to StopConnectionListener and drain queued events")
+	default:
 	}
 }
 

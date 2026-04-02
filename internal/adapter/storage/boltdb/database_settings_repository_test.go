@@ -224,20 +224,20 @@ func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
 
 	// New key must exist. Note: url.PathEscape does not encode ':' (valid path char),
 	// so "localhost:system" → "cfg:localhost:system".
-	newKey := "cfg:localhost:system"
+	newKey := "cfg:localhost%20ORCL%20system"
 	newData := readBucketKey(t, adapter, newKey)
 	if newData == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
 
-	// The migrated record must be readable as a DatabaseSettings with the correct ID.
+	// The migrated record must be readable as DatabaseSettings with the dummy ID.
 	repo := NewDatabaseSettingsRepository(adapter)
-	settings, err := repo.GetByID(context.Background(), legacyKey)
+	settings, err := repo.GetByID(context.Background(), "cfg:localhost%20ORCL%20system")
 	if err != nil {
 		t.Fatalf("GetByID after migration: %v", err)
 	}
-	if settings.DatabaseID() != legacyKey {
-		t.Errorf("expected DatabaseID() = %q, got %q", legacyKey, settings.DatabaseID())
+	if settings.DatabaseID() != "localhost ORCL system" {
+		t.Errorf("expected DatabaseID() = %q, got %q", "localhost ORCL system", settings.DatabaseID())
 	}
 }
 
@@ -258,7 +258,7 @@ func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 	}
 
 	// ':' is not encoded by url.PathEscape (valid path segment char).
-	newKey := "cfg:db-host:admin"
+	newKey := "cfg:db-host%20FREEDB%20admin"
 	defaultPtr := readBucketKey(t, adapter, DefaultDatabaseConfigKey)
 	if string(defaultPtr) != newKey {
 		t.Errorf("expected default pointer to be updated to %q, got %q", newKey, string(defaultPtr))
@@ -323,15 +323,15 @@ func TestMigrateLegacyDatabaseSettings_PreservesDatabaseId(t *testing.T) {
 	}
 
 	// New key is based on the legacy BoltDB key. ':' is not encoded by url.PathEscape.
-	newKey := "cfg:some-host:user"
+	newKey := "cfg:some-host%20ORCL%20user"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
 
 	repo := NewDatabaseSettingsRepository(adapter)
-	// The new BoltDB key is based on the legacy bucket key, so we look up by legacyKey.
-	// The databaseId field inside the JSON should have been preserved as "MY-EXPLICIT-ID".
-	settings, err := repo.GetByID(context.Background(), legacyKey)
+	// The new BoltDB key is based on host:database:username, but databaseId field is preserved.
+	// Look up by the new key format since legacy key no longer exists.
+	settings, err := repo.GetByID(context.Background(), "cfg:some-host%20ORCL%20user")
 	if err != nil {
 		t.Fatalf("GetByID by legacy key after migration: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 	}
 
 	// ':' is not encoded by url.PathEscape (valid path segment char).
-	newKey := "cfg:idempotent-host:sa"
+	newKey := "cfg:idempotent-host%20TESTDB%20sa"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after idempotent migration", newKey)
 	}

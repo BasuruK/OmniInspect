@@ -7,6 +7,7 @@ import (
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"OmniView/internal/service/tracer"
 	updaterSvc "OmniView/internal/service/updater"
 	"OmniView/internal/updater"
 	"fmt"
@@ -70,8 +71,12 @@ func main() {
 
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {
+		tracer.StopWebhookDispatcher()
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Ensure all tracer goroutines are stopped before exiting
+	tracer.StopWebhookDispatcher()
 
 }

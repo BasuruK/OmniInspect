@@ -237,7 +237,11 @@ func (m *Model) initializeServices() error {
 		m.permissionService = permissions.NewPermissionService(m.dbAdapter, permissionsRepo, m.boltAdapter)
 	}
 	if m.tracerService == nil {
-		m.tracerService = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+		var err error
+		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create tracer service: %w", err)
+		}
 	}
 	if m.subscriberService == nil {
 		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)

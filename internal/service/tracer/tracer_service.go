@@ -100,9 +100,16 @@ func getWebhookDispatcher() *webhookDispatcher {
 	return globalWebhookDispatcher
 }
 
+// StopWebhookDispatcher flushes any queued webhook deliveries and stops the global dispatcher if it was initialized.
+func StopWebhookDispatcher() {
+	if globalWebhookDispatcher != nil {
+		globalWebhookDispatcher.Stop()
+	}
+}
+
 // StopAll stops the event listener goroutines and waits for them to complete.
 // Note: The caller (Model) owns the channel lifecycle. The channel is closed by the Model, not here.
-// The global webhook dispatcher is stopped by the shutdown owner, not by StopAll.
+// The global webhook dispatcher is stopped separately via StopWebhookDispatcher by the application shutdown owner.
 func StopAll(tracerService *TracerService) {
 	// Cancel the event listener context and wait for goroutines to finish
 	if tracerService != nil && tracerService.listenerCancel != nil {
@@ -128,12 +135,19 @@ func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
-) *TracerService {
+) (*TracerService, error) {
+	if db == nil {
+		return nil, fmt.Errorf("NewTracerService: db repository cannot be nil")
+	}
+	if bolt == nil {
+		return nil, fmt.Errorf("NewTracerService: config repository cannot be nil")
+	}
+
 	return &TracerService{
 		db:           db,
 		bolt:         bolt,
 		eventChannel: eventChannel,
-	}
+	}, nil
 }
 
 // StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them

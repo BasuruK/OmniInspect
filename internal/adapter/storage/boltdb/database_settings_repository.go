@@ -214,22 +214,16 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 // databaseSettingsStorageKey converts a user-facing database ID to a storage key.
 // It is idempotent: if the input is already a valid escaped storage key, it is returned unchanged.
 func databaseSettingsStorageKey(id string) string {
-	// Strip the cfg: prefix to get the raw value
-	rawID := strings.TrimPrefix(id, "cfg:")
-
-	// Attempt to unescape the raw ID
-	unescaped, unescapeErr := url.PathUnescape(rawID)
-
-	// If unescaping succeeded and re-escaping produces the same result,
-	// the content was already properly escaped - use the escaped form.
-	if unescapeErr == nil {
-		reEscaped := url.PathEscape(unescaped)
-		if reEscaped == rawID {
-			// rawID is properly escaped content, return properly formatted key
-			return "cfg:" + rawID
+	// Check if input appears to be an already-escaped storage key
+	if strings.HasPrefix(id, "cfg:") {
+		rawPart := strings.TrimPrefix(id, "cfg:")
+		unescaped, err := url.PathUnescape(rawPart)
+		if err == nil && url.PathEscape(unescaped) == rawPart {
+			// Already a valid storage key (properly escaped)
+			return id
 		}
 	}
 
-	// Otherwise, treat as a user-facing ID that needs escaping
-	return "cfg:" + url.PathEscape(rawID)
+	// Treat the entire input as a raw ID that needs escaping
+	return "cfg:" + url.PathEscape(id)
 }

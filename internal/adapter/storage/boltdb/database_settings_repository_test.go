@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs verifies that raw and
-// already-prefixed IDs normalize to the same escaped cfg: storage key.
-func TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs(t *testing.T) {
+// TestDatabaseSettingsStorageKey_HandlesRawAndStorageKeys verifies that raw IDs
+// are escaped into storage keys while already-escaped storage keys are left unchanged.
+func TestDatabaseSettingsStorageKey_HandlesRawAndStorageKeys(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -23,14 +23,14 @@ func TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs(t *testing.T) {
 			want: "cfg:OPS%2FPRIMARY%20east",
 		},
 		{
-			name: "already prefixed id is normalized",
-			id:   "cfg:OPS/PRIMARY east",
+			name: "already escaped storage key is returned unchanged",
+			id:   "cfg:OPS%2FPRIMARY%20east",
 			want: "cfg:OPS%2FPRIMARY%20east",
 		},
 		{
-			name: "literal cfg prefix in raw id normalizes to escaped form",
+			name: "raw id with literal cfg prefix is escaped as part of the raw value",
 			id:   "cfg:team/database",
-			want: "cfg:team%2Fdatabase",
+			want: "cfg:cfg:team%2Fdatabase",
 		},
 	}
 
@@ -46,9 +46,9 @@ func TestDatabaseSettingsStorageKey_NormalizesPrefixedIDs(t *testing.T) {
 	}
 }
 
-// TestDatabaseSettingsRepository_GetByID_NormalizesPrefixedIDs verifies that
-// repository lookups accept a prefixed ID and still resolve the saved record.
-func TestDatabaseSettingsRepository_GetByID_NormalizesPrefixedIDs(t *testing.T) {
+// TestDatabaseSettingsRepository_GetByID_AcceptsEscapedStorageKey verifies that
+// repository lookups accept the escaped storage key directly.
+func TestDatabaseSettingsRepository_GetByID_AcceptsEscapedStorageKey(t *testing.T) {
 	t.Parallel()
 
 	adapter := newTestBoltAdapter(t)
@@ -68,7 +68,7 @@ func TestDatabaseSettingsRepository_GetByID_NormalizesPrefixedIDs(t *testing.T) 
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := repo.GetByID(context.Background(), "cfg:OPS/PRIMARY east")
+	got, err := repo.GetByID(context.Background(), settings.StorageKey())
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -78,6 +78,34 @@ func TestDatabaseSettingsRepository_GetByID_NormalizesPrefixedIDs(t *testing.T) 
 	}
 	if got.ID() != settings.ID() {
 		t.Fatalf("ID() = %q, want %q", got.ID(), settings.ID())
+	}
+}
+
+// TestDatabaseSettingsRepository_GetByID_RejectsUnescapedPrefixedRawID verifies that
+// a malformed prefixed raw ID does not alias to the escaped storage key.
+func TestDatabaseSettingsRepository_GetByID_RejectsUnescapedPrefixedRawID(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("OPS/PRIMARY east", "OMNI", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, err = repo.GetByID(context.Background(), "cfg:OPS/PRIMARY east")
+	if err == nil {
+		t.Fatal("expected GetByID to reject an unescaped prefixed raw ID")
 	}
 }
 
@@ -125,7 +153,8 @@ func newTestBoltAdapter(t *testing.T) *BoltAdapter {
 
 	t.Cleanup(func() {
 		if err := adapter.db.Close(); err != nil {
-			t.Fatalf("db.Close: %v", err)
+			// errorf here instead of fatalf to allow cleanup to continue and remove temp files
+			t.Errorf("db.Close: %v", err)
 		}
 	})
 

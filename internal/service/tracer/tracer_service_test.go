@@ -35,11 +35,27 @@ func TestShutdownOwnerStopsGlobalWebhookDispatcher(t *testing.T) {
 		dispatcherOnce = sync.Once{}
 	})
 
-	// Simulate the shutdown-owner path by calling the dispatcher's Stop method
-	dispatcher.Stop()
+	StopWebhookDispatcher()
 
 	if !dispatcher.stopped {
-		t.Fatal("expected dispatcher.Stop() to stop the global webhook dispatcher")
+		t.Fatal("expected StopWebhookDispatcher to stop the global webhook dispatcher")
+	}
+}
+
+func TestStopWebhookDispatcher_DoesNotInitializeDispatcher(t *testing.T) {
+	previousDispatcher := globalWebhookDispatcher
+	globalWebhookDispatcher = nil
+	dispatcherOnce = sync.Once{}
+
+	t.Cleanup(func() {
+		globalWebhookDispatcher = previousDispatcher
+		dispatcherOnce = sync.Once{}
+	})
+
+	StopWebhookDispatcher()
+
+	if globalWebhookDispatcher != nil {
+		t.Fatal("expected StopWebhookDispatcher to leave the global dispatcher nil when it was never initialized")
 	}
 }
 

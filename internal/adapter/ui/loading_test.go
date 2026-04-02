@@ -50,13 +50,17 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
+	tracerService, err := tracer.NewTracerService(mockDB, configRepo, make(chan *domain.QueueMessage, 1))
+	if err != nil {
+		t.Fatalf("NewTracerService: %v", err)
+	}
 
 	return &Model{
 		ctx:               context.Background(),
 		appConfig:         settings,
 		dbAdapter:         mockDB,
 		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, configRepo),
-		tracerService:     tracer.NewTracerService(mockDB, configRepo, make(chan *domain.QueueMessage, 1)),
+		tracerService:     tracerService,
 		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
 	}
 }

@@ -300,16 +300,17 @@ func TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched(t *testing.T) {
 	}
 }
 
-// TestMigrateLegacyDatabaseSettings_PreservesDatabaseId verifies that when a legacy
-// entry already contains a non-empty databaseId field, that value is preserved and
-// the entry is still re-keyed to the "cfg:" scheme.
-func TestMigrateLegacyDatabaseSettings_PreservesDatabaseId(t *testing.T) {
+// TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId verifies that when a legacy
+// entry is migrated, the databaseId is ALWAYS generated from JSON fields (host:database:username),
+// regardless of any existing databaseId in the JSON. Users can reconfigure the ID later.
+func TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId(t *testing.T) {
 	t.Parallel()
 
 	adapter := newRawBoltAdapter(t)
 
 	legacyKey := "some-host:user"
-	// Old record that happens to already carry a databaseId (partial migration scenario).
+	// Old record with a pre-existing databaseId field (simulating partial migration).
+	// The databaseId should be OVERWRITTEN with the newly generated value.
 	legacyJSON := []byte(`{"databaseId":"MY-EXPLICIT-ID","database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 
@@ -322,21 +323,21 @@ func TestMigrateLegacyDatabaseSettings_PreservesDatabaseId(t *testing.T) {
 		t.Errorf("expected legacy key %q to be removed", legacyKey)
 	}
 
-	// New key is based on the legacy BoltDB key. ':' is not encoded by url.PathEscape.
+	// New key is generated from JSON fields (host database username), not from existing databaseId.
 	newKey := "cfg:some-host%20ORCL%20user"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
 
 	repo := NewDatabaseSettingsRepository(adapter)
-	// The new BoltDB key is based on host:database:username, but databaseId field is preserved.
 	// Look up by the new key format since legacy key no longer exists.
 	settings, err := repo.GetByID(context.Background(), "cfg:some-host%20ORCL%20user")
 	if err != nil {
-		t.Fatalf("GetByID by legacy key after migration: %v", err)
+		t.Fatalf("GetByID after migration: %v", err)
 	}
-	if settings.DatabaseID() != "MY-EXPLICIT-ID" {
-		t.Errorf("DatabaseID() = %q, want %q (explicit databaseId must be preserved)", settings.DatabaseID(), "MY-EXPLICIT-ID")
+	// The databaseId is GENERATED from JSON fields, not preserved from JSON.
+	if settings.DatabaseID() != "some-host ORCL user" {
+		t.Errorf("DatabaseID() = %q, want %q (databaseId is regenerated from JSON fields)", settings.DatabaseID(), "some-host ORCL user")
 	}
 }
 

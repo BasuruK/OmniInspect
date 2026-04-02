@@ -5,7 +5,6 @@ import (
 	"OmniView/internal/core/ports"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -21,7 +20,8 @@ const (
 	// Bucket Keys
 	DefaultDatabaseConfigKey = "db:default"
 	RunCycleStatusKey        = "run:status"
-	DatabaseConfigKeyPrefix  = "db:config:"
+	DatabaseConfigKeyPrefix  = "DBconfig:"
+	LegacyConfigKeyPrefix    = "cfg:"
 	DefaultWebhookKey        = "webhook:default"
 )
 
@@ -73,22 +73,20 @@ func (ba *BoltAdapter) Initialize() error {
 		return err
 	}
 
-	// Migrate any legacy database settings (pre-ID-column records) to the new key scheme.
+	// Migrate any legacy database settings from "cfg:" prefix to "DBconfig:" prefix.
 	return ba.migrateLegacyDatabaseSettings()
 }
 
 // migrateLegacyDatabaseSettings rewrites database config entries stored under the
-// old key scheme to the canonical "cfg:<databaseID>" format.
-// Existing JSON databaseId values are preserved; otherwise the migration backfills
-// one from the legacy key or connection fields so the JSON and Bolt key stay aligned.
+// legacy "cfg:" prefix to the new "DBconfig:" prefix.
+// The databaseId field in JSON is preserved as-is.
 func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return nil // bucket doesn't exist yet — nothing to migrate
+			return nil
 		}
 
-		// Collect legacy entries in a separate pass so we can safely mutate inside the transaction.
 		type legacyEntry struct {
 			oldKey  string
 			rawJSON []byte
@@ -98,17 +96,13 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 		if err := b.ForEach(func(k, v []byte) error {
 			key := string(k)
 			if key == DefaultDatabaseConfigKey {
-				return nil // skip the default pointer entry
+				return nil
 			}
 
-			// A properly migrated key has properly escaped values.
-			// Old keys like "cfg:localhost:ORCL" have unescaped colons.
-			// New keys would have colons escaped as %3A, or no colons if databaseID has none.
-			if isNewStyleStorageKey(key) {
-				return nil // already on the new scheme
+			if !strings.HasPrefix(key, LegacyConfigKeyPrefix) {
+				return nil
 			}
 
-			// Copy value so we own it outside the iteration.
 			copied := make([]byte, len(v))
 			copy(copied, v)
 			toMigrate = append(toMigrate, legacyEntry{oldKey: key, rawJSON: copied})
@@ -121,87 +115,44 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 			return nil
 		}
 
-		// Read the current default pointer so we can update it if needed.
 		defaultPtr := string(b.Get([]byte(DefaultDatabaseConfigKey)))
 
 		for _, entry := range toMigrate {
-			// Parse the raw JSON so we can preserve or backfill databaseId.
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
-				log.Printf("[BoltDB] Migration: skipping entry %q — failed to parse JSON: %v", entry.oldKey, err)
 				continue
 			}
 
-			finalID, _ := rawMap["databaseId"].(string)
-			if finalID == "" {
-				if strings.HasPrefix(entry.oldKey, "cfg:") {
-					finalID = strings.TrimPrefix(entry.oldKey, "cfg:")
-				} else {
-					parts := []string{}
-					if host, ok := rawMap["host"].(string); ok && host != "" {
-						parts = append(parts, host)
-					}
-					if database, ok := rawMap["database"].(string); ok && database != "" {
-						parts = append(parts, database)
-					}
-					if username, ok := rawMap["username"].(string); ok && username != "" {
-						parts = append(parts, username)
-					}
-					finalID = strings.Join(parts, " ")
-				}
+			databaseId, _ := rawMap["databaseId"].(string)
+			if databaseId == "" {
+				databaseId = strings.TrimPrefix(entry.oldKey, LegacyConfigKeyPrefix)
+				rawMap["databaseId"] = databaseId
 			}
-			if finalID == "" {
-				finalID = entry.oldKey
-			}
-			rawMap["databaseId"] = finalID
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
-				log.Printf("[BoltDB] Migration: skipping entry %q — failed to re-marshal JSON: %v", entry.oldKey, err)
 				continue
 			}
 
-			newKey := "cfg:" + url.PathEscape(finalID)
+			newKey := DatabaseConfigKeyPrefix + url.PathEscape(databaseId)
 
 			if err := b.Put([]byte(newKey), newJSON); err != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: write new key %q: %w", newKey, err)
 			}
+
 			if err := b.Delete([]byte(entry.oldKey)); err != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: delete old key %q: %w", entry.oldKey, err)
 			}
 
-			// Update the default pointer if it was pointing at the old key.
 			if defaultPtr == entry.oldKey {
 				if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
 					return fmt.Errorf("migrateLegacyDatabaseSettings: update default pointer: %w", err)
 				}
-				defaultPtr = newKey
 			}
-
-			log.Printf("[BoltDB] Migration: re-keyed database config %q → %q", entry.oldKey, newKey)
 		}
 
 		return nil
 	})
-}
-
-// isNewStyleStorageKey returns true if the key is a properly migrated storage key.
-// A properly migrated key can be reconstructed by unescaping and re-escaping:
-// if makeSettingsID(url.PathUnescape(raw)) == key, then the key is new-style.
-// Old-style keys like "cfg:localhost:ORCL" don't match because re-escaping
-// "localhost:ORCL" gives "cfg:localhost%3AORCL", not the original key.
-func isNewStyleStorageKey(key string) bool {
-	if !strings.HasPrefix(key, "cfg:") {
-		return false
-	}
-	raw := strings.TrimPrefix(key, "cfg:")
-	unescaped, err := url.PathUnescape(raw)
-	if err != nil {
-		return false
-	}
-	// Reconstruct the canonical storage key and compare to the original.
-	canonicalKey := "cfg:" + url.PathEscape(unescaped)
-	return canonicalKey == key
 }
 
 // Close closes the BoltDB database.
@@ -233,16 +184,13 @@ func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		// Marshal the config to JSON
 		jsonData, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("failed to marshal database config: %v", err)
 		}
-		// Save Config
 		if err := b.Put([]byte(key), jsonData); err != nil {
 			return fmt.Errorf("failed to save database config: %v", err)
 		}
-		// If default, update default key
 		if config.IsDefault() {
 			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
 				return fmt.Errorf("failed to set default database config: %v", err)

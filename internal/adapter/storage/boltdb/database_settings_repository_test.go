@@ -23,17 +23,22 @@ func TestDatabaseSettingsStorageKey_HandlesRawAndStorageKeys(t *testing.T) {
 		{
 			name: "raw id is escaped and prefixed",
 			id:   "OPS/PRIMARY east",
-			want: "cfg:OPS%2FPRIMARY%20east",
+			want: "DBconfig:OPS%2FPRIMARY%20east",
 		},
 		{
 			name: "already escaped storage key is returned unchanged",
-			id:   "cfg:OPS%2FPRIMARY%20east",
-			want: "cfg:OPS%2FPRIMARY%20east",
+			id:   "DBconfig:OPS%2FPRIMARY%20east",
+			want: "DBconfig:OPS%2FPRIMARY%20east",
 		},
 		{
-			name: "raw id with literal cfg prefix is escaped as part of the raw value",
+			name: "legacy cfg prefix is stripped and id is escaped",
 			id:   "cfg:team/database",
-			want: "cfg:cfg:team%2Fdatabase",
+			want: "DBconfig:team%2Fdatabase",
+		},
+		{
+			name: "DBconfig prefix is stripped and id is escaped",
+			id:   "DBconfig:team/database",
+			want: "DBconfig:team%2Fdatabase",
 		},
 	}
 
@@ -84,9 +89,9 @@ func TestDatabaseSettingsRepository_GetByID_AcceptsEscapedStorageKey(t *testing.
 	}
 }
 
-// TestDatabaseSettingsRepository_GetByID_RejectsUnescapedPrefixedRawID verifies that
-// a malformed prefixed raw ID does not alias to the escaped storage key.
-func TestDatabaseSettingsRepository_GetByID_RejectsUnescapedPrefixedRawID(t *testing.T) {
+// TestDatabaseSettingsRepository_GetByID_AcceptsLegacyPrefixedRawID verifies that
+// a legacy cfg: prefixed raw ID is transformed and aliases to the escaped storage key.
+func TestDatabaseSettingsRepository_GetByID_AcceptsLegacyPrefixedRawID(t *testing.T) {
 	t.Parallel()
 
 	adapter := newTestBoltAdapter(t)
@@ -106,9 +111,12 @@ func TestDatabaseSettingsRepository_GetByID_RejectsUnescapedPrefixedRawID(t *tes
 		t.Fatalf("Save: %v", err)
 	}
 
-	_, err = repo.GetByID(context.Background(), "cfg:OPS/PRIMARY east")
-	if err == nil {
-		t.Fatal("expected GetByID to reject an unescaped prefixed raw ID")
+	got, err := repo.GetByID(context.Background(), "cfg:OPS/PRIMARY east")
+	if err != nil {
+		t.Fatalf("GetByID with legacy prefix should transform and find entry: %v", err)
+	}
+	if got.ID() != settings.ID() {
+		t.Fatalf("ID() = %q, want %q", got.ID(), settings.ID())
 	}
 }
 
@@ -203,13 +211,13 @@ func readBucketKey(t *testing.T, adapter *BoltAdapter, key string) []byte {
 }
 
 // TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry verifies that a legacy entry
-// (stored under "host:username") is moved to the "cfg:"-prefixed key scheme.
+// (stored under "cfg:...") is moved to the "DBconfig:"-prefixed key scheme.
 func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
 	t.Parallel()
 
 	adapter := newTestBoltAdapter(t)
 
-	legacyKey := "localhost:system"
+	legacyKey := "cfg:localhost:system"
 	legacyJSON := []byte(`{"database":"ORCL","host":"localhost","port":1521,"username":"system","password":"secret","isDefault":false}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 
@@ -222,33 +230,33 @@ func TestMigrateLegacyDatabaseSettings_RekeysLegacyEntry(t *testing.T) {
 		t.Errorf("expected legacy key %q to be removed after migration, but it still exists", legacyKey)
 	}
 
-	// New key must exist. Note: url.PathEscape does not encode ':' (valid path char),
-	// so "localhost:system" → "cfg:localhost:system".
-	newKey := "cfg:localhost%20ORCL%20system"
+	// New key must exist. Since the legacy key has no databaseId, it's derived from the key
+	// "cfg:localhost:system" → "localhost:system". url.PathEscape does not encode ':' (valid URL char).
+	newKey := "DBconfig:localhost:system"
 	newData := readBucketKey(t, adapter, newKey)
 	if newData == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
 
-	// The migrated record must be readable as DatabaseSettings with the dummy ID.
+	// The migrated record must be readable as DatabaseSettings with the derived ID.
 	repo := NewDatabaseSettingsRepository(adapter)
-	settings, err := repo.GetByID(context.Background(), "cfg:localhost%20ORCL%20system")
+	settings, err := repo.GetByID(context.Background(), "localhost:system")
 	if err != nil {
 		t.Fatalf("GetByID after migration: %v", err)
 	}
-	if settings.DatabaseID() != "localhost ORCL system" {
-		t.Errorf("expected DatabaseID() = %q, got %q", "localhost ORCL system", settings.DatabaseID())
+	if settings.DatabaseID() != "localhost:system" {
+		t.Errorf("expected DatabaseID() = %q, got %q", "localhost:system", settings.DatabaseID())
 	}
 }
 
 // TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer verifies that when the
-// default pointer referred to a legacy key, it is updated to the new "cfg:" key.
+// default pointer referred to a legacy key, it is updated to the new "DBconfig:" key.
 func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 	t.Parallel()
 
 	adapter := newTestBoltAdapter(t)
 
-	legacyKey := "db-host:admin"
+	legacyKey := "cfg:db-host:admin"
 	legacyJSON := []byte(`{"database":"FREEDB","host":"db-host","port":1521,"username":"admin","password":"pass","isDefault":true}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 	setDefaultPointer(t, adapter, legacyKey)
@@ -257,8 +265,8 @@ func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 		t.Fatalf("migrateLegacyDatabaseSettings: %v", err)
 	}
 
-	// ':' is not encoded by url.PathEscape (valid path segment char).
-	newKey := "cfg:db-host%20FREEDB%20admin"
+	// The databaseId is derived from "cfg:db-host:admin" → "db-host:admin"
+	newKey := "DBconfig:db-host:admin"
 	defaultPtr := readBucketKey(t, adapter, DefaultDatabaseConfigKey)
 	if string(defaultPtr) != newKey {
 		t.Errorf("expected default pointer to be updated to %q, got %q", newKey, string(defaultPtr))
@@ -266,7 +274,7 @@ func TestMigrateLegacyDatabaseSettings_UpdatesDefaultPointer(t *testing.T) {
 }
 
 // TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched verifies that entries
-// already using the "cfg:" scheme are not modified.
+// already using the "DBconfig:" scheme are not modified.
 func TestMigrateLegacyDatabaseSettings_LeavesNewEntriesUntouched(t *testing.T) {
 	t.Parallel()
 
@@ -307,7 +315,7 @@ func TestMigrateLegacyDatabaseSettings_PreservesExistingDatabaseId(t *testing.T)
 
 	adapter := newTestBoltAdapter(t)
 
-	legacyKey := "some-host:user"
+	legacyKey := "cfg:some-host:user"
 	legacyJSON := []byte(`{"databaseId":"MY-EXPLICIT-ID","database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 
@@ -320,7 +328,7 @@ func TestMigrateLegacyDatabaseSettings_PreservesExistingDatabaseId(t *testing.T)
 		t.Errorf("expected legacy key %q to be removed", legacyKey)
 	}
 
-	newKey := "cfg:MY-EXPLICIT-ID"
+	newKey := "DBconfig:MY-EXPLICIT-ID"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
@@ -336,13 +344,13 @@ func TestMigrateLegacyDatabaseSettings_PreservesExistingDatabaseId(t *testing.T)
 }
 
 // TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId verifies that migration
-// backfills databaseId from connection fields when the legacy JSON does not include one.
+// backfills databaseId from the legacy key when the legacy JSON does not include one.
 func TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId(t *testing.T) {
 	t.Parallel()
 
 	adapter := newTestBoltAdapter(t)
 
-	legacyKey := "some-host:user"
+	legacyKey := "cfg:some-host:user"
 	legacyJSON := []byte(`{"database":"ORCL","host":"some-host","port":1521,"username":"user","password":"pass","isDefault":false}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 
@@ -350,18 +358,19 @@ func TestMigrateLegacyDatabaseSettings_GeneratesNewDatabaseId(t *testing.T) {
 		t.Fatalf("migrateLegacyDatabaseSettings: %v", err)
 	}
 
-	newKey := "cfg:some-host%20ORCL%20user"
+	// The databaseId is derived from the legacy key "cfg:some-host:user" → "some-host:user"
+	newKey := "DBconfig:some-host:user"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after migration", newKey)
 	}
 
 	repo := NewDatabaseSettingsRepository(adapter)
-	settings, err := repo.GetByID(context.Background(), "some-host ORCL user")
+	settings, err := repo.GetByID(context.Background(), "some-host:user")
 	if err != nil {
 		t.Fatalf("GetByID after migration: %v", err)
 	}
-	if settings.DatabaseID() != "some-host ORCL user" {
-		t.Errorf("DatabaseID() = %q, want %q", settings.DatabaseID(), "some-host ORCL user")
+	if settings.DatabaseID() != "some-host:user" {
+		t.Errorf("DatabaseID() = %q, want %q", settings.DatabaseID(), "some-host:user")
 	}
 }
 
@@ -372,7 +381,7 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 
 	adapter := newTestBoltAdapter(t)
 
-	legacyKey := "idempotent-host:sa"
+	legacyKey := "cfg:idempotent-host:sa"
 	legacyJSON := []byte(`{"database":"TESTDB","host":"idempotent-host","port":1521,"username":"sa","password":"pw","isDefault":false}`)
 	writeLegacyEntry(t, adapter, legacyKey, legacyJSON)
 
@@ -382,8 +391,8 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 		}
 	}
 
-	// ':' is not encoded by url.PathEscape (valid path segment char).
-	newKey := "cfg:idempotent-host%20TESTDB%20sa"
+	// The databaseId is derived from "cfg:idempotent-host:sa" → "idempotent-host:sa"
+	newKey := "DBconfig:idempotent-host:sa"
 	if got := readBucketKey(t, adapter, newKey); got == nil {
 		t.Fatalf("expected new key %q to exist after idempotent migration", newKey)
 	}

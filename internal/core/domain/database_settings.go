@@ -12,10 +12,11 @@ import (
 // ==========================================
 
 const (
-	MinPort           Port = 1
-	MaxPort           Port = 65535
-	DefaultOraclePort Port = 1521
-	settingsIDPrefix       = "cfg:"
+	MinPort              Port = 1
+	MaxPort              Port = 65535
+	DefaultOraclePort    Port = 1521
+	settingsIDPrefix          = "DBconfig:"
+	legacySettingsPrefix      = "cfg:"
 )
 
 // ==========================================
@@ -113,6 +114,7 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 
 func (dbs *DatabaseSettings) ID() string {
 	trimmed := strings.TrimPrefix(dbs.id, settingsIDPrefix)
+	trimmed = strings.TrimPrefix(trimmed, legacySettingsPrefix)
 	if unescaped, err := url.PathUnescape(trimmed); err == nil {
 		return unescaped
 	}

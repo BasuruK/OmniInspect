@@ -161,12 +161,13 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 		return b.ForEach(func(k, v []byte) error {
 			key := string(k)
 			if key == DefaultDatabaseConfigKey {
-				return nil // skip the default pointer key
+				return nil
 			}
 			var settings domain.DatabaseSettings
 			if err := json.Unmarshal(v, &settings); err != nil {
-				log.Printf("[DatabaseSettings] Warning: failed to unmarshal database settings entry with key %q: %v", key, err)
-				return nil // skip malformed entries
+				// Log warning but continue iteration to return valid entries
+				log.Printf("warning: failed to unmarshal database settings for key %q: %v", key, err)
+				return nil
 			}
 			results = append(results, settings)
 			return nil
@@ -180,14 +181,14 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 
 // Delete removes database settings by ID
 func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) error {
-	// Check for context cancellation before proceeding
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
 		return ErrAdapterNotInitialized
 	}
+
+	storageKey := databaseSettingsStorageKey(id)
 
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
@@ -195,12 +196,10 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		storageKey := databaseSettingsStorageKey(id)
 		if err := b.Delete([]byte(storageKey)); err != nil {
 			return fmt.Errorf("delete database settings %q: %w", storageKey, err)
 		}
 
-		// If the deleted config was the default, clear the default pointer key
 		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
 		if defaultKey != nil && string(defaultKey) == storageKey {
 			if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
@@ -212,18 +211,29 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 }
 
 // databaseSettingsStorageKey converts a user-facing database ID to a storage key.
-// It is idempotent: if the input is already a valid escaped storage key, it is returned unchanged.
+// It always normalizes the input by prefixing DATABASE_CONFIG_KEY_PREFIX and applying
+// url.PathEscape to the resolved database ID, rather than returning previously
+// escaped keys verbatim. This produces a consistent storage key for both raw and
+// previously-escaped inputs.
 func databaseSettingsStorageKey(id string) string {
-	// Check if input appears to be an already-escaped storage key
-	if strings.HasPrefix(id, "cfg:") {
-		rawPart := strings.TrimPrefix(id, "cfg:")
-		unescaped, err := url.PathUnescape(rawPart)
-		if err == nil && url.PathEscape(unescaped) == rawPart {
-			// Already a valid storage key (properly escaped)
-			return id
+	unescapedID := id
+	if strings.HasPrefix(id, DATABASE_CONFIG_KEY_PREFIX) {
+		unescapedPart := strings.TrimPrefix(id, DATABASE_CONFIG_KEY_PREFIX)
+		if unescaped, err := url.PathUnescape(unescapedPart); err == nil {
+			unescapedID = unescaped
+		} else {
+			// Unescape failed; use the trimmed part as-is to avoid double-prefixing
+			unescapedID = unescapedPart
+		}
+	} else if strings.HasPrefix(id, LEGACY_CONFIG_KEY_PREFIX) {
+		unescapedPart := strings.TrimPrefix(id, LEGACY_CONFIG_KEY_PREFIX)
+		if unescaped, err := url.PathUnescape(unescapedPart); err == nil {
+			unescapedID = unescaped
+		} else {
+			// Unescape failed; use the trimmed part as-is to avoid double-prefixing
+			unescapedID = unescapedPart
 		}
 	}
 
-	// Treat the entire input as a raw ID that needs escaping
-	return "cfg:" + url.PathEscape(id)
+	return DATABASE_CONFIG_KEY_PREFIX + url.PathEscape(unescapedID)
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"strings"
 	"time"
 
@@ -75,7 +74,12 @@ func (ba *BoltAdapter) Initialize() error {
 	}
 
 	// Migrate any legacy database settings from "cfg:" prefix to "DBconfig:" prefix.
-	return ba.migrateLegacyDatabaseSettings()
+	if err := ba.migrateLegacyDatabaseSettings(); err != nil {
+		_ = ba.db.Close()
+		ba.db = nil
+		return fmt.Errorf("Initialize: migrate legacy database settings: %w", err)
+	}
+	return nil
 }
 
 // migrateLegacyDatabaseSettings rewrites database config entries stored under the
@@ -118,19 +122,10 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 		defaultPtr := string(b.Get([]byte(DefaultDatabaseConfigKey)))
 
-		redactLegacyKey := func(key string) string {
-			withoutPrefix := strings.TrimPrefix(key, LegacyConfigKeyPrefix)
-			parts := strings.SplitN(withoutPrefix, ":", 3)
-			if len(parts) >= 2 {
-				return LegacyConfigKeyPrefix + parts[0] + ":<redacted>:" + strings.Join(parts[2:], ":")
-			}
-			return LegacyConfigKeyPrefix + "<redacted>"
-		}
-
 		for _, entry := range toMigrate {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping %s: failed to unmarshal JSON: %v", redactLegacyKey(entry.oldKey), err)
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s: failed to unmarshal JSON: %v", entry.oldKey, err)
 				continue
 			}
 
@@ -142,11 +137,11 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping %s (databaseId=%q): failed to re-marshal JSON: %v", redactLegacyKey(entry.oldKey), databaseId, err)
+				log.Printf("migrateLegacyDatabaseSettings: skipping %s (databaseId=%q): failed to re-marshal JSON: %v", entry.oldKey, databaseId, err)
 				continue
 			}
 
-			newKey := DatabaseConfigKeyPrefix + url.PathEscape(databaseId)
+			newKey := databaseSettingsStorageKey(databaseId)
 
 			if existing := b.Get([]byte(newKey)); existing != nil {
 				return fmt.Errorf("migrateLegacyDatabaseSettings: key collision migrating %q -> %q", entry.oldKey, newKey)

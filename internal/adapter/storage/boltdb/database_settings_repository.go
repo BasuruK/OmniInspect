@@ -211,22 +211,22 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 }
 
 // databaseSettingsStorageKey converts a user-facing database ID to a storage key.
-// It always normalizes the input by prefixing DatabaseConfigKeyPrefix and applying
+// It always normalizes the input by prefixing DATABASE_CONFIG_KEY_PREFIX and applying
 // url.PathEscape to the resolved database ID, rather than returning previously
 // escaped keys verbatim. This produces a consistent storage key for both raw and
 // previously-escaped inputs.
 func databaseSettingsStorageKey(id string) string {
 	unescapedID := id
-	if strings.HasPrefix(id, DatabaseConfigKeyPrefix) {
-		unescapedPart := strings.TrimPrefix(id, DatabaseConfigKeyPrefix)
+	if strings.HasPrefix(id, DATABASE_CONFIG_KEY_PREFIX) {
+		unescapedPart := strings.TrimPrefix(id, DATABASE_CONFIG_KEY_PREFIX)
 		if unescaped, err := url.PathUnescape(unescapedPart); err == nil {
 			unescapedID = unescaped
 		} else {
 			// Unescape failed; use the trimmed part as-is to avoid double-prefixing
 			unescapedID = unescapedPart
 		}
-	} else if strings.HasPrefix(id, LegacyConfigKeyPrefix) {
-		unescapedPart := strings.TrimPrefix(id, LegacyConfigKeyPrefix)
+	} else if strings.HasPrefix(id, LEGACY_CONFIG_KEY_PREFIX) {
+		unescapedPart := strings.TrimPrefix(id, LEGACY_CONFIG_KEY_PREFIX)
 		if unescaped, err := url.PathUnescape(unescapedPart); err == nil {
 			unescapedID = unescaped
 		} else {
@@ -235,5 +235,5 @@ func databaseSettingsStorageKey(id string) string {
 		}
 	}
 
-	return DatabaseConfigKeyPrefix + url.PathEscape(unescapedID)
+	return DATABASE_CONFIG_KEY_PREFIX + url.PathEscape(unescapedID)
 }

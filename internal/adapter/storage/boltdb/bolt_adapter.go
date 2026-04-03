@@ -18,11 +18,11 @@ const (
 	ClientConfigBucket   = "ClientConfigurations"
 	WebhookConfigBucket  = "WebhookConfigurations"
 	// Bucket Keys
-	DefaultDatabaseConfigKey = "db:default"
-	RunCycleStatusKey        = "run:status"
-	DatabaseConfigKeyPrefix  = "DBconfig:"
-	LegacyConfigKeyPrefix    = "cfg:"
-	DefaultWebhookKey        = "webhook:default"
+	DefaultDatabaseConfigKey   = "db:default"
+	RunCycleStatusKey          = "run:status"
+	DATABASE_CONFIG_KEY_PREFIX = "DBconfig:"
+	LEGACY_CONFIG_KEY_PREFIX   = "cfg:"
+	DefaultWebhookKey          = "webhook:default"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -70,7 +70,9 @@ func (ba *BoltAdapter) Initialize() error {
 		}
 		return nil
 	}); err != nil {
-		return err
+		_ = ba.db.Close()
+		ba.db = nil
+		return fmt.Errorf("Initialize: create buckets: %w", err)
 	}
 
 	// Migrate any legacy database settings from "cfg:" prefix to "DBconfig:" prefix.
@@ -104,7 +106,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 				return nil
 			}
 
-			if !strings.HasPrefix(key, LegacyConfigKeyPrefix) {
+			if !strings.HasPrefix(key, LEGACY_CONFIG_KEY_PREFIX) {
 				return nil
 			}
 
@@ -133,7 +135,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 			storageKeyInput := databaseId
 			if databaseId == "" {
 				storageKeyInput = entry.oldKey
-				databaseId = strings.TrimPrefix(entry.oldKey, LegacyConfigKeyPrefix)
+				databaseId = strings.TrimPrefix(entry.oldKey, LEGACY_CONFIG_KEY_PREFIX)
 				rawMap["databaseId"] = databaseId
 			}
 
@@ -146,7 +148,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 			newKey := databaseSettingsStorageKey(storageKeyInput)
 
 			if existing := b.Get([]byte(newKey)); existing != nil {
-				return fmt.Errorf("migrateLegacyDatabaseSettings: key collision migrating %q -> %q: %w", entry.oldKey, newKey, domain.ErrKeyCollision)
+				return fmt.Errorf("migrateLegacyDatabaseSettings: destination key collision: %w", domain.ErrKeyCollision)
 			}
 
 			if err := b.Put([]byte(newKey), newJSON); err != nil {

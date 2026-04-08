@@ -832,7 +832,7 @@ func TestHandleSettingsSetAsMain_RotatesConnectionEventChannel(t *testing.T) {
 // Persistence Bug Test
 // ==========================================
 
-func TestHandleSettingsSetAsMain_PersistsDefault(t *testing.T) {
+func TestSetAsMain_ThenValidate_PersistsDefault(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()

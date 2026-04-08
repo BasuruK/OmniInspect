@@ -301,6 +301,7 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	}
 
 	m.appConfig = &selectedDb
+	m.appConfig.SetAsDefault()
 	m.dbAdapter = newAdapter
 
 	// Reset dependent services to be reinit with new adapter

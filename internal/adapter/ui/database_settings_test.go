@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/tracer"
@@ -177,6 +178,25 @@ func mustNewTracerService(t *testing.T, db ports.DatabaseRepository, eventChanne
 	}
 
 	return service
+}
+
+func newTestBoltAdapter(t *testing.T) *boltdb.BoltAdapter {
+	t.Helper()
+
+	dbPath := t.TempDir() + "/test.bolt"
+	adapter, err := boltdb.NewBoltAdapter(dbPath)
+	if err != nil {
+		t.Fatalf("NewBoltAdapter: %v", err)
+	}
+	if err := adapter.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = adapter.Close()
+	})
+
+	return adapter
 }
 
 // ==========================================
@@ -805,5 +825,62 @@ func TestHandleSettingsSetAsMain_RotatesConnectionEventChannel(t *testing.T) {
 	}
 	if updated.eventStreamCtx == nil {
 		t.Fatal("expected a replacement event stream context after database switch")
+	}
+}
+
+// ==========================================
+// Persistence Bug Test
+// ==========================================
+
+func TestHandleSettingsSetAsMain_PersistsDefault(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	boltAdapter := newTestBoltAdapter(t)
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
+
+	defaultConfig := newTestDatabaseSettings(t, "DEFAULT-DB")
+	defaultConfig.SetAsDefault()
+	if err := settingsRepo.Save(ctx, *defaultConfig); err != nil {
+		t.Fatalf("failed to save default config: %v", err)
+	}
+
+	nonDefaultConfig := newTestDatabaseSettings(t, "NON-DEFAULT-DB")
+	if err := settingsRepo.Save(ctx, *nonDefaultConfig); err != nil {
+		t.Fatalf("failed to save non-default config: %v", err)
+	}
+
+	m := newTestModelForSettings(t)
+	mockDB := NewMockDatabaseRepository()
+	m.appConfig = defaultConfig
+	m.dbAdapter = mockDB
+	m.boltAdapter = boltAdapter
+
+	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return mockDB, nil
+	}
+
+	updated, _ := m.handleSettingsSetAsMain(*nonDefaultConfig)
+
+	if updated.appConfig == nil {
+		t.Fatal("expected appConfig to be set after switch")
+	}
+	if updated.appConfig.DatabaseID() != "NON-DEFAULT-DB" {
+		t.Fatalf("expected appConfig to be NON-DEFAULT-DB, got %s", updated.appConfig.DatabaseID())
+	}
+
+	if err := updated.markActiveConnectionPermissionsValidated(); err != nil {
+		t.Fatalf("markActiveConnectionPermissionsValidated: %v", err)
+	}
+
+	reloadedDefault, err := settingsRepo.GetDefault(ctx)
+	if err != nil {
+		t.Fatalf("failed to reload default config: %v", err)
+	}
+	if reloadedDefault == nil {
+		t.Fatal("expected default config to exist after reload")
+	}
+	if reloadedDefault.DatabaseID() != "NON-DEFAULT-DB" {
+		t.Errorf("expected default pointer to be NON-DEFAULT-DB after switch, got %s", reloadedDefault.DatabaseID())
 	}
 }

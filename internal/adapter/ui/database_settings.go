@@ -304,6 +304,18 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	m.appConfig.SetAsDefault()
 	m.dbAdapter = newAdapter
 
+	for index := range m.dbSettings.databases {
+		if m.dbSettings.databases[index].ID() == selectedDb.ID() {
+			m.dbSettings.databases[index].SetAsDefault()
+			break
+		}
+	}
+
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+	if err := settingsRepo.Save(m.ctx, *m.appConfig); err != nil {
+		log.Printf("[UI] Failed to persist default database flag for %s: %v", selectedDb.DatabaseID(), err)
+	}
+
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil
 	m.tracerService = nil

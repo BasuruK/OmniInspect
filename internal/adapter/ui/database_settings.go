@@ -272,7 +272,65 @@ func (m *Model) markActiveConnectionPermissionsValidated() error {
 	return nil
 }
 
-// handleSettingsSetAsMain updates the active database configuration and reinitializes dependent services.
+// databaseSettingsWithDefaultState: returns a copy of the given settings with the default flag set as specified, preserving permission validation state.
+func databaseSettingsWithDefaultState(settings domain.DatabaseSettings, isDefault bool) (domain.DatabaseSettings, error) {
+	updated, err := domain.NewDatabaseSettings(
+		settings.DatabaseID(),
+		settings.Database(),
+		settings.Host(),
+		settings.Port(),
+		settings.Username(),
+		settings.Password(),
+	)
+	if err != nil {
+		return domain.DatabaseSettings{}, fmt.Errorf("clone database settings %q: %w", settings.DatabaseID(), err)
+	}
+	if settings.PermissionsValidated() {
+		updated.MarkPermissionsValidated()
+	}
+	if isDefault {
+		updated.SetAsDefault()
+	}
+	return *updated, nil
+}
+
+// syncDatabaseSettingsDefaults: updates the default state of the database settings in the UI list based on the selected database.
+func (m *Model) syncDatabaseSettingsDefaults(selectedDb domain.DatabaseSettings) {
+	for index := range m.dbSettings.databases {
+		updated, err := databaseSettingsWithDefaultState(m.dbSettings.databases[index], m.dbSettings.databases[index].ID() == selectedDb.ID())
+		if err != nil {
+			log.Printf("[UI] Failed to sync database default state for %s: %v", m.dbSettings.databases[index].DatabaseID(), err)
+			continue
+		}
+		m.dbSettings.databases[index] = updated
+	}
+}
+
+// persistDefaultDatabaseSelection: updates the default database selection in the repository.
+func (m *Model) persistDefaultDatabaseSelection(previousDefault *domain.DatabaseSettings, selectedDb domain.DatabaseSettings) error {
+	if m.boltAdapter == nil {
+		return nil
+	}
+
+	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+	var updatedPrevious *domain.DatabaseSettings
+
+	if previousDefault != nil && previousDefault.ID() != selectedDb.ID() && previousDefault.IsDefault() {
+		clearedPrevious, err := databaseSettingsWithDefaultState(*previousDefault, false)
+		if err != nil {
+			return fmt.Errorf("clear previous default %q: %w", previousDefault.DatabaseID(), err)
+		}
+		updatedPrevious = &clearedPrevious
+	}
+
+	if err := settingsRepo.SwitchDefault(m.ctx, updatedPrevious, selectedDb); err != nil {
+		return fmt.Errorf("persist default database selection %q: %w", selectedDb.DatabaseID(), err)
+	}
+
+	return nil
+}
+
+// handleSettingsSetAsMain: updates the active database configuration and reinitializes dependent services.
 func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Model, tea.Cmd) {
 	newAdapter, err := m.dbFactory(&selectedDb)
 	if err != nil {
@@ -290,6 +348,15 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		log.Printf("[UI] Failed to close validated database adapter for %s: %v", selectedDb.DatabaseID(), err)
 	}
 
+	previousConfig := m.appConfig
+	updatedSelected, err := databaseSettingsWithDefaultState(selectedDb, true)
+	if err != nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to prepare database %q as default: %w", selectedDb.DatabaseID(), err))
+	}
+	if err := m.persistDefaultDatabaseSelection(previousConfig, updatedSelected); err != nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to persist database %q as default: %w", selectedDb.DatabaseID(), err))
+	}
+
 	m.resetConnectionEventStream()
 	if m.tracerService != nil {
 		m.tracerService.CancelConnectionListener()
@@ -300,21 +367,9 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		}
 	}
 
-	m.appConfig = &selectedDb
-	m.appConfig.SetAsDefault()
+	m.appConfig = &updatedSelected
 	m.dbAdapter = newAdapter
-
-	for index := range m.dbSettings.databases {
-		if m.dbSettings.databases[index].ID() == selectedDb.ID() {
-			m.dbSettings.databases[index].SetAsDefault()
-			break
-		}
-	}
-
-	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
-	if err := settingsRepo.Save(m.ctx, *m.appConfig); err != nil {
-		log.Printf("[UI] Failed to persist default database flag for %s: %v", selectedDb.DatabaseID(), err)
-	}
+	m.syncDatabaseSettingsDefaults(*m.appConfig)
 
 	// Reset dependent services to be reinit with new adapter
 	m.permissionService = nil

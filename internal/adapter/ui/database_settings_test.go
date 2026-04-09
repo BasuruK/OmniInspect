@@ -869,10 +869,6 @@ func TestSetAsMain_ThenValidate_PersistsDefault(t *testing.T) {
 		t.Fatalf("expected appConfig to be NON-DEFAULT-DB, got %s", updated.appConfig.DatabaseID())
 	}
 
-	if err := updated.markActiveConnectionPermissionsValidated(); err != nil {
-		t.Fatalf("markActiveConnectionPermissionsValidated: %v", err)
-	}
-
 	reloadedDefault, err := settingsRepo.GetDefault(ctx)
 	if err != nil {
 		t.Fatalf("failed to reload default config: %v", err)
@@ -882,5 +878,20 @@ func TestSetAsMain_ThenValidate_PersistsDefault(t *testing.T) {
 	}
 	if reloadedDefault.DatabaseID() != "NON-DEFAULT-DB" {
 		t.Errorf("expected default pointer to be NON-DEFAULT-DB after switch, got %s", reloadedDefault.DatabaseID())
+	}
+
+	// Verify that only one config is marked as default
+	allConfigs, err := settingsRepo.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("failed to reload all configs: %v", err)
+	}
+	defaultCount := 0
+	for _, cfg := range allConfigs {
+		if cfg.IsDefault() {
+			defaultCount++
+		}
+	}
+	if defaultCount != 1 {
+		t.Fatalf("expected exactly one default config, got %d", defaultCount)
 	}
 }

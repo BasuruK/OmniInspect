@@ -72,6 +72,46 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 	})
 }
 
+// SwitchDefault stores the previous and new default settings in a single transaction.
+func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previousDefault *domain.DatabaseSettings, newDefault domain.DatabaseSettings) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return ErrAdapterNotInitialized
+	}
+
+	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		if previousDefault != nil && previousDefault.StorageKey() != newDefault.StorageKey() {
+			previousJSON, err := json.Marshal(previousDefault)
+			if err != nil {
+				return fmt.Errorf("failed to marshal previous default database settings: %w", err)
+			}
+			if err := b.Put([]byte(previousDefault.StorageKey()), previousJSON); err != nil {
+				return fmt.Errorf("failed to save previous default database settings: %w", err)
+			}
+		}
+
+		newJSON, err := json.Marshal(&newDefault)
+		if err != nil {
+			return fmt.Errorf("failed to marshal new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(newDefault.StorageKey()), newJSON); err != nil {
+			return fmt.Errorf("failed to save new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newDefault.StorageKey())); err != nil {
+			return fmt.Errorf("failed to save default database settings key: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // GetByID retrieves database settings by ID
 func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
 	// Check for context cancellation before proceeding

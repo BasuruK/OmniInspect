@@ -18,14 +18,17 @@ import (
 // ==========================================
 
 type databaseSettingsState struct {
-	databaseList DatabaseList
-	databases    []domain.DatabaseSettings
-	activeID     string
-	visible      bool
-	showAddForm  bool
-	addForm      AddDatabaseForm
-	dialogMsg    string
-	showDialog   bool
+	databaseList      DatabaseList
+	databases         []domain.DatabaseSettings
+	activeID          string
+	visible           bool
+	showAddForm       bool
+	editingID         string
+	deleteConfirmID   string
+	showDeleteConfirm bool
+	addForm           AddDatabaseForm
+	dialogMsg         string
+	showDialog        bool
 }
 
 // ==========================================

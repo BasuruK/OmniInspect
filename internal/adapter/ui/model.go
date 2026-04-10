@@ -50,10 +50,14 @@ type welcomeState struct {
 }
 
 type loadingState struct {
-	steps   []string      // Completed steps descriptions
-	current string        // Step currently in progress
-	err     error         // Error encountered during loading, if any
-	spinner spinner.Model // Animated dots TODO: Make this into a loading progress bar
+	steps           []string           // Completed steps descriptions
+	current         string             // Step currently in progress
+	err             error              // Error encountered during loading, if any
+	retryCount      int                // Number of retry attempts performed
+	retryGeneration int                // Generation token for distinguishing stale retry expiries
+	retryTimer      *time.Timer        // Timer for scheduling the next retry attempt
+	retryCancel     context.CancelFunc // Cancel func for the active retry wait command
+	spinner         spinner.Model      // Animated dots TODO: Make this into a loading progress bar
 }
 
 type mainState struct {
@@ -86,6 +90,16 @@ type updateState struct {
 	applying  bool                // Whether the update is being applied
 	stage     string              // Current progress stage description
 	err       error               // Error encountered, if any
+}
+
+// ==========================================
+// Connection Recovery Messages
+// ==========================================
+
+type SwitchDatabaseMsg struct{}
+
+type retryTimerExpiryMsg struct {
+	generation int
 }
 
 // ==========================================
@@ -297,7 +311,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "q":
 			// Only quit from screens that don't need 'q' for navigation
-			if (m.screen == screenMain && !m.dbSettings.visible) || m.screen == screenWelcome || m.screen == screenLoading {
+			if (m.screen == screenMain && !m.dbSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible) {
 				m.cancel()
 				return m, tea.Quit
 			}

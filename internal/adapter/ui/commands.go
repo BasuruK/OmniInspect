@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -94,6 +95,22 @@ func waitForUpdateEventCmd(ctx context.Context, ch <-chan tea.Msg) tea.Cmd {
 			return msg
 		case <-ctx.Done():
 			return updateCompleteMsg{}
+		}
+	}
+}
+
+// waitForRetryTimerCmd waits for the retry timer to expire or the context to be cancelled.
+func waitForRetryTimerCmd(ctx context.Context, timer *time.Timer, generation int) tea.Cmd {
+	return func() tea.Msg {
+		if timer == nil {
+			return retryTimerExpiryMsg{generation: generation}
+		}
+
+		select {
+		case <-timer.C:
+			return retryTimerExpiryMsg{generation: generation}
+		case <-ctx.Done():
+			return retryTimerExpiryMsg{generation: generation}
 		}
 	}
 }

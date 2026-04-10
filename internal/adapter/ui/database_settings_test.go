@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // ==========================================
@@ -336,6 +337,73 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_NilDbAdapter(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Error("expected non-nil command to be returned")
+	}
+}
+
+func TestHandleSettingsSetAsMain_ResetsRetryState(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	boltAdapter := newTestBoltAdapter(t)
+	oldMockDB := NewMockDatabaseRepository()
+	newMockDB := NewMockDatabaseRepository()
+
+	m.boltAdapter = boltAdapter
+	m.dbAdapter = oldMockDB
+	m.appConfig = newTestDatabaseSettings(t, "OLD-DB")
+	m.loading.retryCount = 4
+	m.loading.retryTimer = time.NewTimer(time.Hour)
+	retryCtx, retryCancel := context.WithCancel(context.Background())
+	m.loading.retryCancel = retryCancel
+	m.loading.retryGeneration = 7
+
+	selected := newTestDatabaseSettings(t, "NEW-DB")
+	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return newMockDB, nil
+	}
+
+	updated, cmd := m.handleSettingsSetAsMain(*selected)
+	if cmd == nil {
+		t.Fatal("expected connect command after switching databases")
+	}
+	if updated.loading.retryCount != 0 {
+		t.Fatalf("expected retryCount to reset to 0, got %d", updated.loading.retryCount)
+	}
+	if updated.loading.retryTimer != nil {
+		t.Fatal("expected retryTimer to be cleared after switching databases")
+	}
+	if updated.loading.retryCancel != nil {
+		t.Fatal("expected retryCancel to be cleared after switching databases")
+	}
+
+	select {
+	case <-retryCtx.Done():
+	default:
+		t.Fatal("expected previous retry context to be cancelled when switching databases")
+	}
+	if updated.loading.retryGeneration <= 7 {
+		t.Fatalf("expected retryGeneration to advance, got %d", updated.loading.retryGeneration)
+	}
+	if updated.loading.current != "Connecting..." {
+		t.Fatalf("expected loading current to reset to connecting, got %q", updated.loading.current)
+	}
+	if updated.screen != screenLoading {
+		t.Fatalf("expected screen to switch to loading, got %q", updated.screen)
+	}
+	if updated.appConfig == nil || updated.appConfig.DatabaseID() != "NEW-DB" {
+		t.Fatal("expected active database configuration to be updated")
+	}
+	if updated.dbAdapter != newMockDB {
+		t.Fatal("expected dbAdapter to be replaced with the new adapter")
+	}
+	if len(newMockDB.ConnectCalls) != 1 {
+		t.Fatalf("expected new adapter validation connect, got %d", len(newMockDB.ConnectCalls))
+	}
+	if len(newMockDB.CloseCalls) != 1 {
+		t.Fatalf("expected new adapter validation close, got %d", len(newMockDB.CloseCalls))
+	}
+	if len(oldMockDB.CloseCalls) != 1 {
+		t.Fatalf("expected old adapter close, got %d", len(oldMockDB.CloseCalls))
 	}
 }
 

@@ -2,8 +2,11 @@ package ui
 
 import (
 	"OmniView/internal/adapter/ui/styles"
+	"context"
 	"fmt"
 	"log"
+	"math"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -16,6 +19,10 @@ import (
 
 // updateLoading handles messages when screen == "loading".
 func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
+	if m.dbSettings.visible {
+		return m.updateDatabaseSettings(msg)
+	}
+
 	switch msg := msg.(type) {
 
 	// Spinner animation frame
@@ -76,6 +83,57 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+		if m.loading.err != nil {
+			switch msg.String() {
+			case "r", "R":
+				m.stopLoadingRetryTimer()
+
+				waitSeconds := math.Min(math.Pow(2, float64(m.loading.retryCount)), 30)
+				retryCtx, retryCancel := context.WithCancel(m.ctx)
+				m.loading.retryCancel = retryCancel
+				m.loading.current = fmt.Sprintf("Retrying connection in %.0f seconds...", waitSeconds)
+				m.loading.retryTimer = time.NewTimer(time.Duration(waitSeconds) * time.Second)
+				m.loading.retryCount++
+				return m, waitForRetryTimerCmd(retryCtx, m.loading.retryTimer, m.loading.retryGeneration)
+
+			case "s", "S":
+				return m, func() tea.Msg {
+					return SwitchDatabaseMsg{}
+				}
+
+			case "q", "Q":
+				m.cancel()
+				return m, tea.Quit
+			}
+		}
+
+	case retryTimerExpiryMsg:
+		if msg.generation != m.loading.retryGeneration || m.loading.retryTimer == nil {
+			return m, nil
+		}
+
+		m.stopLoadingRetryTimer()
+		m.loading.err = nil
+		m.loading.current = "Connecting to database..."
+		return m, connectDBCmd(m, false)
+
+	case SwitchDatabaseMsg:
+		m.stopLoadingRetryTimer()
+		m.loading.current = ""
+
+		activeID := ""
+		if m.appConfig != nil {
+			activeID = m.appConfig.ID()
+		}
+
+		databases, err := m.dbSettingsRepo.GetAll(m.ctx)
+		if err != nil {
+			log.Printf("[UI] Failed to load database settings: %v", err)
+			databases = nil
+		}
+
+		m.initDatabaseSettings(databases, activeID)
+		return m, nil
 
 	// Update progress
 	case updateProgressMsg:
@@ -99,8 +157,11 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	case dbConnectedMsg:
 		if msg.err != nil {
 			m.loading.err = fmt.Errorf("database connection failed: %w", msg.err)
+			m.loading.current = ""
 			return m, nil
 		}
+		m.loading.retryCount = 0
+		m.loading.retryTimer = nil
 		m.loading.steps = append(m.loading.steps, "✓ Connected to Oracle database")
 
 		// Initialize services before proceeding
@@ -180,6 +241,28 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) stopLoadingRetryTimer() {
+	m.loading.retryGeneration++
+
+	if m.loading.retryCancel != nil {
+		m.loading.retryCancel()
+		m.loading.retryCancel = nil
+	}
+
+	if m.loading.retryTimer == nil {
+		return
+	}
+
+	if !m.loading.retryTimer.Stop() {
+		select {
+		case <-m.loading.retryTimer.C:
+		default:
+		}
+	}
+
+	m.loading.retryTimer = nil
+}
+
 // ==========================================
 // Loading View
 // ==========================================
@@ -243,13 +326,23 @@ func (m *Model) viewLoading() string {
 	}
 
 	if m.loading.err != nil {
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		infoStyle := styles.SubtitleStyle
+
+		errorMsg := fmt.Sprintf("%s %s", errorStyle.Render("✗"), m.loading.err.Error())
+		retryStatus := ""
+		if m.loading.retryTimer != nil && m.loading.current != "" {
+			retryStatus = infoStyle.Render(m.loading.current)
+		}
+
 		lines = append(
 			lines,
 			"",
 			styles.LoadingErrorStyle.Render("Startup blocked"),
-			styles.SubtitleStyle.Width(bodyWidth).Render(m.loading.err.Error()),
+			styles.SubtitleStyle.Width(bodyWidth).Render(errorMsg),
 			"",
-			styles.SubtitleStyle.Render("Press q to exit."),
+			retryStatus,
+			styles.SubtitleStyle.Width(bodyWidth).Render(infoStyle.Render("R Retry  •  S Switch  •  Q Quit")),
 		)
 	} else if m.loading.current != "" {
 		lines = append(
@@ -260,5 +353,13 @@ func (m *Model) viewLoading() string {
 	}
 
 	panel := renderPanel("Startup Status", panelWidth, lipgloss.JoinVertical(lipgloss.Left, lines...))
-	return placeCentered(m.width, m.height, panel)
+	content := placeCentered(m.width, m.height, panel)
+	if m.dbSettings.visible {
+		content = renderCenteredOverlay(content, m.viewDatabaseSettings(), m.width, m.height)
+		if m.dbSettings.showAddForm {
+			content = renderCenteredOverlay(content, m.dbSettings.addForm.Modal(), m.width, m.height)
+		}
+	}
+
+	return content
 }

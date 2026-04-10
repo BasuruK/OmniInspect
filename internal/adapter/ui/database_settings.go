@@ -147,6 +147,23 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
 			m.dbSettings.showAddForm = true
 			return m, nil
+		case "e":
+			cursor := m.dbSettings.databaseList.Cursor()
+			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
+				selected := m.dbSettings.databases[cursor]
+				m.dbSettings.editingID = selected.ID()
+				m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
+				m.dbSettings.showAddForm = true
+			}
+			return m, nil
+		case "x":
+			cursor := m.dbSettings.databaseList.Cursor()
+			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
+				selected := m.dbSettings.databases[cursor]
+				m.dbSettings.deleteConfirmID = selected.ID()
+				m.dbSettings.showDeleteConfirm = true
+			}
+			return m, nil
 		case "enter":
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {

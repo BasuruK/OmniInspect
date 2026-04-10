@@ -86,6 +86,21 @@ type dbSwitchResultMsg struct {
 	err error
 }
 
+// editDatabaseMsg triggers edit mode for a database entry.
+type editDatabaseMsg struct {
+	id string
+}
+
+// confirmDeleteMsg shows the delete confirmation dialog for a database.
+type confirmDeleteMsg struct {
+	id string
+}
+
+// deleteConfirmedMsg confirms deletion of a database.
+type deleteConfirmedMsg struct {
+	id string
+}
+
 // ==========================================
 // Updater messages
 // ==========================================

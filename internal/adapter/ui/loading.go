@@ -162,6 +162,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		m.loading.retryCount = 0
 		m.loading.retryTimer = nil
+		m.loading.retryCancel = nil
 		m.loading.steps = append(m.loading.steps, "✓ Connected to Oracle database")
 
 		// Initialize services before proceeding

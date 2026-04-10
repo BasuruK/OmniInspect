@@ -401,6 +401,69 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 	}
 }
 
+func TestDatabaseSettingsRepository_Delete(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("test-db", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), "test-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), settings.ID())
+	if err == nil {
+		t.Fatalf("expected error when fetching deleted settings, got: %v", got)
+	}
+}
+
+func TestDatabaseSettingsRepository_Delete_DefaultKeyCleanup(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("default-db", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := repo.SwitchDefault(context.Background(), nil, *settings); err != nil {
+		t.Fatalf("SwitchDefault: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), "default-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), "default-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
 // newTestBoltAdapter creates an isolated BoltDB adapter with the database
 // settings bucket initialized for repository tests.
 func newTestBoltAdapter(t *testing.T) *BoltAdapter {

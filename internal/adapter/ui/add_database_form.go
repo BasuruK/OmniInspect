@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/adapter/ui/styles"
+	"OmniView/internal/core/domain"
 	"strconv"
 	"strings"
 	"unicode"
@@ -52,6 +53,7 @@ type AddDatabaseForm struct {
 	submitted bool
 	cancelled bool
 	errMsg    string
+	editingDB *domain.DatabaseSettings
 }
 
 // NewAddDatabaseForm: creates a new AddDatabaseForm with the specified terminal dimensions and empty fields.
@@ -90,6 +92,13 @@ func (f AddDatabaseForm) WithDimensions(width, height int) AddDatabaseForm {
 	f.width = width
 	f.height = height
 	return f
+}
+
+// SetFieldValue: updates the value of a specific form field by index, ensuring the index is within valid range.
+func (f *AddDatabaseForm) SetFieldValue(index int, value string) {
+	if index >= 0 && index < len(f.fields) {
+		f.fields[index].Value = value
+	}
 }
 
 // ─────────────────────────

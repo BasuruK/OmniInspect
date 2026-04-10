@@ -108,6 +108,43 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 	}, nil
 }
 
+func (dbs *DatabaseSettings) Update(databaseID string, database string, host string, port Port, username string, password string) error {
+	databaseID = strings.TrimSpace(databaseID)
+	database = strings.TrimSpace(database)
+	host = strings.TrimSpace(host)
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
+	if databaseID == "" {
+		return ErrEmptyDatabaseID
+	}
+	if database == "" {
+		return ErrEmptyDatabase
+	}
+	if host == "" {
+		return ErrEmptyHost
+	}
+	if port < MinPort || port > MaxPort {
+		return fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
+	}
+	if username == "" {
+		return ErrEmptyUsername
+	}
+	if password == "" {
+		return ErrEmptyPassword
+	}
+
+	dbs.databaseID = databaseID
+	dbs.id = makeSettingsID(databaseID)
+	dbs.database = database
+	dbs.host = host
+	dbs.port = port
+	dbs.username = username
+	dbs.password = password
+	dbs.validated = false
+	return nil
+}
+
 // ==========================================
 // Getters (Read-Only Accessors)
 // ==========================================

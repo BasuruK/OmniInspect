@@ -96,6 +96,8 @@ func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.showAddForm = false
 	m.dbSettings.showDialog = false
 	m.dbSettings.dialogMsg = ""
+	m.dbSettings.editingID = ""
+	m.dbSettings.addForm.editingDB = nil
 }
 
 // ==========================================
@@ -121,10 +123,14 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		m.dbSettings.addForm, cmd = m.dbSettings.addForm.Update(msg)
 		if m.dbSettings.addForm.IsCancelled() {
 			m.dbSettings.showAddForm = false
+			m.dbSettings.editingID = ""
+			m.dbSettings.addForm.editingDB = nil
 			return m, nil
 		}
 		if m.dbSettings.addForm.IsSubmitted() {
 			m.dbSettings.showAddForm = false
+			m.dbSettings.editingID = ""
+			m.dbSettings.addForm.editingDB = nil
 			return m, m.saveAddFormCmd()
 		}
 		return m, cmd
@@ -147,6 +153,38 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
 			m.dbSettings.showAddForm = true
 			return m, nil
+		case "e":
+			cursor := m.dbSettings.databaseList.Cursor()
+			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
+				selected := m.dbSettings.databases[cursor]
+				m.dbSettings.editingID = selected.ID()
+				return m, func() tea.Msg {
+					return editDatabaseMsg{id: selected.ID()}
+				}
+			}
+			return m, nil
+		case "x":
+			cursor := m.dbSettings.databaseList.Cursor()
+			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
+				selected := m.dbSettings.databases[cursor]
+				m.dbSettings.deleteConfirmID = selected.ID()
+				m.dbSettings.showDeleteConfirm = true
+			}
+			return m, nil
+		case "y":
+			if m.dbSettings.showDeleteConfirm {
+				return m, func() tea.Msg {
+					return deleteConfirmedMsg{id: m.dbSettings.deleteConfirmID}
+				}
+			}
+			return m, nil
+		case "n":
+			if m.dbSettings.showDeleteConfirm {
+				m.dbSettings.showDeleteConfirm = false
+				m.dbSettings.deleteConfirmID = ""
+				return m, nil
+			}
+			return m, nil
 		case "enter":
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
@@ -161,6 +199,24 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.databaseList, cmd = m.dbSettings.databaseList.Update(msg)
 			return m, cmd
 		}
+
+	case editDatabaseMsg:
+		for i := range m.dbSettings.databases {
+			if m.dbSettings.databases[i].ID() == msg.id {
+				db := &m.dbSettings.databases[i]
+				m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
+				m.dbSettings.addForm.SetFieldValue(formFieldDatabaseID, db.DatabaseID())
+				m.dbSettings.addForm.SetFieldValue(formFieldHost, db.Host())
+				m.dbSettings.addForm.SetFieldValue(formFieldPort, fmt.Sprintf("%d", db.Port().Int()))
+				m.dbSettings.addForm.SetFieldValue(formFieldService, db.Database())
+				m.dbSettings.addForm.SetFieldValue(formFieldUser, db.Username())
+				m.dbSettings.addForm.editingDB = db
+				m.dbSettings.editingID = db.ID()
+				m.dbSettings.showAddForm = true
+				break
+			}
+		}
+		return m, nil
 
 	case dbValidationResultMsg:
 		if msg.err != nil {
@@ -177,6 +233,27 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.showDialog = true
 			return m, nil
 		}
+		return m, nil
+
+	case deleteConfirmedMsg:
+		// Prevent deletion of active connection
+		if msg.id == m.dbSettings.activeID {
+			m.dbSettings.dialogMsg = "Cannot delete the currently active database connection."
+			m.dbSettings.showDialog = true
+			m.dbSettings.showDeleteConfirm = false
+			m.dbSettings.deleteConfirmID = ""
+			return m, nil
+		}
+		// Proceed with deletion
+		settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
+		if err := settingsRepo.Delete(m.ctx, msg.id); err != nil {
+			m.dbSettings.dialogMsg = err.Error()
+			m.dbSettings.showDialog = true
+			return m, nil
+		}
+		m.dbSettings.showDeleteConfirm = false
+		m.dbSettings.deleteConfirmID = ""
+		m.reloadDatabaseList()
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -231,10 +308,33 @@ func (m *Model) viewDatabaseSettings() string {
 		)
 	}
 
+	if m.dbSettings.showDeleteConfirm {
+		var dbName string
+		for _, db := range m.dbSettings.databases {
+			if db.ID() == m.dbSettings.deleteConfirmID {
+				dbName = db.DatabaseID()
+				break
+			}
+		}
+		parts = append(
+			parts,
+			"",
+			lipgloss.JoinVertical(
+				lipgloss.Left,
+				lipgloss.NewStyle().
+					Foreground(styles.WarningColor).
+					Bold(true).
+					Render("⚠ Delete Confirmation"),
+				styles.SubtitleStyle.Width(innerWidth).Render("Are you sure you want to delete the database '"+dbName+"'? This action cannot be undone."),
+				styles.SubtitleStyle.Width(innerWidth).Render("Press Y to confirm deletion or N to cancel."),
+			),
+		)
+	}
+
 	parts = append(
 		parts,
 		"",
-		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  a Add Database  •  Esc Back"),
+		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  a Add  •  e Edit  •  x Delete  •  Esc Back"),
 	)
 
 	panel := renderFramedPanel("Connections", panelWidth, lipgloss.JoinVertical(lipgloss.Left, parts...))
@@ -414,6 +514,7 @@ func (m *Model) reloadDatabaseList() {
 // saveAddFormCmd: async command to validate and save a new database configuration from the add form.
 func (m *Model) saveAddFormCmd() tea.Cmd {
 	databaseID, host, portStr, service, username, password := m.dbSettings.addForm.FieldValues()
+	editingDB := m.dbSettings.addForm.editingDB
 	ctx := m.ctx
 	boltAdapter := m.boltAdapter
 
@@ -426,9 +527,17 @@ func (m *Model) saveAddFormCmd() tea.Cmd {
 		if err != nil {
 			return dbValidationResultMsg{err: fmt.Errorf("invalid port: %w", err)}
 		}
-		settings, err := domain.NewDatabaseSettings(databaseID, service, host, dbPort, username, password)
-		if err != nil {
-			return dbValidationResultMsg{err: fmt.Errorf("failed to create settings: %w", err)}
+		var settings *domain.DatabaseSettings
+		if editingDB != nil {
+			if err := editingDB.Update(databaseID, service, host, dbPort, username, password); err != nil {
+				return dbValidationResultMsg{err: fmt.Errorf("failed to update settings: %w", err)}
+			}
+			settings = editingDB
+		} else {
+			settings, err = domain.NewDatabaseSettings(databaseID, service, host, dbPort, username, password)
+			if err != nil {
+				return dbValidationResultMsg{err: fmt.Errorf("failed to create settings: %w", err)}
+			}
 		}
 		settingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 		if err := settingsRepo.Save(ctx, *settings); err != nil {

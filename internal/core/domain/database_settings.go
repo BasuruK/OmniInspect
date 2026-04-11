@@ -41,15 +41,16 @@ func (p Port) Int() int { return int(p) }
 
 // Entity: Represents database connection settings
 type DatabaseSettings struct {
-	id         string
-	databaseID string
-	database   string
-	host       string
-	port       Port
-	username   string
-	password   string
-	isDefault  bool
-	validated  bool
+	id           string
+	persistedKey string
+	databaseID   string
+	database     string
+	host         string
+	port         Port
+	username     string
+	password     string
+	isDefault    bool
+	validated    bool
 }
 
 // makeSettingsID constructs a stable unique ID from the user-facing database ID.
@@ -158,14 +159,15 @@ func (dbs *DatabaseSettings) ID() string {
 	return trimmed
 }
 
-func (dbs *DatabaseSettings) StorageKey() string { return dbs.id }
-func (dbs *DatabaseSettings) DatabaseID() string { return dbs.databaseID }
-func (dbs *DatabaseSettings) Database() string   { return dbs.database }
-func (dbs *DatabaseSettings) Host() string       { return dbs.host }
-func (dbs *DatabaseSettings) Port() Port         { return dbs.port }
-func (dbs *DatabaseSettings) Username() string   { return dbs.username }
-func (dbs *DatabaseSettings) Password() string   { return dbs.password }
-func (dbs *DatabaseSettings) IsDefault() bool    { return dbs.isDefault }
+func (dbs *DatabaseSettings) StorageKey() string   { return dbs.id }
+func (dbs *DatabaseSettings) PersistedKey() string { return dbs.persistedKey }
+func (dbs *DatabaseSettings) DatabaseID() string   { return dbs.databaseID }
+func (dbs *DatabaseSettings) Database() string     { return dbs.database }
+func (dbs *DatabaseSettings) Host() string         { return dbs.host }
+func (dbs *DatabaseSettings) Port() Port           { return dbs.port }
+func (dbs *DatabaseSettings) Username() string     { return dbs.username }
+func (dbs *DatabaseSettings) Password() string     { return dbs.password }
+func (dbs *DatabaseSettings) IsDefault() bool      { return dbs.isDefault }
 func (dbs *DatabaseSettings) PermissionsValidated() bool {
 	return dbs.validated
 }
@@ -202,6 +204,11 @@ func (dbs *DatabaseSettings) MarkPermissionsValidated() {
 // ClearPermissionsValidated removes the cached permission validation marker.
 func (dbs *DatabaseSettings) ClearPermissionsValidated() {
 	dbs.validated = false
+}
+
+// SetPersistedKey sets the actual BoltDB storage key for this record.
+func (dbs *DatabaseSettings) SetPersistedKey(key string) {
+	dbs.persistedKey = key
 }
 
 // ==========================================

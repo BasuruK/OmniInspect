@@ -459,6 +459,10 @@ func TestDatabaseSettingsRepository_Delete_DefaultKeyCleanup(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
+	if got := readBucketKey(t, adapter, DefaultDatabaseConfigKey); got != nil {
+		t.Fatalf("expected %q to be cleared, got %q", DefaultDatabaseConfigKey, string(got))
+	}
+
 	if err := repo.Delete(context.Background(), "default-db"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -561,11 +565,8 @@ func TestDatabaseSettingsRepository_Edit_RenamedID_RemovesOldKey(t *testing.T) {
 	}
 
 	// Delete old entry then save new one — same as saveAddFormCmd does.
-	if err := repo.Delete(context.Background(), originalStorageKey); err != nil {
-		t.Fatalf("Delete old key: %v", err)
-	}
-	if err := repo.Save(context.Background(), *existing); err != nil {
-		t.Fatalf("Save new key: %v", err)
+	if err := repo.Replace(context.Background(), originalStorageKey, *existing); err != nil {
+		t.Fatalf("Replace: %v", err)
 	}
 
 	// Old key must be gone.
@@ -583,6 +584,86 @@ func TestDatabaseSettingsRepository_Edit_RenamedID_RemovesOldKey(t *testing.T) {
 	}
 	if all[0].DatabaseID() != "NEW-NAME" {
 		t.Errorf("DatabaseID() = %q, want %q", all[0].DatabaseID(), "NEW-NAME")
+	}
+}
+
+// TestDatabaseSettingsRepository_Replace_SameKey verifies that Replace with an unchanged
+// storage key behaves like Save (no delete path exercised, record is updated in place).
+func TestDatabaseSettingsRepository_Replace_SameKey(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, _ := domain.NewPort(1521)
+	settings, err := domain.NewDatabaseSettings("SAME-KEY", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	newPort, _ := domain.NewPort(1522)
+	if err := settings.Update("SAME-KEY", "FREEPDB1", "newhost", newPort, "system", "secret2"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if err := repo.Replace(context.Background(), settings.StorageKey(), *settings); err != nil {
+		t.Fatalf("Replace (same key): %v", err)
+	}
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(all))
+	}
+	if all[0].Host() != "newhost" {
+		t.Errorf("Host() = %q, want %q", all[0].Host(), "newhost")
+	}
+}
+
+// TestDatabaseSettingsRepository_Replace_RenamedKey verifies that Replace with a new
+// storage key removes the old bolt entry and writes the new one atomically — no orphan.
+func TestDatabaseSettingsRepository_Replace_RenamedKey(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, _ := domain.NewPort(1521)
+	settings, err := domain.NewDatabaseSettings("OLD-KEY", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	oldStorageKey := settings.StorageKey()
+
+	if err := settings.Update("NEW-KEY", "FREEPDB1", "localhost", port, "system", "secret"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if err := repo.Replace(context.Background(), oldStorageKey, *settings); err != nil {
+		t.Fatalf("Replace (renamed key): %v", err)
+	}
+
+	if raw := readBucketKey(t, adapter, oldStorageKey); raw != nil {
+		t.Errorf("old bolt key %q must be absent after Replace", oldStorageKey)
+	}
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected exactly 1 entry after Replace, got %d", len(all))
+	}
+	if all[0].DatabaseID() != "NEW-KEY" {
+		t.Errorf("DatabaseID() = %q, want %q", all[0].DatabaseID(), "NEW-KEY")
 	}
 }
 

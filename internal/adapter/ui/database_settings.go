@@ -256,6 +256,8 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		// Proceed with deletion
 		settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 		if err := settingsRepo.Delete(m.ctx, msg.id); err != nil {
+			m.dbSettings.showDeleteConfirm = false
+			m.dbSettings.deleteConfirmID = ""
 			m.dbSettings.dialogMsg = err.Error()
 			m.dbSettings.showDialog = true
 			return m, nil
@@ -555,14 +557,8 @@ func (m *Model) saveAddFormCmd() tea.Cmd {
 			if err := existing.Update(databaseID, service, host, dbPort, username, password); err != nil {
 				return dbValidationResultMsg{err: fmt.Errorf("failed to update settings: %w", err)}
 			}
-			// If the storage key changed, remove the stale entry first.
-			if existing.StorageKey() != originalStorageKey {
-				if err := settingsRepo.Delete(ctx, originalStorageKey); err != nil {
-					return dbValidationResultMsg{err: fmt.Errorf("failed to remove old entry: %w", err)}
-				}
-			}
-			if err := settingsRepo.Save(ctx, *existing); err != nil {
-				return dbValidationResultMsg{err: fmt.Errorf("failed to save: %w", err)}
+			if err := settingsRepo.Replace(ctx, originalStorageKey, *existing); err != nil {
+				return dbValidationResultMsg{err: fmt.Errorf("failed to replace entry: %w", err)}
 			}
 			return dbValidationResultMsg{settings: existing}
 		}

@@ -220,7 +220,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.addForm.SetFieldValue(formFieldPass, db.Password())
 				m.dbSettings.addForm.editingDB = db
 				m.dbSettings.editingID = db.ID()
-				m.dbSettings.editingOriginalStorageKey = db.StorageKey()
+				m.dbSettings.editingOriginalStorageKey = db.PersistedKey()
 				m.dbSettings.showAddForm = true
 				break
 			}

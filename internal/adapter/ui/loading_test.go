@@ -43,6 +43,10 @@ func (s stubDatabaseSettingsRepository) Delete(context.Context, string) error {
 	return nil
 }
 
+func (s stubDatabaseSettingsRepository) Replace(context.Context, string, domain.DatabaseSettings) error {
+	return nil
+}
+
 type stubPermissionsRepository struct{}
 
 func (stubPermissionsRepository) Save(context.Context, *domain.DatabasePermissions) error {

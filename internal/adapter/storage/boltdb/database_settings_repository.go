@@ -130,12 +130,17 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		data := b.Get([]byte(databaseSettingsStorageKey(id)))
+		resolvedKey := databaseSettingsStorageKey(id)
+		data := b.Get([]byte(resolvedKey))
 		if data == nil {
 			return fmt.Errorf("database settings not found for id: %s", id)
 		}
 
-		return json.Unmarshal(data, &settings)
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return err
+		}
+		settings.SetPersistedKey(resolvedKey)
+		return nil
 	})
 	if err != nil {
 		return nil, err

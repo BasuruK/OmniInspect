@@ -137,6 +137,9 @@ func renderFramedPanel(title string, width int, pt panelType, blocks ...string) 
 	borderStyle := styles.FieldBorderStyle
 	titleStyle := styles.SectionTitleStyle
 	switch pt {
+	case panelTypeInfo:
+		// uses defaults
+		// TODO: consider defining explicit styles for framed panels if we want to adjust other attributes like background or padding in the future
 	case panelTypeWarning:
 		borderStyle = lipgloss.NewStyle().Foreground(styles.WarningColor)
 		titleStyle = lipgloss.NewStyle().Foreground(styles.WarningColor).Bold(true)

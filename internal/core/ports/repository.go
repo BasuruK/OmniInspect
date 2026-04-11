@@ -46,11 +46,11 @@ type DatabaseSettingsRepository interface {
 	// Delete removes database settings by ID
 	Delete(ctx context.Context, id string) error
 
-	// Replace atomically removes the record stored under oldKey and writes newRecord
-	// in a single transaction. When oldKey and newRecord.StorageKey() are identical
+	// Replace atomically removes the record stored under id and writes newRecord
+	// in a single transaction. When id equals newRecord.StorageKey()
 	// the call is equivalent to Save. Use this when renaming a database ID to avoid
 	// a window where neither key exists.
-	Replace(ctx context.Context, oldKey string, newRecord domain.DatabaseSettings) error
+	Replace(ctx context.Context, id string, newRecord domain.DatabaseSettings) error
 }
 
 // ==========================================

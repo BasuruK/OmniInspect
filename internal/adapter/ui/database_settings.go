@@ -99,6 +99,7 @@ func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.dialogMsg = ""
 	m.dbSettings.editingID = ""
 	m.dbSettings.addForm.editingDB = nil
+	m.dbSettings.editingOriginalStorageKey = ""
 }
 
 // ==========================================
@@ -178,7 +179,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
-				m.dbSettings.editingID = selected.ID()
 				return m, func() tea.Msg {
 					return editDatabaseMsg{id: selected.ID()}
 				}
@@ -337,6 +337,10 @@ func (m *Model) viewDeleteConfirmModal() string {
 			dbName = db.DatabaseID()
 			break
 		}
+	}
+	// Fallback in case the database was not found (should not happen). Prevention incase of a race condition.
+	if dbName == "" {
+		dbName = "(unknown)"
 	}
 
 	modalWidth := max(min(m.width-20, 60), 44)

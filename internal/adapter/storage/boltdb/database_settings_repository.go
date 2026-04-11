@@ -297,6 +297,12 @@ func (dsr *DatabaseSettingsRepository) Replace(ctx context.Context, oldKey strin
 		if err := b.Put([]byte(newKey), jsonData); err != nil {
 			return fmt.Errorf("replace: save new record %q: %w", newKey, err)
 		}
+		// Update the default pointer if the new record is marked as default.
+		if newRecord.IsDefault() {
+			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
+				return fmt.Errorf("replace: update default pointer: %w", err)
+			}
+		}
 		return nil
 	})
 }

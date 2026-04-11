@@ -207,6 +207,7 @@ func (dbs *DatabaseSettings) ClearPermissionsValidated() {
 }
 
 // SetPersistedKey sets the actual BoltDB storage key for this record.
+// An empty key indicates the record has not yet been persisted.
 func (dbs *DatabaseSettings) SetPersistedKey(key string) {
 	dbs.persistedKey = key
 }

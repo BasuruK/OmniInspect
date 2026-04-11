@@ -18,17 +18,18 @@ import (
 // ==========================================
 
 type databaseSettingsState struct {
-	databaseList      DatabaseList
-	databases         []domain.DatabaseSettings
-	activeID          string
-	visible           bool
-	showAddForm       bool
-	editingID         string
-	deleteConfirmID   string
-	showDeleteConfirm bool
-	addForm           AddDatabaseForm
-	dialogMsg         string
-	showDialog        bool
+	databaseList              DatabaseList
+	databases                 []domain.DatabaseSettings
+	activeID                  string
+	visible                   bool
+	showAddForm               bool
+	editingID                 string
+	editingOriginalStorageKey string // storage key captured when edit form opens
+	deleteConfirmID           string
+	showDeleteConfirm         bool
+	addForm                   AddDatabaseForm
+	dialogMsg                 string
+	showDialog                bool
 }
 
 // ==========================================
@@ -124,20 +125,40 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.dbSettings.addForm.IsCancelled() {
 			m.dbSettings.showAddForm = false
 			m.dbSettings.editingID = ""
+			m.dbSettings.editingOriginalStorageKey = ""
 			m.dbSettings.addForm.editingDB = nil
 			return m, nil
 		}
 		if m.dbSettings.addForm.IsSubmitted() {
+			cmd := m.saveAddFormCmd()
 			m.dbSettings.showAddForm = false
 			m.dbSettings.editingID = ""
+			m.dbSettings.editingOriginalStorageKey = ""
 			m.dbSettings.addForm.editingDB = nil
-			return m, m.saveAddFormCmd()
+			return m, cmd
 		}
 		return m, cmd
 	}
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		// While the delete confirm modal is open, only allow confirm/cancel keys.
+		if m.dbSettings.showDeleteConfirm {
+			switch msg.String() {
+			case "ctrl+c":
+				m.cancel()
+				return m, tea.Quit
+			case "y":
+				return m, func() tea.Msg {
+					return deleteConfirmedMsg{id: m.dbSettings.deleteConfirmID}
+				}
+			case "n", "esc", "q":
+				m.dbSettings.showDeleteConfirm = false
+				m.dbSettings.deleteConfirmID = ""
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c":
 			m.cancel()
@@ -171,20 +192,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDeleteConfirm = true
 			}
 			return m, nil
-		case "y":
-			if m.dbSettings.showDeleteConfirm {
-				return m, func() tea.Msg {
-					return deleteConfirmedMsg{id: m.dbSettings.deleteConfirmID}
-				}
-			}
-			return m, nil
-		case "n":
-			if m.dbSettings.showDeleteConfirm {
-				m.dbSettings.showDeleteConfirm = false
-				m.dbSettings.deleteConfirmID = ""
-				return m, nil
-			}
-			return m, nil
 		case "enter":
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
@@ -210,8 +217,10 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.addForm.SetFieldValue(formFieldPort, fmt.Sprintf("%d", db.Port().Int()))
 				m.dbSettings.addForm.SetFieldValue(formFieldService, db.Database())
 				m.dbSettings.addForm.SetFieldValue(formFieldUser, db.Username())
+				m.dbSettings.addForm.SetFieldValue(formFieldPass, db.Password())
 				m.dbSettings.addForm.editingDB = db
 				m.dbSettings.editingID = db.ID()
+				m.dbSettings.editingOriginalStorageKey = db.StorageKey()
 				m.dbSettings.showAddForm = true
 				break
 			}
@@ -308,37 +317,43 @@ func (m *Model) viewDatabaseSettings() string {
 		)
 	}
 
-	if m.dbSettings.showDeleteConfirm {
-		var dbName string
-		for _, db := range m.dbSettings.databases {
-			if db.ID() == m.dbSettings.deleteConfirmID {
-				dbName = db.DatabaseID()
-				break
-			}
-		}
-		parts = append(
-			parts,
-			"",
-			lipgloss.JoinVertical(
-				lipgloss.Left,
-				lipgloss.NewStyle().
-					Foreground(styles.WarningColor).
-					Bold(true).
-					Render("⚠ Delete Confirmation"),
-				styles.SubtitleStyle.Width(innerWidth).Render("Are you sure you want to delete the database '"+dbName+"'? This action cannot be undone."),
-				styles.SubtitleStyle.Width(innerWidth).Render("Press Y to confirm deletion or N to cancel."),
-			),
-		)
-	}
-
 	parts = append(
 		parts,
 		"",
-		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  a Add  •  e Edit  •  x Delete  •  Esc Back"),
+		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  A Add  •  E Edit  •  X Delete  •  Esc Back"),
 	)
 
-	panel := renderFramedPanel("Connections", panelWidth, lipgloss.JoinVertical(lipgloss.Left, parts...))
+	panel := renderFramedPanel("Connections", panelWidth, panelTypeInfo, lipgloss.JoinVertical(lipgloss.Left, parts...))
 	return panel
+}
+
+// viewDeleteConfirmModal: renders a standalone warning dialog for confirming database deletion.
+func (m *Model) viewDeleteConfirmModal() string {
+	var dbName string
+	for _, db := range m.dbSettings.databases {
+		if db.ID() == m.dbSettings.deleteConfirmID {
+			dbName = db.DatabaseID()
+			break
+		}
+	}
+
+	modalWidth := max(min(m.width-20, 60), 44)
+	innerWidth := max(modalWidth-4, 24)
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styles.BodyTextStyle.Width(innerWidth).Render("Are you sure you want to delete:"),
+		"",
+		lipgloss.NewStyle().Foreground(styles.AccentColor).Bold(true).Width(innerWidth).Render("  "+dbName),
+		"",
+		styles.SubtitleStyle.Width(innerWidth).Render("This action cannot be undone."),
+		"",
+		lipgloss.NewStyle().Foreground(styles.SuccessColor).Bold(true).Render("Y")+" "+
+			styles.BodyTextStyle.Render("Confirm")+"   "+
+			styles.SubtitleStyle.Render("N / Esc  Cancel"),
+	)
+
+	return renderFramedPanel("Confirm Delete", modalWidth, panelTypeWarning, content)
 }
 
 // ==========================================
@@ -511,10 +526,11 @@ func (m *Model) reloadDatabaseList() {
 // Async Commands
 // ==========================================
 
-// saveAddFormCmd: async command to validate and save a new database configuration from the add form.
+// saveAddFormCmd: async command to validate and save a new or edited database configuration.
+// originalStorageKey is non-empty when editing; it is the bolt key of the record being edited.
 func (m *Model) saveAddFormCmd() tea.Cmd {
 	databaseID, host, portStr, service, username, password := m.dbSettings.addForm.FieldValues()
-	editingDB := m.dbSettings.addForm.editingDB
+	originalStorageKey := m.dbSettings.editingOriginalStorageKey
 	ctx := m.ctx
 	boltAdapter := m.boltAdapter
 
@@ -527,19 +543,35 @@ func (m *Model) saveAddFormCmd() tea.Cmd {
 		if err != nil {
 			return dbValidationResultMsg{err: fmt.Errorf("invalid port: %w", err)}
 		}
-		var settings *domain.DatabaseSettings
-		if editingDB != nil {
-			if err := editingDB.Update(databaseID, service, host, dbPort, username, password); err != nil {
+
+		settingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
+
+		if originalStorageKey != "" {
+			// Edit path: build new settings, delete old key if ID changed, save new.
+			existing, err := settingsRepo.GetByID(ctx, originalStorageKey)
+			if err != nil {
+				return dbValidationResultMsg{err: fmt.Errorf("failed to load existing record: %w", err)}
+			}
+			if err := existing.Update(databaseID, service, host, dbPort, username, password); err != nil {
 				return dbValidationResultMsg{err: fmt.Errorf("failed to update settings: %w", err)}
 			}
-			settings = editingDB
-		} else {
-			settings, err = domain.NewDatabaseSettings(databaseID, service, host, dbPort, username, password)
-			if err != nil {
-				return dbValidationResultMsg{err: fmt.Errorf("failed to create settings: %w", err)}
+			// If the storage key changed, remove the stale entry first.
+			if existing.StorageKey() != originalStorageKey {
+				if err := settingsRepo.Delete(ctx, originalStorageKey); err != nil {
+					return dbValidationResultMsg{err: fmt.Errorf("failed to remove old entry: %w", err)}
+				}
 			}
+			if err := settingsRepo.Save(ctx, *existing); err != nil {
+				return dbValidationResultMsg{err: fmt.Errorf("failed to save: %w", err)}
+			}
+			return dbValidationResultMsg{settings: existing}
 		}
-		settingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
+
+		// Add path: create a brand-new record.
+		settings, err := domain.NewDatabaseSettings(databaseID, service, host, dbPort, username, password)
+		if err != nil {
+			return dbValidationResultMsg{err: fmt.Errorf("failed to create settings: %w", err)}
+		}
 		if err := settingsRepo.Save(ctx, *settings); err != nil {
 			return dbValidationResultMsg{err: fmt.Errorf("failed to save: %w", err)}
 		}

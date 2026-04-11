@@ -99,7 +99,7 @@ func sanitizeLogString(s string) string {
 // updateMain handles messages when screen == "main".
 func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case dbValidationResultMsg, dbSwitchResultMsg:
+	case dbValidationResultMsg, dbSwitchResultMsg, deleteConfirmedMsg, editDatabaseMsg:
 		if m.dbSettings.visible {
 			return m.updateDatabaseSettings(msg)
 		}

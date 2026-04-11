@@ -346,5 +346,5 @@ func (f AddDatabaseForm) Modal() string {
 	)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	return renderFramedPanel("Stored Connections", modalWidth, content)
+	return renderFramedPanel("Stored Connections", modalWidth, panelTypeInfo, content)
 }

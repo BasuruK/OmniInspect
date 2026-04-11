@@ -114,12 +114,33 @@ func renderPanel(title string, width int, body string) string {
 	return applyTotalWidth(styles.PrimaryPanelStyle, width).Render(content)
 }
 
+// ==========================================
+// Panel Types
+// ==========================================
+
+type panelType int
+
+const (
+	panelTypeInfo    panelType = iota // default border (SurfaceColor)
+	panelTypeWarning                  // warning border (WarningColor)
+)
+
 // renderFramedPanel: renders a panel with double-line border framing, title, and content blocks.
-func renderFramedPanel(title string, width int, blocks ...string) string {
+// The pt parameter controls the border color: panelTypeInfo uses the default surface color,
+// panelTypeWarning uses the warning color.
+func renderFramedPanel(title string, width int, pt panelType, blocks ...string) string {
 	titleText := " " + title + " "
 	width = max(width, lipgloss.Width(titleText)+3)
 	innerWidth := max(width-4, 1)
 	topFill := max(width-lipgloss.Width(titleText)-3, 0)
+
+	borderStyle := styles.FieldBorderStyle
+	titleStyle := styles.SectionTitleStyle
+	switch pt {
+	case panelTypeWarning:
+		borderStyle = lipgloss.NewStyle().Foreground(styles.WarningColor)
+		titleStyle = lipgloss.NewStyle().Foreground(styles.WarningColor).Bold(true)
+	}
 
 	var lines []string
 	for _, block := range blocks {
@@ -130,21 +151,21 @@ func renderFramedPanel(title string, width int, blocks ...string) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.FieldBorderStyle.Render("╭─"))
-	b.WriteString(styles.SectionTitleStyle.Render(titleText))
-	b.WriteString(styles.FieldBorderStyle.Render(strings.Repeat("─", topFill) + "╮"))
+	b.WriteString(borderStyle.Render("╭─"))
+	b.WriteString(titleStyle.Render(titleText))
+	b.WriteString(borderStyle.Render(strings.Repeat("─", topFill) + "╮"))
 	b.WriteString("\n")
 
 	for _, line := range lines {
 		padding := max(innerWidth-lipgloss.Width(line), 0)
-		b.WriteString(styles.FieldBorderStyle.Render("│ "))
+		b.WriteString(borderStyle.Render("│ "))
 		b.WriteString(line)
 		b.WriteString(strings.Repeat(" ", padding))
-		b.WriteString(styles.FieldBorderStyle.Render(" │"))
+		b.WriteString(borderStyle.Render(" │"))
 		b.WriteString("\n")
 	}
 
-	b.WriteString(styles.FieldBorderStyle.Render("╰" + strings.Repeat("─", width-2) + "╯"))
+	b.WriteString(borderStyle.Render("╰" + strings.Repeat("─", width-2) + "╯"))
 	return b.String()
 }
 

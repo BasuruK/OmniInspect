@@ -58,6 +58,30 @@ func makeSettingsID(databaseID string) string {
 	return settingsIDPrefix + url.PathEscape(databaseID)
 }
 
+// validateSettingsFields checks that all required database settings fields are
+// non-empty and the port falls within the allowed range.
+func validateSettingsFields(databaseID, database, host, username, password string, port Port) error {
+	if databaseID == "" {
+		return ErrEmptyDatabaseID
+	}
+	if database == "" {
+		return ErrEmptyDatabase
+	}
+	if host == "" {
+		return ErrEmptyHost
+	}
+	if port < MinPort || port > MaxPort {
+		return fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
+	}
+	if username == "" {
+		return ErrEmptyUsername
+	}
+	if password == "" {
+		return ErrEmptyPassword
+	}
+	return nil
+}
+
 // NewDatabaseSettings creates new database settings with validation
 func NewDatabaseSettings(databaseID string, database string, host string, port Port, username string, password string) (*DatabaseSettings, error) {
 	databaseID = strings.TrimSpace(databaseID)
@@ -66,34 +90,8 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 
-	// Validate database identifier
-	if databaseID == "" {
-		return nil, ErrEmptyDatabaseID
-	}
-
-	// Validate database
-	if database == "" {
-		return nil, ErrEmptyDatabase
-	}
-
-	// Validate host
-	if host == "" {
-		return nil, ErrEmptyHost
-	}
-
-	// Validate port
-	if port < MinPort || port > MaxPort {
-		return nil, fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
-	}
-
-	// Validate username
-	if username == "" {
-		return nil, ErrEmptyUsername
-	}
-
-	// Validate password
-	if password == "" {
-		return nil, ErrEmptyPassword
+	if err := validateSettingsFields(databaseID, database, host, username, password, port); err != nil {
+		return nil, err
 	}
 
 	return &DatabaseSettings{
@@ -116,23 +114,8 @@ func (dbs *DatabaseSettings) Update(databaseID string, database string, host str
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 
-	if databaseID == "" {
-		return ErrEmptyDatabaseID
-	}
-	if database == "" {
-		return ErrEmptyDatabase
-	}
-	if host == "" {
-		return ErrEmptyHost
-	}
-	if port < MinPort || port > MaxPort {
-		return fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
-	}
-	if username == "" {
-		return ErrEmptyUsername
-	}
-	if password == "" {
-		return ErrEmptyPassword
+	if err := validateSettingsFields(databaseID, database, host, username, password, port); err != nil {
+		return err
 	}
 
 	dbs.databaseID = databaseID

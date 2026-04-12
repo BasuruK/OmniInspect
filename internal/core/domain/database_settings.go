@@ -41,20 +41,45 @@ func (p Port) Int() int { return int(p) }
 
 // Entity: Represents database connection settings
 type DatabaseSettings struct {
-	id         string
-	databaseID string
-	database   string
-	host       string
-	port       Port
-	username   string
-	password   string
-	isDefault  bool
-	validated  bool
+	id           string
+	persistedKey string
+	databaseID   string
+	database     string
+	host         string
+	port         Port
+	username     string
+	password     string
+	isDefault    bool
+	validated    bool
 }
 
 // makeSettingsID constructs a stable unique ID from the user-facing database ID.
 func makeSettingsID(databaseID string) string {
 	return settingsIDPrefix + url.PathEscape(databaseID)
+}
+
+// validateSettingsFields checks that all required database settings fields are
+// non-empty and the port falls within the allowed range.
+func validateSettingsFields(databaseID, database, host, username, password string, port Port) error {
+	if databaseID == "" {
+		return ErrEmptyDatabaseID
+	}
+	if database == "" {
+		return ErrEmptyDatabase
+	}
+	if host == "" {
+		return ErrEmptyHost
+	}
+	if port < MinPort || port > MaxPort {
+		return fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
+	}
+	if username == "" {
+		return ErrEmptyUsername
+	}
+	if password == "" {
+		return ErrEmptyPassword
+	}
+	return nil
 }
 
 // NewDatabaseSettings creates new database settings with validation
@@ -65,34 +90,8 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 
-	// Validate database identifier
-	if databaseID == "" {
-		return nil, ErrEmptyDatabaseID
-	}
-
-	// Validate database
-	if database == "" {
-		return nil, ErrEmptyDatabase
-	}
-
-	// Validate host
-	if host == "" {
-		return nil, ErrEmptyHost
-	}
-
-	// Validate port
-	if port < MinPort || port > MaxPort {
-		return nil, fmt.Errorf("%w: must be between %d and %d", ErrInvalidPort, MinPort, MaxPort)
-	}
-
-	// Validate username
-	if username == "" {
-		return nil, ErrEmptyUsername
-	}
-
-	// Validate password
-	if password == "" {
-		return nil, ErrEmptyPassword
+	if err := validateSettingsFields(databaseID, database, host, username, password, port); err != nil {
+		return nil, err
 	}
 
 	return &DatabaseSettings{
@@ -108,6 +107,28 @@ func NewDatabaseSettings(databaseID string, database string, host string, port P
 	}, nil
 }
 
+func (dbs *DatabaseSettings) Update(databaseID string, database string, host string, port Port, username string, password string) error {
+	databaseID = strings.TrimSpace(databaseID)
+	database = strings.TrimSpace(database)
+	host = strings.TrimSpace(host)
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
+	if err := validateSettingsFields(databaseID, database, host, username, password, port); err != nil {
+		return err
+	}
+
+	dbs.databaseID = databaseID
+	dbs.id = makeSettingsID(databaseID)
+	dbs.database = database
+	dbs.host = host
+	dbs.port = port
+	dbs.username = username
+	dbs.password = password
+	dbs.validated = false
+	return nil
+}
+
 // ==========================================
 // Getters (Read-Only Accessors)
 // ==========================================
@@ -121,14 +142,15 @@ func (dbs *DatabaseSettings) ID() string {
 	return trimmed
 }
 
-func (dbs *DatabaseSettings) StorageKey() string { return dbs.id }
-func (dbs *DatabaseSettings) DatabaseID() string { return dbs.databaseID }
-func (dbs *DatabaseSettings) Database() string   { return dbs.database }
-func (dbs *DatabaseSettings) Host() string       { return dbs.host }
-func (dbs *DatabaseSettings) Port() Port         { return dbs.port }
-func (dbs *DatabaseSettings) Username() string   { return dbs.username }
-func (dbs *DatabaseSettings) Password() string   { return dbs.password }
-func (dbs *DatabaseSettings) IsDefault() bool    { return dbs.isDefault }
+func (dbs *DatabaseSettings) StorageKey() string   { return dbs.id }
+func (dbs *DatabaseSettings) PersistedKey() string { return dbs.persistedKey }
+func (dbs *DatabaseSettings) DatabaseID() string   { return dbs.databaseID }
+func (dbs *DatabaseSettings) Database() string     { return dbs.database }
+func (dbs *DatabaseSettings) Host() string         { return dbs.host }
+func (dbs *DatabaseSettings) Port() Port           { return dbs.port }
+func (dbs *DatabaseSettings) Username() string     { return dbs.username }
+func (dbs *DatabaseSettings) Password() string     { return dbs.password }
+func (dbs *DatabaseSettings) IsDefault() bool      { return dbs.isDefault }
 func (dbs *DatabaseSettings) PermissionsValidated() bool {
 	return dbs.validated
 }
@@ -165,6 +187,12 @@ func (dbs *DatabaseSettings) MarkPermissionsValidated() {
 // ClearPermissionsValidated removes the cached permission validation marker.
 func (dbs *DatabaseSettings) ClearPermissionsValidated() {
 	dbs.validated = false
+}
+
+// SetPersistedKey sets the actual BoltDB storage key for this record.
+// An empty key indicates the record has not yet been persisted.
+func (dbs *DatabaseSettings) SetPersistedKey(key string) {
+	dbs.persistedKey = key
 }
 
 // ==========================================

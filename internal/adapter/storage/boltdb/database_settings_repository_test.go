@@ -401,6 +401,322 @@ func TestMigrateLegacyDatabaseSettings_IsIdempotent(t *testing.T) {
 	}
 }
 
+func TestDatabaseSettingsRepository_Delete(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("test-db", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), "test-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), settings.ID())
+	if err == nil {
+		t.Fatalf("expected error when fetching deleted settings, got: %v", got)
+	}
+}
+
+func TestDatabaseSettingsRepository_Delete_DefaultKeyCleanup(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("default-db", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := repo.SwitchDefault(context.Background(), nil, *settings); err != nil {
+		t.Fatalf("SwitchDefault: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), "default-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if got := readBucketKey(t, adapter, DefaultDatabaseConfigKey); got != nil {
+		t.Fatalf("expected %q to be cleared, got %q", DefaultDatabaseConfigKey, string(got))
+	}
+
+	if err := repo.Delete(context.Background(), "default-db"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
+// ==========================================
+// Edit / Update Tests
+// ==========================================
+
+// TestDatabaseSettingsRepository_Edit_SameID_UpdatesFieldsNoDuplication verifies that
+// editing a record without changing its database ID updates the stored fields in place
+// without creating a duplicate bolt entry.
+func TestDatabaseSettingsRepository_Edit_SameID_UpdatesFieldsNoDuplication(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("MY-DB", "FREEPDB1", "localhost", port, "system", "old-secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Simulate the edit flow: load from bolt, mutate, save back.
+	original, err := repo.GetByID(context.Background(), settings.StorageKey())
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	originalStorageKey := original.StorageKey()
+
+	newPort, _ := domain.NewPort(1522)
+	if err := original.Update("MY-DB", "FREEPDB1", "newhost", newPort, "system", "new-secret"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Storage key must not change when ID is unchanged.
+	if original.StorageKey() != originalStorageKey {
+		t.Fatalf("StorageKey changed unexpectedly: got %q, want %q", original.StorageKey(), originalStorageKey)
+	}
+
+	if err := repo.Save(context.Background(), *original); err != nil {
+		t.Fatalf("Save after edit: %v", err)
+	}
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 entry after in-place edit, got %d", len(all))
+	}
+	if all[0].Host() != "newhost" {
+		t.Errorf("Host() = %q, want %q", all[0].Host(), "newhost")
+	}
+}
+
+// TestDatabaseSettingsRepository_Edit_RenamedID_RemovesOldKey verifies that renaming
+// a database ID during an edit deletes the stale bolt key and creates only one new entry.
+func TestDatabaseSettingsRepository_Edit_RenamedID_RemovesOldKey(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("OLD-NAME", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	originalStorageKey := settings.StorageKey()
+
+	// Simulate the edit flow used by saveAddFormCmd.
+	existing, err := repo.GetByID(context.Background(), originalStorageKey)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if err := existing.Update("NEW-NAME", "FREEPDB1", "localhost", port, "system", "secret"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Storage key must differ after the ID was renamed.
+	if existing.StorageKey() == originalStorageKey {
+		t.Fatal("expected StorageKey to change after ID rename, but it did not")
+	}
+
+	// Delete old entry then save new one — same as saveAddFormCmd does.
+	if err := repo.Replace(context.Background(), originalStorageKey, *existing); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+
+	// Old key must be gone.
+	if raw := readBucketKey(t, adapter, originalStorageKey); raw != nil {
+		t.Errorf("expected old bolt key %q to be removed after rename", originalStorageKey)
+	}
+
+	// Exactly one entry must exist.
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 entry after rename, got %d (duplication bug!)", len(all))
+	}
+	if all[0].DatabaseID() != "NEW-NAME" {
+		t.Errorf("DatabaseID() = %q, want %q", all[0].DatabaseID(), "NEW-NAME")
+	}
+}
+
+// TestDatabaseSettingsRepository_Replace_SameKey verifies that Replace with an unchanged
+// storage key behaves like Save (no delete path exercised, record is updated in place).
+func TestDatabaseSettingsRepository_Replace_SameKey(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, _ := domain.NewPort(1521)
+	settings, err := domain.NewDatabaseSettings("SAME-KEY", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	newPort, _ := domain.NewPort(1522)
+	if err := settings.Update("SAME-KEY", "FREEPDB1", "newhost", newPort, "system", "secret2"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if err := repo.Replace(context.Background(), settings.StorageKey(), *settings); err != nil {
+		t.Fatalf("Replace (same key): %v", err)
+	}
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(all))
+	}
+	if all[0].Host() != "newhost" {
+		t.Errorf("Host() = %q, want %q", all[0].Host(), "newhost")
+	}
+}
+
+// TestDatabaseSettingsRepository_Replace_RenamedKey verifies that Replace with a new
+// storage key removes the old bolt entry and writes the new one atomically — no orphan.
+func TestDatabaseSettingsRepository_Replace_RenamedKey(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, _ := domain.NewPort(1521)
+	settings, err := domain.NewDatabaseSettings("OLD-KEY", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	oldStorageKey := settings.StorageKey()
+
+	if err := settings.Update("NEW-KEY", "FREEPDB1", "localhost", port, "system", "secret"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	if err := repo.Replace(context.Background(), oldStorageKey, *settings); err != nil {
+		t.Fatalf("Replace (renamed key): %v", err)
+	}
+
+	if raw := readBucketKey(t, adapter, oldStorageKey); raw != nil {
+		t.Errorf("old bolt key %q must be absent after Replace", oldStorageKey)
+	}
+
+	all, err := repo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected exactly 1 entry after Replace, got %d", len(all))
+	}
+	if all[0].DatabaseID() != "NEW-KEY" {
+		t.Errorf("DatabaseID() = %q, want %q", all[0].DatabaseID(), "NEW-KEY")
+	}
+}
+
+// TestDatabaseSettingsRepository_Edit_PreservesPassword verifies that loading a record,
+// applying Update with its current password, and saving round-trips the password correctly.
+func TestDatabaseSettingsRepository_Edit_PreservesPassword(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+
+	settings, err := domain.NewDatabaseSettings("PWD-TEST", "FREEPDB1", "localhost", port, "admin", "correct-horse-battery")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := repo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Load the record (simulates pre-populating the edit form).
+	loaded, err := repo.GetByID(context.Background(), settings.StorageKey())
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if loaded.Password() != "correct-horse-battery" {
+		t.Fatalf("Password after load = %q, want %q", loaded.Password(), "correct-horse-battery")
+	}
+
+	// Edit only the host, keeping the same password.
+	if err := loaded.Update("PWD-TEST", "FREEPDB1", "newhost", port, "admin", loaded.Password()); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if err := repo.Save(context.Background(), *loaded); err != nil {
+		t.Fatalf("Save after edit: %v", err)
+	}
+
+	result, err := repo.GetByID(context.Background(), loaded.StorageKey())
+	if err != nil {
+		t.Fatalf("GetByID after edit: %v", err)
+	}
+	if result.Password() != "correct-horse-battery" {
+		t.Errorf("Password after round-trip = %q, want %q", result.Password(), "correct-horse-battery")
+	}
+	if result.Host() != "newhost" {
+		t.Errorf("Host() = %q, want %q", result.Host(), "newhost")
+	}
+}
+
 // newTestBoltAdapter creates an isolated BoltDB adapter with the database
 // settings bucket initialized for repository tests.
 func newTestBoltAdapter(t *testing.T) *BoltAdapter {

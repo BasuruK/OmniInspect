@@ -130,12 +130,17 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
 		}
 
-		data := b.Get([]byte(databaseSettingsStorageKey(id)))
+		resolvedKey := databaseSettingsStorageKey(id)
+		data := b.Get([]byte(resolvedKey))
 		if data == nil {
 			return fmt.Errorf("database settings not found for id: %s", id)
 		}
 
-		return json.Unmarshal(data, &settings)
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return err
+		}
+		settings.SetPersistedKey(resolvedKey)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -209,6 +214,7 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 				log.Printf("warning: failed to unmarshal database settings for key %q: %v", key, err)
 				return nil
 			}
+			settings.SetPersistedKey(key)
 			results = append(results, settings)
 			return nil
 		})
@@ -244,6 +250,57 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 		if defaultKey != nil && string(defaultKey) == storageKey {
 			if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
 				return fmt.Errorf("failed to clear default database settings key: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// Replace atomically removes the record at oldKey and writes newRecord in a
+// single BoltDB transaction. When oldKey and newRecord.StorageKey() are the
+// same the delete is skipped and only the save is performed.
+func (dsr *DatabaseSettingsRepository) Replace(ctx context.Context, oldKey string, newRecord domain.DatabaseSettings) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return ErrAdapterNotInitialized
+	}
+
+	normalizedOld := databaseSettingsStorageKey(oldKey)
+	newKey := newRecord.StorageKey()
+
+	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		// Remove the old entry only when the key actually changed.
+		if normalizedOld != newKey {
+			if err := b.Delete([]byte(normalizedOld)); err != nil {
+				return fmt.Errorf("replace: delete old key %q: %w", normalizedOld, err)
+			}
+			// Clear the default pointer if it was pointing at the old key.
+			defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
+			if defaultKey != nil && string(defaultKey) == normalizedOld {
+				if err := b.Delete([]byte(DefaultDatabaseConfigKey)); err != nil {
+					return fmt.Errorf("replace: clear default pointer: %w", err)
+				}
+			}
+		}
+
+		jsonData, err := json.Marshal(&newRecord)
+		if err != nil {
+			return fmt.Errorf("replace: marshal new record: %w", err)
+		}
+		if err := b.Put([]byte(newKey), jsonData); err != nil {
+			return fmt.Errorf("replace: save new record %q: %w", newKey, err)
+		}
+		// Update the default pointer if the new record is marked as default.
+		if newRecord.IsDefault() {
+			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
+				return fmt.Errorf("replace: update default pointer: %w", err)
 			}
 		}
 		return nil

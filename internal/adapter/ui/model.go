@@ -378,6 +378,8 @@ func (m *Model) View() tea.View {
 				content = renderCenteredOverlay(content, m.viewDatabaseSettings(), m.width, m.height)
 				if m.dbSettings.showAddForm {
 					content = renderCenteredOverlay(content, m.dbSettings.addForm.Modal(), m.width, m.height)
+				} else if m.dbSettings.showDeleteConfirm {
+					content = renderCenteredOverlay(content, m.viewDeleteConfirmModal(), m.width, m.height)
 				}
 			}
 		}

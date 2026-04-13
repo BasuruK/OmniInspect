@@ -136,6 +136,14 @@ type Frame struct {
 	BgColors map[string]string // Maps "x,y" -> color key
 }
 
+// nativeWidth and nativeHeight are the character dimensions of every frame
+// in the embedded frame data. Cropping below these values is supported;
+// requesting larger values just uses the native size.
+const (
+	nativeWidth  = 100
+	nativeHeight = 34
+)
+
 // Model is the Bubbletea model for the animation
 type Model struct {
 	frames            []Frame
@@ -157,8 +165,8 @@ func New(hasDarkBackground bool) Model {
 		frameIndex:        0,
 		isPlaying:         true,
 		loop:              false,
-		width:             120,
-		height:            30,
+		width:             nativeWidth,
+		height:            nativeHeight,
 		hasDarkBackground: hasDarkBackground,
 	}
 }
@@ -166,6 +174,27 @@ func New(hasDarkBackground bool) Model {
 // NewWithDefaults creates a new animation model with dark background (default)
 func NewWithDefaults() Model {
 	return New(true)
+}
+
+// NewWithDimensions creates a model that crops the animation to the given
+// character dimensions. Values of 0 or larger than the native size fall back
+// to the native size. The crop is centred vertically and left-aligned horizontally.
+func NewWithDimensions(width, height int, hasDarkBackground bool) Model {
+	if width <= 0 || width > nativeWidth {
+		width = nativeWidth
+	}
+	if height <= 0 || height > nativeHeight {
+		height = nativeHeight
+	}
+	return Model{
+		frames:            frames,
+		frameIndex:        0,
+		isPlaying:         true,
+		loop:              false,
+		width:             width,
+		height:            height,
+		hasDarkBackground: hasDarkBackground,
+	}
 }
 
 // Init initializes the model
@@ -185,7 +214,7 @@ func (m Model) tick() tea.Cmd {
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -216,19 +245,37 @@ func (m Model) getColor(colorKey string) string {
 	return COLORS_LIGHT[colorKey]
 }
 
-// View renders the animation
+// View renders the animation, centre-cropping to m.height rows and
+// left-clipping to m.width columns when smaller than the native frame size.
 func (m Model) View() tea.View {
 	if len(m.frames) == 0 {
 		return tea.NewView("")
 	}
 	frame := m.frames[m.frameIndex]
-	var sb strings.Builder
 
-	for y, row := range frame.Content {
-		// Convert to runes to get character indices (not byte offsets)
-		chars := []rune(row)
-		for x, ch := range chars {
-			key := fmt.Sprintf("%d,%d", x, y)
+	// Determine effective render dimensions.
+	renderHeight := m.height
+	if renderHeight <= 0 || renderHeight > len(frame.Content) {
+		renderHeight = len(frame.Content)
+	}
+	renderWidth := m.width
+	if renderWidth <= 0 || renderWidth > nativeWidth {
+		renderWidth = nativeWidth
+	}
+
+	// Centre-crop vertically: skip an equal number of rows from top and bottom.
+	rowOffset := (len(frame.Content) - renderHeight) / 2
+
+	var sb strings.Builder
+	for yi := 0; yi < renderHeight; yi++ {
+		y := yi + rowOffset
+		chars := []rune(frame.Content[y])
+		limit := renderWidth
+		if limit > len(chars) {
+			limit = len(chars)
+		}
+		for xi := 0; xi < limit; xi++ {
+			key := fmt.Sprintf("%d,%d", xi, y)
 			style := lipgloss.NewStyle()
 			if fgKey, ok := frame.FgColors[key]; ok {
 				style = style.Foreground(lipgloss.Color(m.getColor(fgKey)))
@@ -236,13 +283,29 @@ func (m Model) View() tea.View {
 			if bgKey, ok := frame.BgColors[key]; ok {
 				style = style.Background(lipgloss.Color(m.getColor(bgKey)))
 			}
-			sb.WriteString(style.Render(string(ch)))
+			sb.WriteString(style.Render(string(chars[xi])))
 		}
-		if y < len(frame.Content)-1 {
+		if yi < renderHeight-1 {
 			sb.WriteString("\n")
 		}
 	}
 	return tea.NewView(sb.String())
+}
+
+// RenderWidth returns the number of columns this model will output.
+func (m Model) RenderWidth() int {
+	if m.width <= 0 || m.width > nativeWidth {
+		return nativeWidth
+	}
+	return m.width
+}
+
+// RenderHeight returns the number of rows this model will output.
+func (m Model) RenderHeight() int {
+	if m.height <= 0 || m.height > nativeHeight {
+		return nativeHeight
+	}
+	return m.height
 }
 
 // Play starts or resumes the animation

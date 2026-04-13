@@ -46,6 +46,9 @@ func (m *Model) handleWelcomeGlobal(msg tea.Msg) (*Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.welcome.loadingStarted {
+			m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
+		}
 	}
 	return m, nil
 }
@@ -91,6 +94,7 @@ func (m *Model) handleDBReady(msg dbReadyMsg) (*Model, tea.Cmd) {
 			progress.WithoutPercentage(),
 			progress.WithFillCharacters('━', '─'),
 		)
+		m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
 		m.loading.current = "Connecting to database..."
 		return m, connectDBCmd(m, false)
 	}
@@ -157,23 +161,23 @@ func (m *Model) checkDBConfig() (*domain.DatabaseSettings, error) {
 	return settings, nil
 }
 
-// animFrameWidth is the fixed character width of every animation frame.
-const animFrameWidth = 100
-
-// progressBarWidth is the render width of the progress bar below the animation.
+// progressBarWidth is the maximum character width of the progress bar.
 const progressBarWidth = 80
+
+// computeProgressBarWidth clamps the bar width to the terminal width with
+// padding, capped at progressBarWidth.
+func computeProgressBarWidth(termWidth int) int {
+	if termWidth > 0 && termWidth-4 < progressBarWidth {
+		return max(20, termWidth-4)
+	}
+	return progressBarWidth
+}
 
 func (m *Model) viewWelcome() string {
 	content := m.welcome.animModel.View().Content
+	animWidth := m.welcome.animModel.RenderWidth()
 
 	if m.welcome.loadingStarted {
-		// Clamp bar width to terminal width with padding, but cap at progressBarWidth.
-		barWidth := progressBarWidth
-		if m.width > 0 && m.width-4 < barWidth {
-			barWidth = max(20, m.width-4)
-		}
-		m.welcome.progressBar.SetWidth(barWidth)
-
 		var label string
 		if m.welcome.loadingComplete {
 			label = styles.LoadingStepStyle.Render("✓ Ready")
@@ -182,14 +186,14 @@ func (m *Model) viewWelcome() string {
 		}
 
 		bar := lipgloss.NewStyle().
-			Width(animFrameWidth).
+			Width(animWidth).
 			AlignHorizontal(lipgloss.Center).
 			Render(m.welcome.progressBar.View())
 
 		parts := []string{content}
 		if label != "" {
 			parts = append(parts, lipgloss.NewStyle().
-				Width(animFrameWidth).
+				Width(animWidth).
 				AlignHorizontal(lipgloss.Center).
 				Render(label))
 		}
@@ -249,13 +253,15 @@ func (m *Model) handleWelcomeLoadingMsg(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 
-		pbCmd := m.welcome.progressBar.SetPercent(0.25)
 		if m.appConfig != nil && m.appConfig.PermissionsValidated() {
 			m.loading.steps = append(m.loading.steps, "✓ Permissions verified (cached)")
 			m.loading.current = "Deploying tracer package..."
+			// Set to 50% — two of four conceptual steps done (connect + permissions).
+			pbCmd := m.welcome.progressBar.SetPercent(0.50)
 			return m, tea.Batch(pbCmd, deployTracerCmd(m))
 		}
 		m.loading.current = "Checking permissions..."
+		pbCmd := m.welcome.progressBar.SetPercent(0.25)
 		return m, tea.Batch(pbCmd, checkPermissionsCmd(m))
 
 	case permissionsCheckedMsg:

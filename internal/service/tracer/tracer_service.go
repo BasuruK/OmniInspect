@@ -173,7 +173,6 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 	ts.StopConnectionListener()
-	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Create a cancellable context for event listeners
 	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)

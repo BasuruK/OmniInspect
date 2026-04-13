@@ -22,6 +22,9 @@ var (
 // isSwitch indicates whether this connection attempt is part of a database switch.
 func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 	return func() tea.Msg {
+		if m.dbAdapter == nil {
+			return dbConnectedMsg{err: fmt.Errorf("database adapter not initialized"), isSwitch: isSwitch}
+		}
 		err := m.dbAdapter.Connect(m.ctx)
 		return dbConnectedMsg{err: err, isSwitch: isSwitch}
 	}

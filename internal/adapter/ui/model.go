@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -42,11 +44,14 @@ const (
 // ==========================================
 
 type welcomeState struct {
-	frame        int
-	logoRevealed int
-	showVersion  bool
-	showSubtitle bool
-	complete     bool
+	animModel       animations.Model
+	dbReady         bool
+	dbErr           error
+	dbSettings      *domain.DatabaseSettings
+	complete        bool
+	loadingStarted  bool           // loading sequence started in parallel with animation
+	loadingComplete bool           // loading sequence completed successfully
+	progressBar     progress.Model // progress bar shown below the animation
 }
 
 type loadingState struct {
@@ -288,11 +293,13 @@ func (m *Model) initializeServices() error {
 // init
 // ==========================================
 
-// Init starts the welcome screen animation
+// Init starts the welcome screen animation and database initialization
 func (m *Model) Init() tea.Cmd {
-	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
-		return tickMsg{time: t}
-	})
+	m.welcome.animModel = animations.NewWithDefaults()
+	return tea.Batch(
+		m.welcome.animModel.Init(),
+		initDBCmd(m),
+	)
 }
 
 // ==========================================

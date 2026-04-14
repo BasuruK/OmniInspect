@@ -17,8 +17,13 @@ import (
 
 func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyPressMsg, tea.WindowSizeMsg:
-		return m.handleWelcomeGlobal(msg)
+	case welcomeResizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.welcome.loadingStarted {
+			m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
+		}
+		return m, nil
 
 	case dbReadyMsg:
 		return m.handleDBReady(msg)
@@ -37,17 +42,11 @@ func (m *Model) updateWelcome(msg tea.Msg) (*Model, tea.Cmd) {
 
 func (m *Model) handleWelcomeGlobal(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.cancel()
-			return m, tea.Quit
-		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if m.welcome.loadingStarted {
-			m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
+		return m, func() tea.Msg {
+			return welcomeResizeMsg{Width: msg.Width, Height: msg.Height}
 		}
 	}
 	return m, nil
@@ -114,14 +113,20 @@ func (m *Model) handleWelcomeComplete() (*Model, tea.Cmd) {
 	if m.welcome.loadingComplete {
 		m.screen = screenMain
 		m.initViewport()
-		return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
+		return m, tea.Batch(
+			waitForEventCmd(m.eventStreamCtx, m.eventChannel),
+			checkForUpdateCmd(m),
+		)
 	}
 
 	// Loading was started in parallel but is still in progress — hand off to the
 	// loading screen which has all progress state already populated.
 	if m.welcome.loadingStarted {
 		m.screen = screenLoading
-		return m, m.loading.spinner.Tick
+		return m, tea.Batch(
+			m.loading.spinner.Tick,
+			checkForUpdateCmd(m),
+		)
 	}
 
 	settings := m.welcome.dbSettings
@@ -329,7 +334,10 @@ func (m *Model) handleWelcomeLoadingMsg(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.welcome.complete {
 			m.screen = screenMain
 			m.initViewport()
-			return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
+			return m, tea.Batch(
+				waitForEventCmd(m.eventStreamCtx, m.eventChannel),
+				checkForUpdateCmd(m),
+			)
 		}
 
 		// Animation still playing — wait for it to end (handleWelcomeComplete handles transition).

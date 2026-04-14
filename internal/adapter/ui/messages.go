@@ -18,6 +18,11 @@ type dbReadyMsg struct {
 // welcomeCompleteMsg signals the welcome animation is done.
 type welcomeCompleteMsg struct{}
 
+// welcomeResizeMsg carries window size events for the welcome screen.
+type welcomeResizeMsg struct {
+	Width, Height int
+}
+
 // ==========================================
 // Loading Screen messages
 // ==========================================

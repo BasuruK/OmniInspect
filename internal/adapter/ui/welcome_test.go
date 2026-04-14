@@ -27,10 +27,14 @@ func newWelcomeTestModel(t *testing.T) *Model {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
+	t.Cleanup(eventStreamCancel)
+	t.Cleanup(cancel)
+
+	eventChannel := make(chan *domain.QueueMessage, 16)
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerSvc, err := tracer.NewTracerService(mockDB, configRepo, make(chan *domain.QueueMessage, 1))
+	tracerSvc, err := tracer.NewTracerService(mockDB, configRepo, eventChannel)
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}
@@ -48,7 +52,7 @@ func newWelcomeTestModel(t *testing.T) *Model {
 		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, configRepo),
 		tracerService:     tracerSvc,
 		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
-		eventChannel:      make(chan *domain.QueueMessage, 16),
+		eventChannel:      eventChannel,
 		loading: loadingState{
 			spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),
 		},

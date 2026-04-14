@@ -306,13 +306,13 @@ func (m *Model) handleWelcomeLoadingMsg(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.subscriber == nil {
-			m.loading.err = fmt.Errorf("subscriber registration returned nil subscriber")
+			m.loading.err = fmt.Errorf("subscriber registration returned nil subscriber: %w", domain.ErrNilSubscriber)
 			m.welcome.complete = true
 			m.screen = screenLoading
 			return m, nil
 		}
 		if m.tracerService == nil {
-			m.loading.err = fmt.Errorf("tracer service not initialized")
+			m.loading.err = fmt.Errorf("tracer service not initialized: %w", domain.ErrTracerNotInitialized)
 			m.welcome.complete = true
 			m.screen = screenLoading
 			return m, nil

@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
+	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 
 	"context"
@@ -188,7 +189,7 @@ func (m *Model) viewWelcome() string {
 	if m.welcome.loadingStarted {
 		var label string
 		if m.welcome.loadingComplete {
-			label = styles.LoadingStepStyle.Render("✓ Ready")
+			label = styles.VersionStyle.Render(app.Version)
 		} else if m.loading.current != "" {
 			label = styles.LoadingCurrentStyle.Render(m.loading.current)
 		}
@@ -205,7 +206,9 @@ func (m *Model) viewWelcome() string {
 				AlignHorizontal(lipgloss.Center).
 				Render(label))
 		}
-		parts = append(parts, bar)
+		if !m.welcome.loadingComplete {
+			parts = append(parts, bar)
+		}
 		content = lipgloss.JoinVertical(lipgloss.Center, parts...)
 	}
 

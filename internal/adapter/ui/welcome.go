@@ -1,14 +1,14 @@
 package ui
 
 import (
-	"context"
-	"errors"
-	"fmt"
-
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
+
+	"context"
+	"errors"
+	"fmt"
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
@@ -45,6 +45,9 @@ func (m *Model) handleWelcomeGlobal(msg tea.Msg) (*Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.welcome.loadingStarted {
+			m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
+		}
 		return m, func() tea.Msg {
 			return welcomeResizeMsg{Width: msg.Width, Height: msg.Height}
 		}
@@ -250,13 +253,6 @@ func (m *Model) handleWelcomeLoadingMsg(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading.steps = append(m.loading.steps, "✓ Connected to Oracle database")
-
-		if err := m.initializeServices(); err != nil {
-			m.loading.err = fmt.Errorf("service initialization failed: %w", err)
-			m.welcome.complete = true
-			m.screen = screenLoading
-			return m, nil
-		}
 
 		if m.appConfig != nil && m.appConfig.PermissionsValidated() {
 			m.loading.steps = append(m.loading.steps, "✓ Permissions verified (cached)")

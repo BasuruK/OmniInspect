@@ -345,6 +345,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.initViewport()
 		}
 
+		// Forward resize to Welcome screen specifically so it can trigger progress-bar resize
+		if m.screen == screenWelcome {
+			return m.handleWelcomeGlobal(msg)
+		}
+
 		return m, nil
 	}
 

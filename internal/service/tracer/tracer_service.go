@@ -173,7 +173,6 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 	ts.StopConnectionListener()
-	fmt.Println("[Tracer] Starting event listener for subscriber:", subscriber.Name())
 
 	// Create a cancellable context for event listeners
 	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)
@@ -281,12 +280,18 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 
 // handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
 func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.QueueMessage) bool {
-	// Always send to TUI if channel is available
+	// Always send to TUI if channel is available.
+	// Non-blocking: processMu is held by the caller (processBatch), so we must not
+	// block here — a full channel would stall the lock until the UI consumer catches up.
+	// The buffered channel absorbs normal bursts; drops only occur when the consumer
+	// is not yet running (e.g., during the welcome animation) and the buffer is full.
 	if ts.eventChannel != nil {
 		select {
 		case ts.eventChannel <- msg:
 		case <-ctx.Done():
 			return false
+		default:
+			log.Printf("[Tracer] event channel full, dropping message")
 		}
 	} else {
 		fmt.Println(msg.Format())

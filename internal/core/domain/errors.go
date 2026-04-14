@@ -13,6 +13,8 @@ var (
 	ErrSubscriberNotActive   = errors.New("subscriber is not active")
 	ErrInvalidBatchSize      = errors.New("invalid batch size")
 	ErrInvalidWaitTime       = errors.New("invalid wait time")
+	ErrNilSubscriber         = errors.New("nil subscriber")
+	ErrTracerNotInitialized  = errors.New("tracer service not initialized")
 
 	// Queue message errors
 	ErrInvalidMessageID = errors.New("invalid message ID")

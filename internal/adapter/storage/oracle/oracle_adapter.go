@@ -242,7 +242,6 @@ func (oa *OracleAdapter) Connect(ctx context.Context) error {
 		oa.Context = nil
 		return err
 	}
-	fmt.Println("✓ Connected to the database")
 
 	return nil
 }

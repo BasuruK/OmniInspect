@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	ErrDBAdapterNotInitialized         = errors.New("database adapter not initialized")
 	ErrPermissionServiceNotInitialized = errors.New("permission service not initialized")
 	ErrTracerServiceNotInitialized     = errors.New("tracer service not initialized")
 	ErrSubscriberServiceNotInitialized = errors.New("subscriber service not initialized")
@@ -22,6 +23,9 @@ var (
 // isSwitch indicates whether this connection attempt is part of a database switch.
 func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 	return func() tea.Msg {
+		if m.dbAdapter == nil {
+			return dbConnectedMsg{err: fmt.Errorf("connectDBCmd: %w", ErrDBAdapterNotInitialized), isSwitch: isSwitch}
+		}
 		err := m.dbAdapter.Connect(m.ctx)
 		return dbConnectedMsg{err: err, isSwitch: isSwitch}
 	}

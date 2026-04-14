@@ -3,20 +3,25 @@ package ui
 import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/updater"
-	"time"
 )
 
 // ==========================================
 // Welcome screen messages
 // ==========================================
 
-// tickMsg drives the welcome animation at 80ms intervals.
-type tickMsg struct {
-	time time.Time
+// dbReadyMsg signals that database config check is complete.
+type dbReadyMsg struct {
+	settings *domain.DatabaseSettings
+	err      error
 }
 
 // welcomeCompleteMsg signals the welcome animation is done.
 type welcomeCompleteMsg struct{}
+
+// welcomeResizeMsg carries window size events for the welcome screen.
+type welcomeResizeMsg struct {
+	Width, Height int
+}
 
 // ==========================================
 // Loading Screen messages

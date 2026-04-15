@@ -30,8 +30,8 @@ var (
 	PrimaryButtonFocusColor   = lipgloss.Color("#0A8A11")
 	SecondaryButtonFocusColor = lipgloss.Color("#CC1414")
 	ApiCallerColor            = lipgloss.Color("#da5de6")
-	ProgressBarFg             = lipgloss.Color("#FFD580") // light orange (start of gradient)
-	ProgressBarBg             = lipgloss.Color("#CC5500") // dark orange  (end of gradient)
+	ProgressBarStartColor     = lipgloss.Color("#FFD580") // light orange (gradient start)
+	ProgressBarEndColor       = lipgloss.Color("#CC5500") // dark orange  (gradient end)
 )
 
 // ==========================================

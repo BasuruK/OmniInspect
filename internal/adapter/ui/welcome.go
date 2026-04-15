@@ -92,7 +92,7 @@ func (m *Model) handleDBReady(msg dbReadyMsg) (*Model, tea.Cmd) {
 		}
 		m.welcome.loadingStarted = true
 		m.welcome.progressBar = progress.New(
-			progress.WithColors(lipgloss.Color("#FFD580"), lipgloss.Color("#CC5500")),
+			progress.WithColors(styles.ProgressBarFg, styles.ProgressBarBg),
 			progress.WithoutPercentage(),
 			progress.WithFillCharacters('━', '─'),
 		)

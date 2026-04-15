@@ -72,7 +72,12 @@ func main() {
 	// Request terminal resize to minimum working dimensions before TUI starts.
 	// The ANSI sequence CSI 8 ; rows ; cols t (XTerm resize) is honoured by
 	// Windows Terminal, macOS Terminal, and most modern emulators.
-	fmt.Print("\033[8;36;130t")
+	if fi, err := os.Stdout.Stat(); err == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
+		term := os.Getenv("TERM")
+		if (term != "" && term != "dumb") || os.Getenv("WT_SESSION") != "" {
+			fmt.Print("\033[8;36;130t")
+		}
+	}
 
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {

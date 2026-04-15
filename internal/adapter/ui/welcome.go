@@ -4,7 +4,6 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
-	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 
 	"context"
@@ -93,7 +92,7 @@ func (m *Model) handleDBReady(msg dbReadyMsg) (*Model, tea.Cmd) {
 		}
 		m.welcome.loadingStarted = true
 		m.welcome.progressBar = progress.New(
-			progress.WithColors(styles.SecondaryColor, styles.PrimaryColor),
+			progress.WithColors(lipgloss.Color("#FFD580"), lipgloss.Color("#CC5500")),
 			progress.WithoutPercentage(),
 			progress.WithFillCharacters('━', '─'),
 		)
@@ -187,28 +186,25 @@ func (m *Model) viewWelcome() string {
 	animWidth := m.welcome.animModel.RenderWidth()
 
 	if m.welcome.loadingStarted {
-		var label string
-		if m.welcome.loadingComplete {
-			label = styles.VersionStyle.Render(app.Version)
-		} else if m.loading.current != "" {
-			label = styles.LoadingCurrentStyle.Render(m.loading.current)
+		labelContent := ""
+		if !m.welcome.loadingComplete && m.loading.current != "" {
+			labelContent = styles.LoadingCurrentStyle.Render(m.loading.current)
 		}
+
+		// Always render the label block at a fixed height so the bar position never shifts.
+		labelBlock := lipgloss.NewStyle().
+			Width(animWidth).
+			Height(2).
+			AlignHorizontal(lipgloss.Center).
+			AlignVertical(lipgloss.Bottom).
+			Render(labelContent)
 
 		bar := lipgloss.NewStyle().
 			Width(animWidth).
 			AlignHorizontal(lipgloss.Center).
 			Render(m.welcome.progressBar.View())
 
-		parts := []string{content}
-		if label != "" {
-			parts = append(parts, lipgloss.NewStyle().
-				Width(animWidth).
-				AlignHorizontal(lipgloss.Center).
-				Render(label))
-		}
-		if !m.welcome.loadingComplete {
-			parts = append(parts, bar)
-		}
+		parts := []string{content, labelBlock, bar}
 		content = lipgloss.JoinVertical(lipgloss.Center, parts...)
 	}
 

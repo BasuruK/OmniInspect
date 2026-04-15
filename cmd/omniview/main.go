@@ -69,6 +69,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Request terminal resize to minimum working dimensions before TUI starts.
+	// The ANSI sequence CSI 8 ; rows ; cols t (XTerm resize) is honoured by
+	// Windows Terminal, macOS Terminal, and most modern emulators.
+	fmt.Print("\033[8;36;130t")
+
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		tracer.StopWebhookDispatcher()

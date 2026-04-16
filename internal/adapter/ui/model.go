@@ -117,12 +117,13 @@ type Model struct {
 	width  int    // Terminal width
 	height int    // Terminal height
 
-	welcome    welcomeState
-	loading    loadingState
-	main       mainState
-	onboarding onboardingState
-	dbSettings databaseSettingsState
-	update     updateState
+	welcome         welcomeState
+	loading         loadingState
+	main            mainState
+	onboarding      onboardingState
+	dbSettings      databaseSettingsState
+	webhookSettings webhookSettingsState
+	update          updateState
 
 	// Cancellable contexts for all background operations
 	ctx               context.Context
@@ -318,7 +319,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "q":
 			// Only quit from screens that don't need 'q' for navigation
-			if (m.screen == screenMain && !m.dbSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible) {
+			if (m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible) {
 				m.cancel()
 				return m, tea.Quit
 			}
@@ -334,6 +335,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)
+		m.resizeWebhookSettings(msg.Width, msg.Height)
 
 		// Resize AddDatabaseForm if on Onboarding Screen
 		if m.screen == screenOnboarding {
@@ -393,6 +395,8 @@ func (m *Model) View() tea.View {
 				} else if m.dbSettings.showDeleteConfirm {
 					content = renderCenteredOverlay(content, m.viewDeleteConfirmModal(), m.width, m.height)
 				}
+			} else if m.webhookSettings.visible {
+				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)
 			}
 		}
 	case screenOnboarding:

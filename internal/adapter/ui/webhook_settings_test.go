@@ -1,0 +1,186 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+
+	"OmniView/internal/core/domain"
+)
+
+func newTestModelForWebhookSettings(t *testing.T) *Model {
+	t.Helper()
+
+	return &Model{
+		screen:      screenMain,
+		width:       120,
+		height:      36,
+		boltAdapter: newTestBoltAdapter(t),
+		main: mainState{
+			autoScroll: true,
+			ready:      true,
+		},
+	}
+}
+
+func TestUpdateMain_SKeyOpensWebhookSettings(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	config, err := domain.NewWebhookConfig(domain.DefaultWebhookID, "https://example.com/trace", true)
+	if err != nil {
+		t.Fatalf("NewWebhookConfig: %v", err)
+	}
+	if err := m.boltAdapter.SaveWebhookConfig(config); err != nil {
+		t.Fatalf("SaveWebhookConfig: %v", err)
+	}
+
+	updated, cmd := m.updateMain(makeCharPress("s"))
+	if cmd != nil {
+		t.Fatal("expected no follow-up command when opening webhook settings")
+	}
+	if !updated.webhookSettings.visible {
+		t.Fatal("expected webhook settings overlay to be visible")
+	}
+	if updated.webhookSettings.input != config.URL {
+		t.Fatalf("expected webhook input %q, got %q", config.URL, updated.webhookSettings.input)
+	}
+}
+
+func TestSaveWebhookSettingsCmd_PersistsURL(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+	m.webhookSettings.input = "https://example.com/webhook"
+
+	msg := m.saveWebhookSettingsCmd()()
+	saved, ok := msg.(webhookConfigSavedMsg)
+	if !ok {
+		t.Fatalf("expected webhookConfigSavedMsg, got %T", msg)
+	}
+	if saved.err != nil {
+		t.Fatalf("expected save to succeed, got %v", saved.err)
+	}
+
+	updated, cmd := m.updateWebhookSettings(saved)
+	if cmd != nil {
+		t.Fatal("expected no follow-up command after save")
+	}
+	if updated.webhookSettings.visible {
+		t.Fatal("expected webhook settings overlay to close after save")
+	}
+
+	config, err := m.boltAdapter.GetWebhookConfig()
+	if err != nil {
+		t.Fatalf("GetWebhookConfig: %v", err)
+	}
+	if config.URL != "https://example.com/webhook" {
+		t.Fatalf("expected stored webhook URL to match, got %q", config.URL)
+	}
+}
+
+func TestSaveWebhookSettingsCmd_EmptyURLClearsConfig(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	config, err := domain.NewWebhookConfig(domain.DefaultWebhookID, "https://example.com/trace", true)
+	if err != nil {
+		t.Fatalf("NewWebhookConfig: %v", err)
+	}
+	if err := m.boltAdapter.SaveWebhookConfig(config); err != nil {
+		t.Fatalf("SaveWebhookConfig: %v", err)
+	}
+
+	m.initWebhookSettings(config)
+	m.webhookSettings.input = ""
+
+	msg := m.saveWebhookSettingsCmd()()
+	saved, ok := msg.(webhookConfigSavedMsg)
+	if !ok {
+		t.Fatalf("expected webhookConfigSavedMsg, got %T", msg)
+	}
+	if !saved.deleted {
+		t.Fatal("expected empty webhook input to clear the stored config")
+	}
+	if saved.err != nil {
+		t.Fatalf("expected clear to succeed, got %v", saved.err)
+	}
+
+	updated, cmd := m.updateWebhookSettings(saved)
+	if cmd != nil {
+		t.Fatal("expected no follow-up command after clearing webhook")
+	}
+	if updated.webhookSettings.visible {
+		t.Fatal("expected webhook settings overlay to close after clearing")
+	}
+
+	if _, err := m.boltAdapter.GetWebhookConfig(); err == nil {
+		t.Fatal("expected webhook config to be removed from BoltDB")
+	}
+}
+
+func TestSaveWebhookSettingsCmd_InvalidURLShowsError(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+	m.webhookSettings.input = "localhost-only"
+
+	msg := m.saveWebhookSettingsCmd()()
+	saved, ok := msg.(webhookConfigSavedMsg)
+	if !ok {
+		t.Fatalf("expected webhookConfigSavedMsg, got %T", msg)
+	}
+	if saved.err == nil {
+		t.Fatal("expected invalid webhook URL to return an error")
+	}
+
+	updated, cmd := m.updateWebhookSettings(saved)
+	if cmd != nil {
+		t.Fatal("expected no follow-up command after invalid webhook save")
+	}
+	if !updated.webhookSettings.visible {
+		t.Fatal("expected webhook settings overlay to remain visible after invalid input")
+	}
+	if !updated.webhookSettings.showDialog {
+		t.Fatal("expected invalid webhook input to show an error dialog")
+	}
+}
+
+func TestModelUpdate_MainWebhookOverlayQClosesOverlay(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+
+	updatedModel, cmd := m.Update(makeCharPress("q"))
+	if cmd != nil {
+		t.Fatal("expected q to be handled by webhook settings overlay without quitting")
+	}
+
+	updated, ok := updatedModel.(*Model)
+	if !ok {
+		t.Fatalf("expected Update to return *Model, got %T", updatedModel)
+	}
+	if updated.webhookSettings.visible {
+		t.Fatal("expected q to close the webhook settings overlay")
+	}
+}
+
+func TestMainFooterText_IncludesSettingsShortcut(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	if got := m.mainFooterText(); got == "" || !containsAll(got, "D Database Settings", "S Settings") {
+		t.Fatalf("expected footer text to include database and settings shortcuts, got %q", got)
+	}
+}
+
+func containsAll(text string, fragments ...string) bool {
+	for _, fragment := range fragments {
+		if !strings.Contains(text, fragment) {
+			return false
+		}
+	}
+	return true
+}

@@ -104,6 +104,11 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			return m.updateDatabaseSettings(msg)
 		}
 		return m, nil
+	case webhookConfigSavedMsg:
+		if m.webhookSettings.visible {
+			return m.updateWebhookSettings(msg)
+		}
+		return m, nil
 
 	// New log message from event listener
 	case queueMessageMsg:
@@ -140,11 +145,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.dbSettings.visible {
 			return m.updateDatabaseSettings(msg)
 		}
+		if m.webhookSettings.visible {
+			return m.updateWebhookSettings(msg)
+		}
 
 	// Keyboard input
 	case tea.KeyPressMsg:
 		if m.dbSettings.visible {
 			return m.updateDatabaseSettings(msg)
+		}
+		if m.webhookSettings.visible {
+			return m.updateWebhookSettings(msg)
 		}
 		switch msg.String() {
 		case "a":
@@ -173,6 +184,17 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				databases = []domain.DatabaseSettings{}
 			}
 			m.initDatabaseSettings(databases, activeID)
+			return m, nil
+		case "s":
+			// Open settings
+			webhookConfig, err := m.boltAdapter.GetWebhookConfig()
+			if err != nil {
+				if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+					log.Printf("[UI] Failed to load webhook config: %v", err)
+				}
+				webhookConfig = nil
+			}
+			m.initWebhookSettings(webhookConfig)
 			return m, nil
 		}
 	}
@@ -711,7 +733,7 @@ func (m *Model) mainStatusText() string {
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
-	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  C Clear  •  D Database Settings  •  Q Quit"
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  C Clear  •  D Database Settings  •  S Settings  •  Q Quit"
 }
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.

@@ -86,6 +86,12 @@ func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case "q", "esc":
+			// Allow 'q' to be typed in the URL field
+			if msg.String() == "q" && m.webhookSettings.cursor == webhookFieldURL {
+				m.webhookSettings.input += "q"
+				m.clearWebhookSettingsDialog()
+				return m, nil
+			}
 			if m.webhookSettings.showDialog {
 				m.clearWebhookSettingsDialog()
 				return m, nil

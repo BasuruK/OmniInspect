@@ -35,6 +35,7 @@ type webhookSettingsState struct {
 // Helpers
 // ==========================================
 
+// initWebhookSettings initializes the webhook settings sub-state with the given config.
 func (m *Model) initWebhookSettings(config *domain.WebhookConfig) {
 	input := ""
 	if config != nil {
@@ -48,15 +49,18 @@ func (m *Model) initWebhookSettings(config *domain.WebhookConfig) {
 	}
 }
 
+// resizeWebhookSettings resizes the webhook settings panel to the given dimensions.
 func (m *Model) resizeWebhookSettings(width, height int) {
 	_ = width
 	_ = height
 }
 
+// closeWebhookSettings closes the webhook settings overlay and resets the sub-state.
 func (m *Model) closeWebhookSettings() {
 	m.webhookSettings = webhookSettingsState{}
 }
 
+// clearWebhookSettingsDialog dismisses the error/info dialog in the webhook settings panel.
 func (m *Model) clearWebhookSettingsDialog() {
 	m.webhookSettings.showDialog = false
 	m.webhookSettings.dialogMsg = ""
@@ -66,6 +70,7 @@ func (m *Model) clearWebhookSettingsDialog() {
 // Update
 // ==========================================
 
+// updateWebhookSettings handles keyboard and paste input for the webhook settings panel.
 func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.PasteMsg:
@@ -170,6 +175,7 @@ func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 // View
 // ==========================================
 
+// viewWebhookSettings renders the webhook settings panel as a string.
 func (m *Model) viewWebhookSettings() string {
 	panelWidth := settingsPanelWidth(m.width)
 	innerWidth := max(panelWidth-4, 24)
@@ -243,19 +249,27 @@ func (m *Model) viewWebhookSettings() string {
 // Async Commands
 // ==========================================
 
+// saveWebhookSettingsCmd returns an async command that saves or deletes the webhook configuration.
+// It derives the target ID from the existing config when present, falling back to the default ID.
 func (m *Model) saveWebhookSettingsCmd() tea.Cmd {
 	input := strings.TrimSpace(m.webhookSettings.input)
 	boltAdapter := m.boltAdapter
 
+	// Derive target ID from existing config, falling back to default
+	targetID := domain.DefaultWebhookID
+	if m.webhookSettings.config != nil && m.webhookSettings.config.ID != "" {
+		targetID = m.webhookSettings.config.ID
+	}
+
 	return func() tea.Msg {
 		if input == "" {
-			if err := boltAdapter.DeleteWebhookConfig(domain.DefaultWebhookID); err != nil {
+			if err := boltAdapter.DeleteWebhookConfig(targetID); err != nil {
 				return webhookConfigSavedMsg{deleted: true, err: fmt.Errorf("clear webhook configuration: %w", err)}
 			}
 			return webhookConfigSavedMsg{deleted: true}
 		}
 
-		config, err := domain.NewWebhookConfig(domain.DefaultWebhookID, input, true)
+		config, err := domain.NewWebhookConfig(targetID, input, true)
 		if err != nil {
 			return webhookConfigSavedMsg{err: fmt.Errorf("invalid webhook URL: %w", err)}
 		}

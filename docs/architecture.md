@@ -38,10 +38,10 @@ OmniInspect is a Go terminal application that listens to Oracle AQ messages, ren
 
 ### Adapters
 
-- `internal/adapter/storage/oracle` implements database and AQ access using Go plus C bindings.
-- `internal/adapter/storage/boltdb` implements local persistence for config and metadata.
-- `internal/adapter/ui` implements the Bubble Tea screens, messages, and layout helpers.
-- `internal/adapter/config` handles settings loading concerns.
+- Storage adapter: `internal/adapter/storage/oracle` provides Oracle database and AQ access using Go plus C bindings.
+- Local persistence: `internal/adapter/storage/boltdb` stores BoltDB-backed config, metadata, and migration state.
+- UI adapter: `internal/adapter/ui` contains Bubble Tea screens, typed messages, and layout helpers.
+- Config loader: `internal/adapter/config` handles settings loading and related configuration concerns.
 
 ## Runtime Flow
 
@@ -114,9 +114,10 @@ Key traits:
 ## Source Tree Highlights
 
 - `cmd/omniview` contains the executable entry point.
-- `internal/adapter/ui` contains the highest density of UX logic.
-- `internal/adapter/storage/oracle` contains the Oracle integration hotspot and CGO coupling.
-- `internal/adapter/storage/boltdb` contains persistence and migration concerns.
+- UI layer: `internal/adapter/ui` contains the highest density of Bubble Tea UX logic.
+- Storage adapter: `internal/adapter/storage/oracle` is the Oracle integration hotspot and CGO coupling point.
+- Local persistence: `internal/adapter/storage/boltdb` contains BoltDB persistence and migration concerns.
+- Config loader: `internal/adapter/config` centralizes settings loading for runtime startup and persisted configuration flows.
 - `internal/service/tracer` is the core runtime coordinator for live message handling.
 - `assets/sql` and `assets/ins` are effectively part of the deployed runtime contract.
 

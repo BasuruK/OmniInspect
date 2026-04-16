@@ -2,12 +2,12 @@
   "workflow_version": "1.2.0",
   "timestamps": {
     "started": "2026-04-15T18:17:44Z",
-    "last_updated": "2026-04-15T18:17:44Z"
+    "last_updated": "2026-04-16T05:55:46.5553223Z"
   },
   "mode": "initial_scan",
   "scan_level": "exhaustive",
-  "project_root": "/Users/basuruk/Dev/OmniInspect",
-  "project_knowledge": "/Users/basuruk/Dev/OmniInspect/docs",
+  "project_root": "./",
+  "project_knowledge": "./docs",
   "repository_type": "monolith",
   "project_types": [
     {

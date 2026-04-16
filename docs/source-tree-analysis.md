@@ -4,9 +4,11 @@
 
 ## Overview
 
-OmniInspect is organized as a single Go application with a clear split between executable bootstrapping, internal layers, runtime assets, and documentation. The most important structural pattern is the separation of domain and ports from adapters and services, plus a dedicated UI adapter for the Bubble Tea terminal interface.
+OmniInspect is organized as a single Go application with a clear split between executable bootstrapping, internal layers, committed assets, and documentation. The most important structural pattern is the separation of domain and ports from adapters and services, plus a dedicated UI adapter for the Bubble Tea terminal interface.
 
 ## Complete Directory Structure
+
+The tree below lists source-controlled repository contents only. Local runtime state and other generated artifacts are described separately.
 
 ```text
 OmniInspect/
@@ -39,9 +41,13 @@ OmniInspect/
 ├── README.md                    # Product, setup, and architecture overview
 ├── Makefile                     # Canonical build and run workflow
 ├── go.mod                       # Go module and dependency manifest
-├── settings.json                # Local/editor support settings
-└── omniview.bolt               # Local runtime state database
+└── settings.json                # Local/editor support settings
 ```
+
+## Runtime Artifacts
+
+- `omniview.bolt` is a local, runtime-generated BoltDB state file used to persist first-run state, connection settings, permissions, subscriber data, and related local application metadata.
+- It is not part of the committed source tree and should not be committed to the repository.
 
 ## Critical Directories
 

@@ -17,13 +17,15 @@ OmniInspect, branded in the UI as OmniView, is a Go-based terminal application f
 
 ## Technology Stack Summary
 
-| Category | Technology | Version / Notes |
+Version note: dependency versions below are intentionally documented at major.minor granularity to reduce drift in committed docs. See `go.mod` for exact patch and toolchain versions.
+
+| Category | Technology | Version / Notes (major.minor) |
 | --- | --- | --- |
-| Application language | Go | 1.24.2 with toolchain 1.24.4 |
-| Terminal UI | Bubble Tea | charm.land/bubbletea/v2 v2.0.1 |
-| Styling | Lip Gloss | charm.land/lipgloss/v2 v2.0.0 |
-| UI components | Bubbles | charm.land/bubbles/v2 v2.0.0 |
-| Local persistence | BoltDB | go.etcd.io/bbolt v1.4.3 |
+| Application language | Go | 1.24 with Go 1.24 toolchain |
+| Terminal UI | Bubble Tea | charm.land/bubbletea/v2 2.0 |
+| Styling | Lip Gloss | charm.land/lipgloss/v2 2.0 |
+| UI components | Bubbles | charm.land/bubbles/v2 2.0 |
+| Local persistence | BoltDB | go.etcd.io/bbolt 1.4 |
 | Database integration | Oracle AQ | via ODPI-C, CGO, and PL/SQL assets |
 | Supporting assets | PL/SQL, C | queue package and dequeue bindings |
 

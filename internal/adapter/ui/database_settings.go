@@ -57,7 +57,9 @@ func buildDatabaseEntries(databases []domain.DatabaseSettings, activeID string) 
 
 // settingsPanelWidth returns a responsive panel width (50–80 cols, ~70% of terminal).
 func settingsPanelWidth(termWidth int) int {
-	return max(min(termWidth-10, 92), 60)
+	contentWidth, _ := screenContentSize(termWidth, 1)
+	preferredWidth := max(min(termWidth-10, 92), 60)
+	return min(preferredWidth, max(contentWidth, 1))
 }
 
 // initDatabaseSettings: initializes the database settings panel with the list of databases and marks it visible.

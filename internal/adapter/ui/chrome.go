@@ -310,5 +310,13 @@ func renderCenteredActionButtons(totalWidth int, primaryLabel string, primaryFoc
 		renderActionButton(secondaryLabel, buttonWidth, secondaryFocused, buttonVariantSecondary),
 	)
 
+	if lipgloss.Width(row) > totalWidth {
+		return lipgloss.JoinVertical(
+			lipgloss.Center,
+			lipgloss.PlaceHorizontal(totalWidth, lipgloss.Center, renderActionButton(primaryLabel, buttonWidth, primaryFocused, buttonVariantPrimary)),
+			lipgloss.PlaceHorizontal(totalWidth, lipgloss.Center, renderActionButton(secondaryLabel, buttonWidth, secondaryFocused, buttonVariantSecondary)),
+		)
+	}
+
 	return lipgloss.PlaceHorizontal(totalWidth, lipgloss.Center, row)
 }

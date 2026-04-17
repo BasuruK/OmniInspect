@@ -29,6 +29,16 @@ type webhookSettingsState struct {
 	input      string
 	dialogMsg  string
 	showDialog bool
+	layout     webhookSettingsLayout
+}
+
+type webhookSettingsLayout struct {
+	panelWidth        int
+	innerWidth        int
+	compact           bool
+	showSubtitle      bool
+	showCurrentStatus bool
+	showHint          bool
 }
 
 // ==========================================
@@ -46,11 +56,27 @@ func (m *Model) initWebhookSettings(config *domain.WebhookConfig) {
 		visible: true,
 		input:   input,
 	}
+
+	m.resizeWebhookSettings(m.width, m.height)
 }
 
 func (m *Model) resizeWebhookSettings(width, height int) {
-	_ = width
-	_ = height
+	if !m.webhookSettings.visible {
+		return
+	}
+
+	_, contentHeight := screenContentSize(width, height)
+	panelWidth := settingsPanelWidth(width)
+	innerWidth := max(panelWidth-4, 1)
+
+	m.webhookSettings.layout = webhookSettingsLayout{
+		panelWidth:        panelWidth,
+		innerWidth:        innerWidth,
+		compact:           contentHeight <= 16,
+		showSubtitle:      contentHeight >= 10,
+		showCurrentStatus: contentHeight >= 14,
+		showHint:          contentHeight >= 12,
+	}
 }
 
 func (m *Model) closeWebhookSettings() {
@@ -171,8 +197,14 @@ func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 // ==========================================
 
 func (m *Model) viewWebhookSettings() string {
-	panelWidth := settingsPanelWidth(m.width)
-	innerWidth := max(panelWidth-4, 24)
+	layout := m.webhookSettings.layout
+	if layout.panelWidth == 0 {
+		m.resizeWebhookSettings(m.width, m.height)
+		layout = m.webhookSettings.layout
+	}
+
+	panelWidth := layout.panelWidth
+	innerWidth := layout.innerWidth
 
 	currentWebhook := styles.EmptyStateStyle.Render("No webhook configured.")
 	if m.webhookSettings.config != nil && strings.TrimSpace(m.webhookSettings.config.URL) != "" {
@@ -192,48 +224,58 @@ func (m *Model) viewWebhookSettings() string {
 		}
 	}
 
-	parts := []string{
-		styles.OnboardingTitleStyle.Render("Settings"),
-		styles.SubtitleStyle.Render("Configure the optional webhook endpoint used for trace delivery."),
-		"",
-		renderEmbeddedField(embeddedFieldOptions{
+	parts := []string{styles.OnboardingTitleStyle.Render("Settings")}
+	appendSpacer := func() {
+		if !layout.compact {
+			parts = append(parts, "")
+		}
+	}
+
+	if layout.showSubtitle {
+		parts = append(parts, styles.SubtitleStyle.Width(innerWidth).Render("Configure the optional webhook endpoint used for trace delivery."))
+	}
+	if layout.showCurrentStatus {
+		appendSpacer()
+		parts = append(parts, renderEmbeddedField(embeddedFieldOptions{
 			Label:       "Current Webhook",
 			Value:       currentWebhook,
 			Width:       innerWidth,
 			BorderColor: "#F0C802",
-		}),
-		"",
-		renderEmbeddedField(embeddedFieldOptions{
-			Label:      "Webhook URL",
-			Value:      editValue,
-			Width:      innerWidth,
-			Focused:    m.webhookSettings.cursor == webhookFieldURL,
-			FooterText: "Leave empty to disable webhook delivery.",
-		}),
-		"",
-		renderCenteredActionButtons(
-			innerWidth,
-			"Save",
-			m.webhookSettings.cursor == webhookBtnSave,
-			"Cancel",
-			m.webhookSettings.cursor == webhookBtnCancel,
-		),
+		}))
 	}
+
+	appendSpacer()
+	parts = append(parts, renderEmbeddedField(embeddedFieldOptions{
+		Label:      "Webhook URL",
+		Value:      editValue,
+		Width:      innerWidth,
+		Focused:    m.webhookSettings.cursor == webhookFieldURL,
+		FooterText: "Leave empty to disable webhook delivery.",
+	}))
+
+	appendSpacer()
+	parts = append(parts, renderCenteredActionButtons(
+		innerWidth,
+		"Save",
+		m.webhookSettings.cursor == webhookBtnSave,
+		"Cancel",
+		m.webhookSettings.cursor == webhookBtnCancel,
+	))
 
 	if m.webhookSettings.showDialog && m.webhookSettings.dialogMsg != "" {
 		parts = append(
 			parts,
-			"",
 			styles.OnboardingErrorStyle.Render("Error: "+m.webhookSettings.dialogMsg),
-			styles.SubtitleStyle.Width(innerWidth).Render("Press Esc to dismiss the message and stay on this screen."),
 		)
+		if layout.showHint {
+			parts = append(parts, styles.SubtitleStyle.Width(innerWidth).Render("Press Esc to dismiss the message and stay on this screen."))
+		}
 	}
 
-	parts = append(
-		parts,
-		"",
-		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Navigate  •  Enter Confirm  •  Ctrl+U Clear  •  Esc Back"),
-	)
+	if layout.showHint {
+		appendSpacer()
+		parts = append(parts, styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Navigate  •  Enter Confirm  •  Ctrl+U Clear  •  Esc Back"))
+	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return renderFramedPanel("Settings", panelWidth, panelTypeInfo, content)

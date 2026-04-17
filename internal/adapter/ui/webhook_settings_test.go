@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"OmniView/internal/core/domain"
+	"charm.land/lipgloss/v2"
 )
 
 func newTestModelForWebhookSettings(t *testing.T) *Model {
@@ -114,8 +116,8 @@ func TestSaveWebhookSettingsCmd_EmptyURLClearsConfig(t *testing.T) {
 		t.Fatal("expected webhook settings overlay to close after clearing")
 	}
 
-	if _, err := m.boltAdapter.GetWebhookConfig(); err == nil {
-		t.Fatal("expected webhook config to be removed from BoltDB")
+	if _, err := m.boltAdapter.GetWebhookConfig(); !errors.Is(err, domain.ErrWebhookConfigNotFound) {
+		t.Fatalf("expected ErrWebhookConfigNotFound after clearing, got %v", err)
 	}
 }
 
@@ -164,6 +166,46 @@ func TestModelUpdate_MainWebhookOverlayQClosesOverlay(t *testing.T) {
 	}
 	if updated.webhookSettings.visible {
 		t.Fatal("expected q to close the webhook settings overlay")
+	}
+}
+
+func TestResizeWebhookSettings_RecomputesCompactLayout(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.width = 48
+	m.height = 12
+	m.initWebhookSettings(nil)
+
+	m.resizeWebhookSettings(m.width, m.height)
+
+	if m.webhookSettings.layout.panelWidth > m.width {
+		t.Fatalf("expected panel width to fit terminal, got %d > %d", m.webhookSettings.layout.panelWidth, m.width)
+	}
+	if want := m.webhookSettings.layout.panelWidth - 4; m.webhookSettings.layout.innerWidth != want {
+		t.Fatalf("expected inner width %d, got %d", want, m.webhookSettings.layout.innerWidth)
+	}
+	if !m.webhookSettings.layout.compact {
+		t.Fatal("expected small terminal height to enable compact webhook layout")
+	}
+	if m.webhookSettings.layout.showCurrentStatus {
+		t.Fatal("expected compact layout to hide the current webhook summary")
+	}
+}
+
+func TestViewWebhookSettings_StaysWithinNarrowWindowWidth(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.width = 48
+	m.height = 14
+	m.initWebhookSettings(nil)
+
+	rendered := m.viewWebhookSettings()
+	for _, line := range strings.Split(rendered, "\n") {
+		if got := lipgloss.Width(line); got > m.width {
+			t.Fatalf("expected webhook settings line width <= %d, got %d\nline: %q", m.width, got, line)
+		}
 	}
 }
 

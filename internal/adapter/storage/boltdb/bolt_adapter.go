@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -360,7 +361,7 @@ func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
 // GetWebhookConfig retrieves the webhook configuration from BoltDB (uses default key)
 func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	if ba.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
+		return nil, fmt.Errorf("GetWebhookConfig: %w", domain.ErrWebhookConfigNotFound)
 	}
 
 	var config *domain.WebhookConfig
@@ -368,7 +369,7 @@ func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(WebhookConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+			return domain.ErrWebhookConfigNotFound
 		}
 
 		// First get the default key (which points to the actual config ID)
@@ -382,12 +383,15 @@ func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 		// Read the config using the resolved key
 		configData := b.Get([]byte(configKey))
 		if configData == nil {
-			return fmt.Errorf("webhook config not found")
+			return domain.ErrWebhookConfigNotFound
 		}
 
 		return json.Unmarshal(configData, &config)
 	})
 	if err != nil {
+		if errors.Is(err, domain.ErrWebhookConfigNotFound) {
+			return nil, fmt.Errorf("GetWebhookConfig: %w", err)
+		}
 		return nil, err
 	}
 

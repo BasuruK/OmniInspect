@@ -3,6 +3,7 @@ package ui
 import (
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -189,10 +190,12 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			// Open settings
 			webhookConfig, err := m.boltAdapter.GetWebhookConfig()
 			if err != nil {
-				if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+				if errors.Is(err, domain.ErrWebhookConfigNotFound) {
+					webhookConfig = nil
+				} else {
 					log.Printf("[UI] Failed to load webhook config: %v", err)
+					webhookConfig = nil
 				}
-				webhookConfig = nil
 			}
 			m.initWebhookSettings(webhookConfig)
 			return m, nil

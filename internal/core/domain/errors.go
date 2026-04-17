@@ -45,6 +45,6 @@ var (
 	ErrNoMatchingReleaseAsset = errors.New("no matching release asset")
 	ErrNoUpdateInfo           = errors.New("no update info provided")
 
-	// Webhook errors
+	// Webhook config errors
 	ErrWebhookConfigNotFound = errors.New("webhook config not found")
 )

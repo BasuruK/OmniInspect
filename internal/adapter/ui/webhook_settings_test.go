@@ -154,6 +154,7 @@ func TestModelUpdate_MainWebhookOverlayQClosesOverlay(t *testing.T) {
 
 	m := newTestModelForWebhookSettings(t)
 	m.initWebhookSettings(nil)
+	m.webhookSettings.cursor = webhookBtnCancel // q should close when not on URL field
 
 	updatedModel, cmd := m.Update(makeCharPress("q"))
 	if cmd != nil {
@@ -165,7 +166,43 @@ func TestModelUpdate_MainWebhookOverlayQClosesOverlay(t *testing.T) {
 		t.Fatalf("expected Update to return *Model, got %T", updatedModel)
 	}
 	if updated.webhookSettings.visible {
-		t.Fatal("expected q to close the webhook settings overlay")
+		t.Fatal("expected q to close the webhook settings overlay when cursor is on Cancel button")
+	}
+}
+
+func TestUpdateWebhookSettings_QLetterInURLField(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+	m.webhookSettings.cursor = webhookFieldURL
+	m.webhookSettings.input = "https://example."
+
+	updated, cmd := m.updateWebhookSettings(makeCharPress("q"))
+	if cmd != nil {
+		t.Fatal("expected no follow-up command for character input")
+	}
+	if updated.webhookSettings.input != "https://example.q" {
+		t.Fatalf("expected q to be appended to input, got %q", updated.webhookSettings.input)
+	}
+	if !updated.webhookSettings.visible {
+		t.Fatal("expected webhook settings overlay to remain visible")
+	}
+}
+
+func TestUpdateWebhookSettings_QKeyOnSaveButtonClosesOverlay(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+	m.webhookSettings.cursor = webhookBtnSave
+
+	updated, cmd := m.updateWebhookSettings(makeCharPress("q"))
+	if cmd != nil {
+		t.Fatal("expected no follow-up command for q key")
+	}
+	if updated.webhookSettings.visible {
+		t.Fatal("expected q to close webhook settings when cursor is on Save button")
 	}
 }
 

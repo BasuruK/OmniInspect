@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"OmniView/internal/core/domain"
 	"OmniView/internal/service/permissions"
@@ -151,6 +152,85 @@ func TestSaveWebhookSettingsCmd_EmptyURLClearsConfig(t *testing.T) {
 
 	if _, err := m.boltAdapter.GetWebhookConfig(); !errors.Is(err, domain.ErrWebhookConfigNotFound) {
 		t.Fatalf("expected ErrWebhookConfigNotFound after clearing, got %v", err)
+	}
+}
+
+func TestSaveWebhookSettingsCmd_EmptyURLWithoutExistingIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	if _, err := m.boltAdapter.GetWebhookConfig(); !errors.Is(err, domain.ErrWebhookConfigNotFound) {
+		t.Fatalf("expected no webhook before save, got %v", err)
+	}
+
+	m.initWebhookSettings(nil)
+	m.webhookSettings.input = ""
+
+	msg := m.saveWebhookSettingsCmd()()
+	saved, ok := msg.(webhookConfigSavedMsg)
+	if !ok {
+		t.Fatalf("expected webhookConfigSavedMsg, got %T", msg)
+	}
+	if !saved.deleted {
+		t.Fatal("expected empty save with no prior config to report deleted (close overlay)")
+	}
+	if saved.err != nil {
+		t.Fatalf("expected idempotent clear to succeed, got %v", saved.err)
+	}
+
+	if _, err := m.boltAdapter.GetWebhookConfig(); !errors.Is(err, domain.ErrWebhookConfigNotFound) {
+		t.Fatalf("expected ErrWebhookConfigNotFound after idempotent clear, got %v", err)
+	}
+}
+
+func TestSaveWebhookSettingsCmd_UpdatePreservesCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForWebhookSettings(t)
+	m.initWebhookSettings(nil)
+	m.webhookSettings.input = "https://example.com/first"
+
+	first := m.saveWebhookSettingsCmd()()
+	savedFirst, ok := first.(webhookConfigSavedMsg)
+	if !ok || savedFirst.err != nil || savedFirst.config == nil {
+		t.Fatalf("expected first save to succeed, got %#v", savedFirst)
+	}
+
+	stored, err := m.boltAdapter.GetWebhookConfig()
+	if err != nil {
+		t.Fatalf("GetWebhookConfig: %v", err)
+	}
+	createdAt := stored.CreatedAt
+	if createdAt.IsZero() {
+		t.Fatal("expected non-zero CreatedAt after first save")
+	}
+
+	time.Sleep(2 * time.Millisecond)
+
+	m.initWebhookSettings(stored)
+	m.webhookSettings.input = "https://example.com/second"
+
+	second := m.saveWebhookSettingsCmd()()
+	savedSecond, ok := second.(webhookConfigSavedMsg)
+	if !ok || savedSecond.err != nil || savedSecond.config == nil {
+		t.Fatalf("expected second save to succeed, got %#v", savedSecond)
+	}
+	if !savedSecond.config.CreatedAt.Equal(createdAt) {
+		t.Fatalf("expected CreatedAt preserved on URL update, got %v want %v", savedSecond.config.CreatedAt, createdAt)
+	}
+	if !savedSecond.config.UpdatedAt.After(createdAt) {
+		t.Fatalf("expected UpdatedAt after CreatedAt, got UpdatedAt=%v CreatedAt=%v", savedSecond.config.UpdatedAt, createdAt)
+	}
+
+	reloaded, err := m.boltAdapter.GetWebhookConfig()
+	if err != nil {
+		t.Fatalf("GetWebhookConfig: %v", err)
+	}
+	if reloaded.URL != "https://example.com/second" {
+		t.Fatalf("expected updated URL, got %q", reloaded.URL)
+	}
+	if !reloaded.CreatedAt.Equal(createdAt) {
+		t.Fatalf("expected persisted CreatedAt unchanged, got %v want %v", reloaded.CreatedAt, createdAt)
 	}
 }
 

@@ -302,15 +302,19 @@ func (m *Model) viewWebhookSettings() string {
 func (m *Model) saveWebhookSettingsCmd() tea.Cmd {
 	input := strings.TrimSpace(m.webhookSettings.input)
 	boltAdapter := m.boltAdapter
+	existing := m.webhookSettings.config
 
 	// Derive target ID from existing config, falling back to default
 	targetID := domain.DefaultWebhookID
-	if m.webhookSettings.config != nil && m.webhookSettings.config.ID != "" {
-		targetID = m.webhookSettings.config.ID
+	if existing != nil && existing.ID != "" {
+		targetID = existing.ID
 	}
 
 	return func() tea.Msg {
 		if input == "" {
+			if existing == nil {
+				return webhookConfigSavedMsg{deleted: true}
+			}
 			if err := boltAdapter.DeleteWebhookConfig(targetID); err != nil {
 				return webhookConfigSavedMsg{deleted: true, err: fmt.Errorf("clear webhook configuration: %w", err)}
 			}
@@ -320,6 +324,14 @@ func (m *Model) saveWebhookSettingsCmd() tea.Cmd {
 		config, err := domain.NewWebhookConfig(targetID, input, true)
 		if err != nil {
 			return webhookConfigSavedMsg{err: fmt.Errorf("invalid webhook URL: %w", err)}
+		}
+		if existing != nil {
+			if existing.ID != "" {
+				config.ID = existing.ID
+			}
+			if !existing.CreatedAt.IsZero() {
+				config.CreatedAt = existing.CreatedAt
+			}
 		}
 
 		if err := boltAdapter.SaveWebhookConfig(config); err != nil {

@@ -205,7 +205,6 @@ func (m *Model) viewWebhookSettings() string {
 	}
 
 	parts := []string{
-		styles.OnboardingTitleStyle.Render("Settings"),
 		styles.SubtitleStyle.Render("Configure the optional webhook endpoint used for trace delivery."),
 		"",
 		renderEmbeddedField(embeddedFieldOptions{
@@ -241,11 +240,13 @@ func (m *Model) viewWebhookSettings() string {
 		)
 	}
 
-	parts = append(
-		parts,
-		"",
-		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Navigate  •  Enter Confirm  •  Ctrl+U Clear  •  Esc Back"),
-	)
+	if !m.webhookSettings.showDialog {
+		parts = append(
+			parts,
+			"",
+			styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Navigate  •  Enter Confirm  •  Ctrl+U Clear  •  Esc Back"),
+		)
+	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return renderFramedPanel("Settings", panelWidth, panelTypeInfo, content)

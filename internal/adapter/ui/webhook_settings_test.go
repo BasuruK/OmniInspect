@@ -1,20 +1,53 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"OmniView/internal/core/domain"
+	"OmniView/internal/service/permissions"
+	"OmniView/internal/service/subscribers"
+	"OmniView/internal/service/tracer"
+	updaterSvc "OmniView/internal/service/updater"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func newTestModelForWebhookSettings(t *testing.T) *Model {
 	t.Helper()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
+	t.Cleanup(eventStreamCancel)
+
+	boltAdapter := newTestBoltAdapter(t)
+	mockDB := NewMockDatabaseRepository()
+	eventChannel := make(chan *domain.QueueMessage, 16)
+
+	tracerService, err := tracer.NewTracerService(mockDB, boltAdapter, eventChannel)
+	if err != nil {
+		t.Fatalf("NewTracerService: %v", err)
+	}
+
 	return &Model{
-		screen:      screenMain,
-		width:       120,
-		height:      36,
-		boltAdapter: newTestBoltAdapter(t),
+		screen:            screenMain,
+		width:             120,
+		height:            36,
+		ctx:               ctx,
+		cancel:            cancel,
+		eventStreamCtx:    eventStreamCtx,
+		eventStreamCancel: eventStreamCancel,
+		boltAdapter:       boltAdapter,
+		dbAdapter:         mockDB,
+		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, boltAdapter),
+		tracerService:     tracerService,
+		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
+		updaterService:    updaterSvc.NewUpdaterService("test"),
+		eventChannel:      eventChannel,
+		updateEventChannel: make(chan tea.Msg, 16),
 		main: mainState{
 			autoScroll: true,
 			ready:      true,

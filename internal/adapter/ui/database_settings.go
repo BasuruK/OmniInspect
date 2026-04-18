@@ -55,7 +55,11 @@ func buildDatabaseEntries(databases []domain.DatabaseSettings, activeID string) 
 	return entries
 }
 
-// settingsPanelWidth returns a responsive panel width (50–80 cols, ~70% of terminal).
+// settingsPanelWidth returns the base responsive settings panel width for
+// `settingsPanelWidth()`, bounded to 60-92 columns and typically landing near
+// ~70% of the terminal. The final rendered width is also capped by
+// `screenContentSize()`, so the panel will not exceed the available content
+// area.
 func settingsPanelWidth(termWidth int) int {
 	return max(min(termWidth-10, 92), 60)
 }
@@ -277,7 +281,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 // viewDatabaseSettings: renders the database settings panel showing current connection and stored databases list.
 func (m *Model) viewDatabaseSettings() string {
-	panelWidth := max(min(m.width-10, 92), 60)
+	panelWidth := settingsPanelWidth(m.width)
 	innerWidth := max(panelWidth-4, 24)
 	activeSummary := styles.EmptyStateStyle.Render("No active connection configured.")
 	if m.appConfig != nil {

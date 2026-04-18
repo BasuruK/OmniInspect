@@ -12,5 +12,6 @@ omniview.syso
 omniview
 _bmad
 _bmad-output
-.github
 .agents
+.github/skills
+.agents/skills

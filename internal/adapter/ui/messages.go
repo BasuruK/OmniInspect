@@ -106,6 +106,13 @@ type deleteConfirmedMsg struct {
 	id string
 }
 
+// webhookConfigSavedMsg is returned after attempting to save or clear the webhook configuration.
+type webhookConfigSavedMsg struct {
+	config  *domain.WebhookConfig
+	deleted bool
+	err     error
+}
+
 // ==========================================
 // Updater messages
 // ==========================================

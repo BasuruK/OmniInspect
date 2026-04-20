@@ -280,8 +280,8 @@ ifeq ($(DETECTED_OS),Windows)
 	@if not exist release $(MKDIR_CMD) release
 	@$(COPY_CMD) $(BINARY_NAME).exe release\ >nul 2>&1 || $(COPY_CMD) $(BINARY_NAME) release\ >nul
 	@$(COPY_CMD) odpi.dll release\ >nul 2>&1
-	@powershell -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(RELEASE_TAG).zip' -Force"
-	@powershell -Command "$$h = (Get-FileHash -Algorithm SHA256 'omniview-windows-amd64-$(RELEASE_TAG).zip').Hash.ToLower(); \"$$h  omniview-windows-amd64-$(RELEASE_TAG).zip\" | Out-File -Encoding ascii -NoNewline 'omniview-windows-amd64-$(RELEASE_TAG).zip.sha256'"
+	@powershell -NoProfile -Command "Compress-Archive -Path 'release\*' -DestinationPath 'omniview-windows-amd64-$(RELEASE_TAG).zip' -Force"
+	@powershell -NoProfile -ExecutionPolicy Bypass -File scripts/write_zip_sha256.ps1 omniview-windows-amd64-$(RELEASE_TAG).zip
 	@$(RM_CMD) release
     endif
 	@echo "[OK] Created omniview-windows-amd64-$(RELEASE_TAG).zip"

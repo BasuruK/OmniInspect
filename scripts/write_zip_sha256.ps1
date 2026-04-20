@@ -10,10 +10,6 @@ if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
     exit 1
 }
 
-$bytes = [System.IO.File]::ReadAllBytes($ZipPath)
-$hash = [System.BitConverter]::ToString(
-    [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
-).Replace('-', '').ToLowerInvariant()
-
+$hash = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $name = [System.IO.Path]::GetFileName($ZipPath)
 "$hash  $name" | Out-File -LiteralPath ($ZipPath + ".sha256") -Encoding ascii -NoNewline

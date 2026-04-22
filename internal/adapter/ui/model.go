@@ -14,6 +14,7 @@ import (
 	"OmniView/internal/updater"
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -329,9 +330,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Resize viewport if on Main Screen
+		// Resize main viewport on Main Screen (after first init). On Windows, rely on
+		// runtime.GOOS only—terminal profile / type detection is unreliable in PowerShell/CMD.
 		if m.screen == screenMain && m.main.ready {
-			m.resizeMainViewport()
+			if runtime.GOOS == "windows" {
+				m.resizeMainViewport()
+			} else {
+				m.resizeMainViewport()
+			}
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -400,6 +401,52 @@ func TestTraceColumnLayoutShrinksAPIColumnForShortNames(t *testing.T) {
 	}
 	if layout.payloadWidth <= 100-(colTimestampWidth+colMaxLevelWidth+colMaxAPIWidth+3) {
 		t.Fatalf("expected payload width to grow when API column shrinks, got %d", layout.payloadWidth)
+	}
+}
+
+func TestWindowResizeMsgAppliesCorrectly(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 80, 30)
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated, ok := updatedModel.(*Model)
+	if !ok {
+		t.Fatalf("update returned unexpected model type %T", updatedModel)
+	}
+	if updated.width != 120 || updated.height != 40 {
+		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 120x40", updated.width, updated.height)
+	}
+}
+
+func TestWindowResizeMsgNoPlatformBranchingOnNonWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this test validates the non-Windows path")
+	}
+	t.Parallel()
+
+	m := newTestMainModel(t, 100, 30)
+	updatedModel, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	_ = cmd
+	updated, ok := updatedModel.(*Model)
+	if !ok {
+		t.Fatalf("update returned unexpected model type %T", updatedModel)
+	}
+	if updated.width != 80 || updated.height != 24 {
+		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 80x24", updated.width, updated.height)
+	}
+}
+
+func TestWindowResizeMsgHandlesSmallTerminalOnWindowsPath(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 200, 50)
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 10, Height: 6})
+	updated, ok := updatedModel.(*Model)
+	if !ok {
+		t.Fatalf("update returned unexpected model type %T", updatedModel)
+	}
+	if updated.width != 10 || updated.height != 6 {
+		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 10x6", updated.width, updated.height)
 	}
 }
 

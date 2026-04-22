@@ -12,6 +12,7 @@ import (
 	"OmniView/internal/updater"
 	"fmt"
 	"os"
+	"runtime"
 )
 
 func main() {
@@ -76,7 +77,10 @@ func main() {
 	const minCols = 130
 	if fi, err := os.Stdout.Stat(); err == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
 		term := os.Getenv("TERM")
-		if (term != "" && term != "dumb") || os.Getenv("WT_SESSION") != "" {
+		// Windows: CMD/legacy often has no TERM; still emit CSI resize for ConPTY / WT / console.
+		if runtime.GOOS == "windows" {
+			fmt.Printf("\033[8;%d;%dt", minRows, minCols)
+		} else if (term != "" && term != "dumb") || os.Getenv("WT_SESSION") != "" {
 			fmt.Printf("\033[8;%d;%dt", minRows, minCols)
 		}
 	}

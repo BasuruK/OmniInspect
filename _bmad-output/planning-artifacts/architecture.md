@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3]
 inputDocuments:
   - _bmad-output/brainstorming/brainstorming-session-2026-04-19-2221.md
   - docs/SUBSCRIBER_ISOLATION_SOLUTION.md
@@ -103,7 +103,31 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 
 ---
 
+## Starter Template Evaluation
+
+### Primary Technology Domain
+
+**Not Applicable** - This is a brownfield feature enhancement to an existing OmniView/OmniInspect project.
+
+The project already has an established tech stack:
+- **Language**: Go
+- **UI Framework**: Bubble Tea v2 + Lip Gloss v2
+- **Database**: Oracle 19c with ODPI-C
+- **Architecture**: Hexagonal (Ports and Adapters)
+
+No starter template required. Technical decisions are already made by the existing architecture.
+
+### Architectural Approach
+
+For this enhancement, we follow the **extend, not replace** principle:
+- Existing `OMNI_TRACER_API` package → extend with new procedures
+- Existing `SubscriberService` → add procedure generation on registration
+- Existing Settings UI → add danger zone options
+- Existing `TracerService` → remains unchanged (receiving logic unchanged)
+
+---
+
 ## Next Step
 
-[C] Continue to evaluate starter templates
+[C] Continue to architectural decisions
 

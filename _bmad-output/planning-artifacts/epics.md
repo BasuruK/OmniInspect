@@ -1,5 +1,6 @@
 ---
-stepsCompleted: [1]
+stepsCompleted: [1, 2, 3, 4]
+status: 'complete'
 inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/brainstorming/brainstorming-session-2026-04-19-2221.md
@@ -81,7 +82,23 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 ## Epic List
 
-<!-- Placeholder for epic structure -->
+### Epic 1: Multi-Subscriber Procedure Generation
+
+**User Outcome:** IFS developers can call subscriber-specific procedures that route messages to only their OmniView instance.
+
+**FRs Covered:** FR-1, FR-2, FR-5, FR-6
+
+### Epic 2: TUI Procedure Name Display
+
+**User Outcome:** Developers can see exactly which PL/SQL procedure to call in their code.
+
+**FRs Covered:** FR-7
+
+### Epic 3: Danger Zone Implementation
+
+**User Outcome:** Subscribers can clean up their procedures or the entire package when needed.
+
+**FRs Covered:** FR-3, FR-4
 
 ## Epic 1: Multi-Subscriber Procedure Generation
 

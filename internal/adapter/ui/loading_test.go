@@ -6,6 +6,7 @@ import (
 	"OmniView/internal/service/permissions"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
+	"OmniView/internal/updater"
 	"context"
 	"errors"
 	"strings"
@@ -80,20 +81,30 @@ func (stubConfigRepository) DeleteWebhookConfig(string) error { return nil }
 func newLoadingTestModel(t *testing.T, validated bool) *Model {
 	t.Helper()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
+	t.Cleanup(eventStreamCancel)
+	t.Cleanup(cancel)
+
 	settings := newTestDatabaseSettings(t, "LOAD-DB")
 	if validated {
 		settings.MarkPermissionsValidated()
 	}
 
+	eventChannel := make(chan *domain.QueueMessage, 16)
+
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerService, err := tracer.NewTracerService(mockDB, configRepo, make(chan *domain.QueueMessage, 1))
+	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel)
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}
 
 	return &Model{
-		ctx:               context.Background(),
+		ctx:               ctx,
+		cancel:            cancel,
+		eventStreamCtx:    eventStreamCtx,
+		eventStreamCancel: eventStreamCancel,
 		width:             120,
 		height:            36,
 		appConfig:         settings,
@@ -102,6 +113,7 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, configRepo),
 		tracerService:     tracerService,
 		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
+		eventChannel:      eventChannel,
 	}
 }
 
@@ -506,4 +518,104 @@ func TestUpdateLoading_DbConnected_RechecksPermissionsWithoutCache(t *testing.T)
 	if _, ok := cmd().(permissionsCheckedMsg); !ok {
 		t.Fatal("expected checkPermissionsCmd to be returned when permissions are not cached")
 	}
+}
+
+func TestUpdateLoading_PromptBlocksLoadingCompletionFromEnteringMain(t *testing.T) {
+	t.Parallel()
+
+	m := newLoadingTestModel(t, false)
+	m.loading.started = true
+	m.update.prompting = true
+	m.update.info = &domainlessUpdateInfoForTest
+
+	sub := newTestSubscriber(t)
+	updated, cmd := m.updateLoading(subscriberRegisteredMsg{subscriber: sub})
+	if cmd != nil {
+		t.Fatal("expected no command while update prompt is gating startup")
+	}
+	if updated.screen == screenMain {
+		t.Fatalf("expected startup to remain gated off main screen, got %q", updated.screen)
+	}
+	if !updated.loading.complete {
+		t.Fatal("expected loading completion to be recorded while prompt is visible")
+	}
+	if !updated.update.prompting {
+		t.Fatal("expected update prompt to remain visible")
+	}
+}
+
+func TestUpdateLoading_DecliningPromptContinuesCompletedStartupIntoMain(t *testing.T) {
+	t.Parallel()
+
+	m := newLoadingTestModel(t, false)
+	m.loading.started = true
+	m.loading.complete = true
+	m.update.info = &domainlessUpdateInfoForTest
+	m.update.prompting = true
+
+	updated, cmd := m.updateLoading(makeCharPress("n"))
+	if updated.screen != screenMain {
+		t.Fatalf("expected completed startup to enter main after declining update, got %q", updated.screen)
+	}
+	if updated.update.prompting {
+		t.Fatal("expected prompt to be cleared after declining update")
+	}
+	if updated.update.info != nil {
+		t.Fatal("expected update info to be cleared after declining update")
+	}
+	if cmd == nil {
+		t.Fatal("expected event listener command when entering main")
+	}
+}
+
+func TestUpdateLoading_AcceptingPromptKeepsStartupBlockedUntilUpdaterFinishes(t *testing.T) {
+	t.Parallel()
+
+	m := newLoadingTestModel(t, false)
+	m.loading.started = true
+	m.loading.complete = true
+	m.update.info = &domainlessUpdateInfoForTest
+	m.update.prompting = true
+
+	updated, cmd := m.updateLoading(makeCharPress("y"))
+	if cmd == nil {
+		t.Fatal("expected apply update command")
+	}
+	if updated.screen == screenMain {
+		t.Fatalf("expected startup to stay blocked during apply, got %q", updated.screen)
+	}
+	if !updated.update.applying {
+		t.Fatal("expected update applying state after accepting prompt")
+	}
+	if updated.update.prompting {
+		t.Fatal("expected prompt to clear once accepted")
+	}
+
+	updated, _ = updated.updateLoading(updateErrorMsg{err: errors.New("update failed")})
+	if updated.screen == screenMain {
+		t.Fatalf("expected update failure to remain gated off main, got %q", updated.screen)
+	}
+	if updated.update.err == nil {
+		t.Fatal("expected update error to be shown after failed apply")
+	}
+	if !updated.loading.complete {
+		t.Fatal("expected startup completion state to be preserved after failed apply")
+	}
+
+	updated, cmd = updated.updateLoading(makeCharPress("y"))
+	if updated.screen != screenMain {
+		t.Fatalf("expected continue-without-update to enter main, got %q", updated.screen)
+	}
+	if updated.update.err != nil {
+		t.Fatal("expected update error to clear after continuing")
+	}
+	if cmd == nil {
+		t.Fatal("expected event listener command when continuing into main")
+	}
+}
+
+var domainlessUpdateInfoForTest = updater.UpdateInfo{
+	Available:      true,
+	CurrentVersion: "v1.0.0",
+	NewVersion:     "v1.0.1",
 }

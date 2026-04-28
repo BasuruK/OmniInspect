@@ -37,8 +37,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			// Update check failed — non-fatal, log warning and proceed
 			log.Printf("[updater] Update check failed: %v\n", msg.err)
 			m.update.checking = false
-			m.loading.current = "Connecting to database..."
-			return m, connectDBCmd(m, false)
+			return m, m.continueStartupAfterUpdateGate()
 		}
 		m.update.checking = false
 		if msg.info != nil {
@@ -48,9 +47,8 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			m.loading.current = ""
 			return m, nil
 		}
-		// No update available — proceed to database connection
-		m.loading.current = "Connecting to database..."
-		return m, connectDBCmd(m, false)
+		// No update available — continue startup through the shared gate.
+		return m, m.continueStartupAfterUpdateGate()
 
 	// Handle key input when prompting for update
 	case tea.KeyPressMsg:
@@ -65,8 +63,8 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			case "n", "N", "escape":
 				// User declined update — proceed to database connection
 				m.update.prompting = false
-				m.loading.current = "Connecting to database..."
-				return m, connectDBCmd(m, false)
+				m.update.info = nil
+				return m, m.continueStartupAfterUpdateGate()
 			}
 		}
 		if m.update.err != nil {
@@ -75,8 +73,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 			case "y", "Y", "enter":
 				// Continue without update
 				m.update.err = nil
-				m.loading.current = "Connecting to database..."
-				return m, connectDBCmd(m, false)
+				return m, m.continueStartupAfterUpdateGate()
 			case "n", "N", "q":
 				// Quit
 				m.cancel()
@@ -150,6 +147,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	case updateErrorMsg:
 		m.update.applying = false
 		m.update.err = msg.err
+		m.update.info = nil
 		m.loading.current = ""
 		return m, nil
 
@@ -231,12 +229,10 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 		m.loading.steps = append(m.loading.steps,
 			"✓ Subscriber registered: "+msg.subscriber.Name())
 		m.loading.current = ""
+		m.loading.complete = true
 
-		// All loading complete — transition to main screen
-		m.screen = screenMain
-		m.initViewport()
-
-		return m, waitForEventCmd(m.eventStreamCtx, m.eventChannel)
+		// All loading complete — only enter main after the update gate clears.
+		return m, m.continueStartupAfterUpdateGate()
 	}
 
 	return m, nil

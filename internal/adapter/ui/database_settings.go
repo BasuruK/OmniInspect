@@ -513,6 +513,8 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	m.screen = screenLoading
 	m.loading.steps = nil
 	m.loading.err = nil
+	m.loading.started = true
+	m.loading.complete = false
 	m.loading.retryCount = 0
 	m.loading.current = "Connecting..."
 	return m, connectDBCmd(m, true)

@@ -236,7 +236,7 @@ func TestHandleDBReady_ProgressBarWidthRespectsTerminal(t *testing.T) {
 // handleWelcomeComplete
 // ==========================================
 
-func TestHandleWelcomeComplete_FastPath_GoesToMainScreen(t *testing.T) {
+func TestHandleWelcomeComplete_FastPath_GoesToLoadingScreenForUpdateGate(t *testing.T) {
 	t.Parallel()
 
 	m := newWelcomeTestModel(t)
@@ -246,11 +246,17 @@ func TestHandleWelcomeComplete_FastPath_GoesToMainScreen(t *testing.T) {
 
 	updated, cmd := m.handleWelcomeComplete()
 
-	if updated.screen != screenMain {
-		t.Fatalf("expected screenMain, got %q", updated.screen)
+	if updated.screen != screenLoading {
+		t.Fatalf("expected screenLoading, got %q", updated.screen)
+	}
+	if !updated.loading.complete {
+		t.Fatal("expected loading completion to be preserved")
+	}
+	if !updated.update.checking {
+		t.Fatal("expected update check gate to start before main screen")
 	}
 	if cmd == nil {
-		t.Fatal("expected waitForEventCmd")
+		t.Fatal("expected loading startup commands")
 	}
 }
 
@@ -501,7 +507,7 @@ func TestHandleWelcomeLoadingMsg_SubscriberRegistered_AnimStillPlaying_SetsLoadi
 	}
 }
 
-func TestHandleWelcomeLoadingMsg_SubscriberRegistered_AnimDone_GoesToMain(t *testing.T) {
+func TestHandleWelcomeLoadingMsg_SubscriberRegistered_AnimDone_GoesToLoadingForUpdateGate(t *testing.T) {
 	t.Parallel()
 
 	m := newWelcomeTestModel(t)
@@ -513,11 +519,14 @@ func TestHandleWelcomeLoadingMsg_SubscriberRegistered_AnimDone_GoesToMain(t *tes
 	sub := newTestSubscriber(t)
 	updated, cmd := m.handleWelcomeLoadingMsg(subscriberRegisteredMsg{subscriber: sub, err: nil})
 
-	if updated.screen != screenMain {
-		t.Fatalf("expected screenMain when animation already done, got %q", updated.screen)
+	if updated.screen != screenLoading {
+		t.Fatalf("expected screenLoading when animation already done, got %q", updated.screen)
+	}
+	if !updated.loading.complete {
+		t.Fatal("expected loading completion to be recorded")
 	}
 	if cmd == nil {
-		t.Fatal("expected waitForEventCmd")
+		t.Fatal("expected loading startup commands")
 	}
 }
 

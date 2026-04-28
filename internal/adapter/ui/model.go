@@ -56,6 +56,8 @@ type welcomeState struct {
 }
 
 type loadingState struct {
+	started         bool                // Whether the startup connection sequence has begun
+	complete        bool                // Whether the startup connection sequence finished successfully
 	steps           []string           // Completed steps descriptions
 	current         string             // Step currently in progress
 	err             error              // Error encountered during loading, if any
@@ -253,6 +255,47 @@ func (m *Model) resetConnectionEventStream() {
 
 	m.eventChannel = make(chan *domain.QueueMessage, bufferSize)
 	m.eventStreamCtx, m.eventStreamCancel = context.WithCancel(m.ctx)
+}
+
+func (m *Model) resetStartupUpdateState() {
+	m.update = updateState{checking: true}
+}
+
+func (m *Model) enterMainScreen() tea.Cmd {
+	m.screen = screenMain
+	m.initViewport()
+	return waitForEventCmd(m.eventStreamCtx, m.eventChannel)
+}
+
+func (m *Model) isStartupGateActive() bool {
+	return m.update.checking || m.update.prompting || m.update.applying || m.update.err != nil
+}
+
+func (m *Model) continueStartupAfterUpdateGate() tea.Cmd {
+	if m.isStartupGateActive() {
+		return nil
+	}
+
+	if m.loading.complete {
+		return m.enterMainScreen()
+	}
+
+	if !m.loading.started {
+		m.loading.started = true
+		m.loading.current = "Connecting to database..."
+		return connectDBCmd(m, false)
+	}
+
+	return nil
+}
+
+func (m *Model) enterStartupLoadingScreen() tea.Cmd {
+	m.screen = screenLoading
+	m.resetStartupUpdateState()
+	return tea.Batch(
+		m.loading.spinner.Tick,
+		checkForUpdateCmd(m),
+	)
 }
 
 // initializeServices: initializes or reinitializes database adapter and dependent services if they are not already set.

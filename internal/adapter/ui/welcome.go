@@ -97,6 +97,7 @@ func (m *Model) handleDBReady(msg dbReadyMsg) (*Model, tea.Cmd) {
 			progress.WithFillCharacters('━', '─'),
 		)
 		m.welcome.progressBar.SetWidth(computeProgressBarWidth(m.width))
+		m.loading.started = true
 		m.loading.current = "Connecting to database..."
 		return m, connectDBCmd(m, false)
 	}
@@ -114,22 +115,15 @@ func (m *Model) handleWelcomeComplete() (*Model, tea.Cmd) {
 
 	// Fast path: parallel loading finished before animation ended.
 	if m.welcome.loadingComplete {
-		m.screen = screenMain
-		m.initViewport()
-		return m, tea.Batch(
-			waitForEventCmd(m.eventStreamCtx, m.eventChannel),
-			checkForUpdateCmd(m),
-		)
+		m.loading.complete = true
+		return m, m.enterStartupLoadingScreen()
 	}
 
 	// Loading was started in parallel but is still in progress — hand off to the
 	// loading screen which has all progress state already populated.
 	if m.welcome.loadingStarted {
-		m.screen = screenLoading
-		return m, tea.Batch(
-			m.loading.spinner.Tick,
-			checkForUpdateCmd(m),
-		)
+		m.loading.started = true
+		return m, m.enterStartupLoadingScreen()
 	}
 
 	settings := m.welcome.dbSettings
@@ -144,11 +138,9 @@ func (m *Model) handleWelcomeComplete() (*Model, tea.Cmd) {
 		}
 
 		m.loading.err = nil
-		m.screen = screenLoading
-		return m, tea.Batch(
-			m.loading.spinner.Tick,
-			checkForUpdateCmd(m),
-		)
+		m.loading.started = false
+		m.loading.complete = false
+		return m, m.enterStartupLoadingScreen()
 	}
 
 	m.screen = screenOnboarding
@@ -324,15 +316,12 @@ func (m *Model) handleWelcomeLoadingMsg(msg tea.Msg) (*Model, tea.Cmd) {
 		m.loading.current = ""
 		pbCmd := m.welcome.progressBar.SetPercent(1.0)
 		m.welcome.loadingComplete = true
+		m.loading.complete = true
 
-		// If animation already finished, go directly to main screen.
+		// If animation already finished, hand off to the loading screen so the
+		// update prompt remains a hard gate before main.
 		if m.welcome.complete {
-			m.screen = screenMain
-			m.initViewport()
-			return m, tea.Batch(
-				waitForEventCmd(m.eventStreamCtx, m.eventChannel),
-				checkForUpdateCmd(m),
-			)
+			return m, m.enterStartupLoadingScreen()
 		}
 
 		// Animation still playing — wait for it to end (handleWelcomeComplete handles transition).

@@ -60,12 +60,10 @@ func (m *Model) updateOnboarding(msg tea.Msg) (*Model, tea.Cmd) {
 
 		m.loading.err = nil
 		m.loading.steps = nil
+		m.loading.started = false
+		m.loading.complete = false
 		m.loading.current = ""
-		m.screen = screenLoading
-		return m, tea.Batch(
-			m.loading.spinner.Tick,
-			connectDBCmd(m, false),
-		)
+		return m, m.enterStartupLoadingScreen()
 	}
 
 	return m, nil

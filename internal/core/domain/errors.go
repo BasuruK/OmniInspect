@@ -13,6 +13,10 @@ var (
 	ErrSubscriberNotActive   = errors.New("subscriber is not active")
 	ErrInvalidBatchSize      = errors.New("invalid batch size")
 	ErrInvalidWaitTime       = errors.New("invalid wait time")
+	ErrInvalidFunnyName      = errors.New("invalid funny name")
+	ErrNoAvailableNames      = errors.New("no available funny names")
+	ErrFunnyNameTooLong      = errors.New("funny name exceeds maximum length")
+	ErrFunnyNameTooShort     = errors.New("funny name too short")
 	ErrNilSubscriber         = errors.New("nil subscriber")
 	ErrTracerNotInitialized  = errors.New("tracer service not initialized")
 

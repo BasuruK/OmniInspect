@@ -1,0 +1,343 @@
+package domain
+
+import (
+	"fmt"
+	"math/rand"
+	"strings"
+	"sync"
+)
+
+const (
+	MinFunnyNameLength = 3
+	MaxFunnyNameLength = 20
+	FunnyNamePattern   = `^[A-Za-z_]+$`
+)
+
+type FunnyName struct {
+	name  string
+	used  bool
+	index int
+}
+
+// String returns the funny name as a string.
+func (f FunnyName) String() string {
+	return f.name
+}
+
+// IsValid returns true if the FunnyName is valid (non-empty and passes funny-name validation).
+func (f FunnyName) IsValid() bool {
+	return IsValidFunnyName(f.name)
+}
+
+type FunnyNameGenerator struct {
+	mu     sync.Mutex
+	names  []FunnyName
+	used   map[string]bool
+	source *rand.Rand
+}
+
+var (
+	defaultGenerator *FunnyNameGenerator
+	once             sync.Once
+)
+
+func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
+	names := make([]FunnyName, len(funnyNameList))
+	for i, name := range funnyNameList {
+		names[i] = FunnyName{name: strings.ToUpper(name), used: false, index: i}
+	}
+	src := rand.NewSource(seed)
+	return &FunnyNameGenerator{
+		names:  names,
+		used:   make(map[string]bool),
+		source: rand.New(src),
+	}
+}
+
+// DefaultFunnyNameGenerator returns the singleton FunnyNameGenerator instance.
+// The generator is initialized once with a deterministic seed for reproducibility.
+func DefaultFunnyNameGenerator() *FunnyNameGenerator {
+	once.Do(func() {
+		defaultGenerator = newFunnyNameGenerator(42)
+	})
+	return defaultGenerator
+}
+
+// NewFunnyNameGenerator creates a new FunnyNameGenerator with a given random seed.
+// The generator maintains state of used names and provides thread-safe name assignment.
+func NewFunnyNameGenerator(seed int64) *FunnyNameGenerator {
+	return newFunnyNameGenerator(seed)
+}
+
+// AvailableCount returns the number of funny names that are still available (not yet assigned).
+func (g *FunnyNameGenerator) AvailableCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	count := 0
+	for _, fn := range g.names {
+		if !fn.used {
+			count++
+		}
+	}
+	return count
+}
+
+// IsUsed reports whether the given funny name is currently marked as used.
+func (g *FunnyNameGenerator) IsUsed(name string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.used[strings.ToUpper(name)]
+}
+
+// MarkAsUsed marks the given funny name as used so it won't be returned by GetRandomName.
+func (g *FunnyNameGenerator) MarkAsUsed(name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.used[strings.ToUpper(name)] = true
+	for i := range g.names {
+		if strings.EqualFold(g.names[i].name, name) {
+			g.names[i].used = true
+			break
+		}
+	}
+}
+
+// MarkAsAvailable releases a previously assigned funny name, making it available again.
+func (g *FunnyNameGenerator) MarkAsAvailable(name string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.used, strings.ToUpper(name))
+	for i := range g.names {
+		if strings.EqualFold(g.names[i].name, name) {
+			g.names[i].used = false
+			break
+		}
+	}
+}
+
+// GetRandomName returns a randomly selected funny name that is currently available.
+// Returns ErrNoAvailableNames when all names have been assigned.
+func (g *FunnyNameGenerator) GetRandomName() (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	available := make([]int, 0)
+	for i, fn := range g.names {
+		if !fn.used {
+			available = append(available, i)
+		}
+	}
+
+	if len(available) == 0 {
+		return "", ErrNoAvailableNames
+	}
+
+	idx := available[g.source.Intn(len(available))]
+	g.names[idx].used = true
+	g.used[strings.ToUpper(g.names[idx].name)] = true
+
+	return g.names[idx].name, nil
+}
+
+// Reset marks all funny names as available and clears the used set.
+func (g *FunnyNameGenerator) Reset() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for i := range g.names {
+		g.names[i].used = false
+	}
+	g.used = make(map[string]bool)
+}
+
+// ValidateFunnyNameFormat validates that a name conforms to the funny name format.
+// Valid names must be 3-20 characters, contain only letters and underscores, and not be empty.
+func ValidateFunnyNameFormat(name string) error {
+	if name == "" {
+		return ErrInvalidFunnyName
+	}
+	if len(name) < MinFunnyNameLength {
+		return ErrFunnyNameTooShort
+	}
+	if len(name) > MaxFunnyNameLength {
+		return ErrFunnyNameTooLong
+	}
+	for _, c := range name {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_') {
+			return fmt.Errorf("%w: %q contains invalid characters (only letters and underscores allowed)", ErrInvalidFunnyName, name)
+		}
+	}
+	return nil
+}
+
+// IsValidFunnyName reports whether the given name is a valid funny name from the curated list.
+// Validation checks format (letters and underscores only, 3-20 chars) and list membership.
+// Comparison is case-insensitive.
+func IsValidFunnyName(name string) bool {
+	if err := ValidateFunnyNameFormat(name); err != nil {
+		return false
+	}
+	upper := strings.ToUpper(name)
+	for _, valid := range funnyNameList {
+		if strings.ToUpper(valid) == upper {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFunnyNameAvailable reports whether a funny name is both valid and not currently assigned.
+func IsFunnyNameAvailable(name string) bool {
+	if !IsValidFunnyName(name) {
+		return false
+	}
+	return !DefaultFunnyNameGenerator().IsUsed(name)
+}
+
+var funnyNameList = []string{
+	"ABBY",
+	"ARCHIE",
+	"ASTRO",
+	"AZrael",
+	"Barnacle",
+	"Biscuit",
+	"Boomer",
+	"Bubbles",
+	"Bugs",
+	"Buster",
+	"Buzz",
+	"Caillou",
+	"Cartoon",
+	"Casper",
+	"Chester",
+	"Chewie",
+	"Clifford",
+	"Coco",
+	"Courage",
+	"Cow",
+	"Daffy",
+	"Daisy",
+	"Dexter",
+	"Dino",
+	"Dobbie",
+	"Donald",
+	"Dottie",
+	"Douglas",
+	"Drake",
+	"Duke",
+	"Dylan",
+	"Eeyore",
+	"Elmo",
+	"Felix",
+	"Figaro",
+	"Fiona",
+	"Fireball",
+	"Flounder",
+	"Foot",
+	"Frankie",
+	"Garfield",
+	"George",
+	"Giggles",
+	"Goofy",
+	"Grandpa",
+	"Griffin",
+	"Hamlet",
+	"Hank",
+	"Hercules",
+	"Hobbes",
+	"Hoo",
+	"Hunter",
+	"Igor",
+	"Ivy",
+	"Jack",
+	"Jafar",
+	"Jasmine",
+	"Jellybean",
+	"Jerry",
+	"Kaa",
+	"Kermit",
+	"Kiki",
+	"Larry",
+	"Lassie",
+	"Leo",
+	"Lilo",
+	"Lola",
+	"Lucky",
+	"Luna",
+	"Maddie",
+	"Marvin",
+	"Max",
+	"Maya",
+	"Mickey",
+	"Milo",
+	"Minnie",
+	"Moe",
+	"Morty",
+	"Muffin",
+	"Nala",
+	"Nemo",
+	"Nibbles",
+	"Odie",
+	"Olaf",
+	"Oliver",
+	"Ollie",
+	"Oscar",
+	"Panda",
+	"Peanut",
+	"Pebbles",
+	"Pete",
+	"Pickles",
+	"Porky",
+	"Quacker",
+	"Quentin",
+	"Rafiki",
+	"Ralph",
+	"Rex",
+	"Roadrunner",
+	"Rover",
+	"Ruby",
+	"Salem",
+	"Sam",
+	"Sandy",
+	"Scooby",
+	"Scout",
+	"Sebastian",
+	"Shrek",
+	"Simba",
+	"Skimbles",
+	"Smokey",
+	"Sniffles",
+	"Snoopy",
+	"Sofia",
+	"Sonic",
+	"Sparky",
+	"Spencer",
+	"Spirit",
+	"Spongebob",
+	"Spot",
+	"Stanley",
+	"Stuart",
+	"Styx",
+	"Sugar",
+	"Sunny",
+	"Taz",
+	"Thomas",
+	"Tiger",
+	"Tigger",
+	"Tito",
+	"Tommy",
+	"Tony",
+	"Tweety",
+	"Tom",
+	"Ty",
+	"Vanilla",
+	"Vinnie",
+	"Waffles",
+	"Widget",
+	"Wiley",
+	"Winston",
+	"Woody",
+	"Zazu",
+	"Ziggy",
+	"Zippy",
+	"Zorro",
+}

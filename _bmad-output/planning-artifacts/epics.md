@@ -23,9 +23,9 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 ### Functional Requirements
 
-**FR-1:** Generate unique `TRACE_MESSAGE_<subscriber_id>()` procedure per subscriber on registration
+**FR-1:** Generate unique `TRACE_MESSAGE_<FUNNY_NAME>()` procedure per subscriber on registration using auto-assigned funny names (e.g., BARNACLE, PICKLES)
 
-**FR-2:** Idempotent creation - check if procedure exists before creating
+**FR-2:** Idempotent creation - check if procedure exists (by funny name) before creating
 
 **FR-3:** Modify Settings UI - Add danger zone option to drop subscriber-specific procedure
 
@@ -35,7 +35,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 **FR-6:** Strict name format validation (`^[A-Za-z_]+$`) to prevent SQL injection
 
-**FR-7:** Display the subscriber's method name in TUI - Show the user the exact procedure they must call in their PL/SQL code to receive subscriber-isolated messages (e.g., `OMNI_TRACER_API.TRACE_MESSAGE_SUB_0CC283A4...`)
+**FR-7:** Display the subscriber's method name in TUI - Show the user the exact procedure they must call in their PL/SQL code to receive subscriber-isolated messages (e.g., `OMNI_TRACER_API.TRACE_MESSAGE_BARNACLE('msg')`)
 
 ### NonFunctional Requirements
 
@@ -45,7 +45,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 **NFR-3:** Support N concurrent subscribers (no hard limit)
 
-**NFR-4:** Developer ergonomics - `TRACE_MESSAGE_xxx('msg')` same friction as `Trace_Message('msg')`
+**NFR-4:** Developer ergonomics - `TRACE_MESSAGE_BARNACLE('msg')` same friction as `Trace_Message('msg')`
 
 ### Additional Requirements
 
@@ -72,7 +72,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 | FR | Description | Epic |
 |----|-------------|------|
-| FR-1 | Generate TRACE_MESSAGE_<id>() procedure per subscriber | Epic 1 |
+| FR-1 | Generate TRACE_MESSAGE_<FUNNY_NAME>() procedure per subscriber | Epic 1 |
 | FR-2 | Idempotent creation | Epic 1 |
 | FR-3 | Drop subscriber-specific procedure | Epic 3 |
 | FR-4 | Drop entire OMNI_TRACER_API package | Epic 3 |
@@ -104,7 +104,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 ### Epic Goal
 
-Implement dynamic procedure generation system that creates per-subscriber `TRACE_MESSAGE_<name>()` procedures inside the OMNI_TRACER_API package, enabling message isolation between subscribers.
+Implement dynamic procedure generation system that creates per-subscriber `TRACE_MESSAGE_<FUNNY_NAME>()` procedures inside the OMNI_TRACER_API package, enabling message isolation between subscribers using auto-assigned funny names.
 
 ## Epic 2: TUI Procedure Name Display
 
@@ -143,7 +143,7 @@ So that procedure names are memorable and unique.
 ### Story 1.2: Procedure Generation with Enqueue_For_Subscriber
 
 As a system,
-I want to generate `TRACE_MESSAGE_<name>()` procedures that call `Enqueue_For_Subscriber()`,
+I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call `Enqueue_For_Subscriber()`, using the subscriber's auto-assigned funny name.
 So that messages are routed to the correct subscriber.
 
 **Acceptance Criteria:**
@@ -224,7 +224,7 @@ So that I can clean up when I no longer need tracing.
 **Given** the subscriber is on the Settings screen
 **When** they select "Delete My Procedure"
 **Then** a confirmation dialog appears warning this action
-**And** if confirmed, the `TRACE_MESSAGE_<name>()` procedure is removed from OMNI_TRACER_API package
+**And** if confirmed, the `TRACE_MESSAGE_<FUNNY_NAME>()` procedure is removed from OMNI_TRACER_API package
 
 **Given** the procedure is deleted
 **When** OmniView restarts

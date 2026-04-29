@@ -90,29 +90,43 @@ func (g *FunnyNameGenerator) IsUsed(name string) bool {
 }
 
 // MarkAsUsed marks the given funny name as used so it won't be returned by GetRandomName.
-func (g *FunnyNameGenerator) MarkAsUsed(name string) {
+// Returns an error if the name is empty, whitespace-only, or not found in the curated list.
+func (g *FunnyNameGenerator) MarkAsUsed(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.used[strings.ToUpper(name)] = true
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("mark funny name as used: %w", ErrInvalidFunnyName)
+	}
+	upper := strings.ToUpper(trimmed)
 	for i := range g.names {
-		if strings.EqualFold(g.names[i].name, name) {
+		if g.names[i].name == upper {
 			g.names[i].used = true
-			break
+			g.used[upper] = true
+			return nil
 		}
 	}
+	return fmt.Errorf("mark funny name as used: %w", ErrInvalidFunnyName)
 }
 
 // MarkAsAvailable releases a previously assigned funny name, making it available again.
-func (g *FunnyNameGenerator) MarkAsAvailable(name string) {
+// Returns an error if the name is empty, whitespace-only, or not found in the curated list.
+func (g *FunnyNameGenerator) MarkAsAvailable(name string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.used, strings.ToUpper(name))
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return fmt.Errorf("mark funny name as available: %w", ErrInvalidFunnyName)
+	}
+	upper := strings.ToUpper(trimmed)
 	for i := range g.names {
-		if strings.EqualFold(g.names[i].name, name) {
+		if g.names[i].name == upper {
 			g.names[i].used = false
-			break
+			delete(g.used, upper)
+			return nil
 		}
 	}
+	return fmt.Errorf("mark funny name as available: %w", ErrInvalidFunnyName)
 }
 
 // GetRandomName returns a randomly selected funny name that is currently available.
@@ -328,7 +342,7 @@ var funnyNameList = []string{
 	"Tony",
 	"Tweety",
 	"Tom",
-	"Ty",
+	"Tycho",
 	"Vanilla",
 	"Vinnie",
 	"Waffles",

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -43,8 +44,8 @@ func TestValidateFunnyNameFormat_InvalidNames(t *testing.T) {
 				t.Errorf("ValidateFunnyNameFormat(%q) = nil, expected error", tc.name)
 				return
 			}
-			if !strings.Contains(err.Error(), tc.errType.Error()) {
-				t.Errorf("ValidateFunnyNameFormat(%q) = %v, expected containing %v", tc.name, err, tc.errType)
+			if !errors.Is(err, tc.errType) {
+				t.Errorf("ValidateFunnyNameFormat(%q) = %v, expected %v", tc.name, err, tc.errType)
 			}
 		})
 	}
@@ -151,7 +152,7 @@ func TestFunnyNameGenerator_NoDuplicates(t *testing.T) {
 	}
 
 	_, err := gen.GetRandomName()
-	if err != ErrNoAvailableNames {
+	if !errors.Is(err, ErrNoAvailableNames) {
 		t.Errorf("GetRandomName() after exhaustion = %v, expected ErrNoAvailableNames", err)
 	}
 }
@@ -281,7 +282,8 @@ func TestFunnyNameGenerator_CollisionHandling(t *testing.T) {
 	gen := NewFunnyNameGenerator(42)
 
 	assigned := make(map[string]bool)
-	for i := 0; i < gen.AvailableCount(); i++ {
+	initialCount := gen.AvailableCount()
+	for i := 0; i < initialCount; i++ {
 		name, err := gen.GetRandomName()
 		if err != nil {
 			t.Fatalf("GetRandomName() iteration %d returned error: %v", i, err)

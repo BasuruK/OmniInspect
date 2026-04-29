@@ -9,7 +9,6 @@ inputDocuments:
   - docs/SUBSCRIBER_ISOLATION_SOLUTION.md
   - docs/ARCHITECTURE_AND_MULTI_SUBSCRIBER_PLAN.md
   - DESIGN.md
-workflowType: 'architecture'
 project_name: OmniInspect
 user_name: Basuruk
 date: '2026-04-26'
@@ -44,8 +43,8 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 | Decision | Value |
 |----------|-------|
-| Name format | `< 30 chars, `^[A-Za-z_]+$` (letters and underscores only) |
-| Name uniqueness | Use subscriber's existing unique ID (e.g., `SUB_0CC283A4...`) |
+| Name format | `<30 chars`, `^[A-Za-z_]+$` (letters and underscores only) |
+| Name uniqueness | Auto-assigned funny name (e.g., BARNACLE, PICKLES) via FunnyNameGenerator |
 | Creation | Idempotent - check if exists, only create if missing |
 | SQL injection | Strict format validation before DDL generation |
 | Package invalidation | Accepted risk - app redeploys on restart |
@@ -182,7 +181,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 **Decision**: Curated list of ~150 iconic cartoon character names
 
 **Name List**:
-```
+```text
 Mickey, Donald, Goofy, Pluto, Minnie, Daisy, Chip, Dale, Huey, Dewey, Louie,
 Simba, Mufasa, Scar, Nala, Timon, Pumbaa, Zazu,
 Bugs, Daffy, Porky, Tweety, Sylvester, Yosemite, Elmer, Foghorn,
@@ -507,7 +506,7 @@ Service Layer
 ### Integration Points
 
 **Oracle Package (PL/SQL) — External to this codebase:**
-```
+```text
 OMNI_TRACER_API
 ├── Trace_Message(message_, log_level_)      # Original - unchanged
 ├── Enqueue_For_Subscriber(...)             # [NEW] Internal helper for generated procedures
@@ -516,23 +515,6 @@ OMNI_TRACER_API
 
 **Dynamic Deployment Note:**
 Per-subscriber procedures are generated as runtime DDL and executed via `ExecuteStatement()` to add them inside the `OMNI_TRACER_API` package body. This requires ALTER PACKAGE which may invalidate the entire package — this is an accepted risk.
-
-**Data Flow:**
-```
-IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
-         → Enqueue_For_Subscriber(subscriber_=<NAME>, ...)
-         → AQ Queue
-         → OmniView dequeues
-         → Only matching subscriber receives
-```
-OMNI_TRACER_API
-├── Trace_Message(message_, log_level_)      # Original - unchanged
-├── Enqueue_For_Subscriber(...)             # [NEW] Internal helper for generated procedures
-└── TRACE_MESSAGE_<FUNNY_NAME>(...)        # [NEW] Generated per subscriber
-```
-
-**Dynamic Deployment Note:**
-Per-subscriber procedures are NOT embedded in files. They are generated as runtime DDL strings and executed via `ExecuteStatement()`. This allows dynamic procedure creation without recompiling the Go binary.
 
 **Data Flow:**
 ```

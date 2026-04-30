@@ -34,7 +34,7 @@ func TestValidateFunnyNameFormat_InvalidNames(t *testing.T) {
 		{" Mickey", ErrInvalidFunnyName},
 		{"a", ErrFunnyNameTooShort},
 		{"ab", ErrFunnyNameTooShort},
-		{"THISNAMEISWAYTOOLONGTOBEVALID", ErrFunnyNameTooLong},
+		{"THISNAMEISWAYTOOLONGTOBEVALIDXYZ", ErrFunnyNameTooLong},
 	}
 
 	for _, tc := range invalidCases {

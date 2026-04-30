@@ -191,7 +191,7 @@ func (g *FunnyNameGenerator) Reset() {
 }
 
 // ValidateFunnyNameFormat validates that a name conforms to the funny name format.
-// Valid names must be 3-20 characters, contain only letters and underscores, and not be empty.
+// Valid names must be 3-30 characters, contain only letters and underscores, and not be empty.
 func ValidateFunnyNameFormat(name string) error {
 	if name == "" {
 		return ErrInvalidFunnyName
@@ -211,7 +211,7 @@ func ValidateFunnyNameFormat(name string) error {
 }
 
 // IsValidFunnyName reports whether the given name is a valid funny name from the curated list.
-// Validation checks format (letters and underscores only, 3-20 chars) and list membership.
+// Validation checks format (letters and underscores only, 3-30 chars) and list membership.
 // Comparison is case-insensitive.
 func IsValidFunnyName(name string) bool {
 	if err := ValidateFunnyNameFormat(name); err != nil {

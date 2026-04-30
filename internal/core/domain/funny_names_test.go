@@ -92,7 +92,6 @@ func TestIsValidFunnyName_CaseInsensitive(t *testing.T) {
 		{"mickey", true},
 		{"MICKEY", true},
 		{"MiCkEy", true},
-		{"mickey", true},
 		{"BARNACLE", true},
 		{"barnacle", true},
 		{"Barnacle", true},
@@ -160,7 +159,10 @@ func TestFunnyNameGenerator_NoDuplicates(t *testing.T) {
 func TestFunnyNameGenerator_MarkAsUsed(t *testing.T) {
 	gen := NewFunnyNameGenerator(99)
 
-	name, _ := gen.GetRandomName()
+	name, err := gen.GetRandomName()
+	if err != nil {
+		t.Fatalf("GetRandomName() returned error: %v", err)
+	}
 	if !gen.IsUsed(name) {
 		t.Errorf("After GetRandomName() returned %q, IsUsed(%q) = false, expected true", name, name)
 	}
@@ -175,7 +177,10 @@ func TestFunnyNameGenerator_MarkAsAvailable(t *testing.T) {
 	gen := NewFunnyNameGenerator(99)
 
 	initialCount := gen.AvailableCount()
-	name, _ := gen.GetRandomName()
+	name, err := gen.GetRandomName()
+	if err != nil {
+		t.Fatalf("GetRandomName() returned error: %v", err)
+	}
 
 	afterCount := gen.AvailableCount()
 	if afterCount != initialCount-1 {
@@ -188,7 +193,7 @@ func TestFunnyNameGenerator_MarkAsAvailable(t *testing.T) {
 		t.Errorf("After MarkAsAvailable(), AvailableCount() = %d, expected %d", restoredCount, initialCount)
 	}
 
-	_, err := gen.GetRandomName()
+	_, err = gen.GetRandomName()
 	if err != nil {
 		t.Errorf("GetRandomName() after MarkAsAvailable() returned error: %v", err)
 	}
@@ -198,9 +203,11 @@ func TestFunnyNameGenerator_Reset(t *testing.T) {
 	gen := NewFunnyNameGenerator(99)
 
 	initialCount := gen.AvailableCount()
-	gen.GetRandomName()
-	gen.GetRandomName()
-	gen.GetRandomName()
+	for i := 0; i < 3; i++ {
+		if _, err := gen.GetRandomName(); err != nil {
+			t.Fatalf("GetRandomName() iteration %d returned error: %v", i, err)
+		}
+	}
 
 	if gen.AvailableCount() != initialCount-3 {
 		t.Errorf("After 3 GetRandomName() calls, AvailableCount() = %d, expected %d", gen.AvailableCount(), initialCount-3)
@@ -216,18 +223,28 @@ func TestFunnyNameGenerator_ThreadSafety(t *testing.T) {
 	gen := NewFunnyNameGenerator(42)
 	var wg sync.WaitGroup
 	results := make(chan string, 100)
+	errCh := make(chan error, 50)
 
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			name, _ := gen.GetRandomName()
+			name, err := gen.GetRandomName()
+			if err != nil {
+				errCh <- err
+				return
+			}
 			results <- name
 		}()
 	}
 
 	wg.Wait()
 	close(results)
+	close(errCh)
+
+	if err, ok := <-errCh; ok {
+		t.Fatalf("GetRandomName() in concurrent worker returned error: %v", err)
+	}
 
 	seen := make(map[string]bool)
 	for name := range results {
@@ -243,8 +260,14 @@ func TestFunnyNameGenerator_DeterministicWithSameSeed(t *testing.T) {
 	gen2 := NewFunnyNameGenerator(12345)
 
 	for i := 0; i < 10; i++ {
-		name1, _ := gen1.GetRandomName()
-		name2, _ := gen2.GetRandomName()
+		name1, err := gen1.GetRandomName()
+		if err != nil {
+			t.Fatalf("gen1.GetRandomName() iteration %d returned error: %v", i, err)
+		}
+		name2, err := gen2.GetRandomName()
+		if err != nil {
+			t.Fatalf("gen2.GetRandomName() iteration %d returned error: %v", i, err)
+		}
 		if name1 != name2 {
 			t.Errorf("Generators with same seed produced different names at iteration %d: %q vs %q", i, name1, name2)
 		}
@@ -252,7 +275,14 @@ func TestFunnyNameGenerator_DeterministicWithSameSeed(t *testing.T) {
 }
 
 func TestFunnyName_Interface(t *testing.T) {
-	fn := FunnyName{name: "Mickey", used: false, index: 0}
+	fn, err := NewFunnyName("Mickey")
+	if err != nil {
+		t.Fatalf("NewFunnyName() returned error: %v", err)
+	}
+
+	if fn.Name() != "Mickey" {
+		t.Errorf("Name() = %q, expected %q", fn.Name(), "Mickey")
+	}
 
 	if fn.String() != "Mickey" {
 		t.Errorf("String() = %q, expected %q", fn.String(), "Mickey")
@@ -262,19 +292,21 @@ func TestFunnyName_Interface(t *testing.T) {
 		t.Error("IsValid() = false, expected true for non-empty name with length >= 3")
 	}
 
-	emptyFn := FunnyName{name: ""}
-	if emptyFn.IsValid() {
-		t.Error("IsValid() = true for empty FunnyName, expected false")
+	var zeroFn FunnyName
+	if zeroFn.IsValid() {
+		t.Error("IsValid() = true for zero-value FunnyName, expected false")
 	}
 
-	shortFn := FunnyName{name: "AB"}
-	if shortFn.IsValid() {
-		t.Error("IsValid() = true for 2-char FunnyName, expected false")
+	if _, err := NewFunnyName(""); !errors.Is(err, ErrInvalidFunnyName) {
+		t.Errorf("NewFunnyName(\"\") error = %v, expected ErrInvalidFunnyName", err)
 	}
 
-	invalidFn := FunnyName{name: "Mickey123"}
-	if invalidFn.IsValid() {
-		t.Error("IsValid() = true for FunnyName with digits, expected false")
+	if _, err := NewFunnyName("AB"); !errors.Is(err, ErrFunnyNameTooShort) {
+		t.Errorf("NewFunnyName(\"AB\") error = %v, expected ErrFunnyNameTooShort", err)
+	}
+
+	if _, err := NewFunnyName("Mickey123"); !errors.Is(err, ErrInvalidFunnyName) {
+		t.Errorf("NewFunnyName(\"Mickey123\") error = %v, expected ErrInvalidFunnyName", err)
 	}
 }
 
@@ -336,6 +368,8 @@ func BenchmarkFunnyNameGenerator_GetRandomName(b *testing.B) {
 		if i%100 == 0 {
 			gen.Reset()
 		}
-		gen.GetRandomName()
+		if _, err := gen.GetRandomName(); err != nil {
+			b.Fatalf("GetRandomName() iteration %d returned error: %v", i, err)
+		}
 	}
 }

@@ -272,7 +272,7 @@ func IsValidFunnyName(name string) bool {
 
 #### Pattern 2: Procedure Generation Method
 
-**File**: `internal/service/subscriber/` (subscriber_service.go)
+**File**: `internal/service/subscribers/` (subscriber_service.go)
 
 ```go
 // GenerateSubscriberProcedure generates the TRACE_MESSAGE_<name> procedure
@@ -362,7 +362,7 @@ For this enhancement, we follow the **extend, not replace** principle:
 
 ### Complete Project Directory Structure
 
-```
+```text
 OmniInspect/
 ├── AGENTS.md                                    # Agent guidelines & patterns
 ├── Makefile                                     # Build commands
@@ -438,7 +438,7 @@ OmniInspect/
 ### Architectural Boundaries
 
 **Component Boundaries:**
-```
+```text
 Composition Root (cmd/omniview/main.go)
          │
          ▼
@@ -469,7 +469,7 @@ Service Layer
 ```
 
 **Domain Layer:**
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │                    Domain Layer                              │
 │  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
@@ -517,7 +517,7 @@ OMNI_TRACER_API
 Per-subscriber procedures are generated as runtime DDL and executed via `ExecuteStatement()` to add them inside the `OMNI_TRACER_API` package body. This requires ALTER PACKAGE which may invalidate the entire package — this is an accepted risk.
 
 **Data Flow:**
-```
+```text
 IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
          → Enqueue_For_Subscriber(subscriber_=<NAME>, ...)
          → AQ Queue

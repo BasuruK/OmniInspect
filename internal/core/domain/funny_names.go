@@ -14,14 +14,28 @@ const (
 )
 
 type FunnyName struct {
-	name  string
-	used  bool
-	index int
+	name string
+}
+
+// NewFunnyName creates a validated funny-name value object.
+func NewFunnyName(name string) (FunnyName, error) {
+	if err := ValidateFunnyNameFormat(name); err != nil {
+		return FunnyName{}, err
+	}
+	if !isFunnyNameInList(name) {
+		return FunnyName{}, ErrInvalidFunnyName
+	}
+	return FunnyName{name: name}, nil
+}
+
+// Name returns the funny name value.
+func (f FunnyName) Name() string {
+	return f.name
 }
 
 // String returns the funny name as a string.
 func (f FunnyName) String() string {
-	return f.name
+	return f.Name()
 }
 
 // IsValid returns true if the FunnyName is valid (non-empty and passes funny-name validation).
@@ -29,9 +43,15 @@ func (f FunnyName) IsValid() bool {
 	return IsValidFunnyName(f.name)
 }
 
+type funnyNameEntry struct {
+	funnyName FunnyName
+	used      bool
+	index     int
+}
+
 type FunnyNameGenerator struct {
 	mu     sync.Mutex
-	names  []FunnyName
+	names  []funnyNameEntry
 	used   map[string]bool
 	source *rand.Rand
 }
@@ -42,9 +62,13 @@ var (
 )
 
 func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
-	names := make([]FunnyName, len(funnyNameList))
+	names := make([]funnyNameEntry, len(funnyNameList))
 	for i, name := range funnyNameList {
-		names[i] = FunnyName{name: strings.ToUpper(name), used: false, index: i}
+		funnyName, err := NewFunnyName(strings.ToUpper(name))
+		if err != nil {
+			panic(fmt.Sprintf("initialize funny name generator: %v", err))
+		}
+		names[i] = funnyNameEntry{funnyName: funnyName, index: i}
 	}
 	src := rand.NewSource(seed)
 	return &FunnyNameGenerator{
@@ -100,7 +124,7 @@ func (g *FunnyNameGenerator) MarkAsUsed(name string) error {
 	}
 	upper := strings.ToUpper(trimmed)
 	for i := range g.names {
-		if g.names[i].name == upper {
+		if g.names[i].funnyName.Name() == upper {
 			g.names[i].used = true
 			g.used[upper] = true
 			return nil
@@ -120,7 +144,7 @@ func (g *FunnyNameGenerator) MarkAsAvailable(name string) error {
 	}
 	upper := strings.ToUpper(trimmed)
 	for i := range g.names {
-		if g.names[i].name == upper {
+		if g.names[i].funnyName.Name() == upper {
 			g.names[i].used = false
 			delete(g.used, upper)
 			return nil
@@ -148,9 +172,10 @@ func (g *FunnyNameGenerator) GetRandomName() (string, error) {
 
 	idx := available[g.source.Intn(len(available))]
 	g.names[idx].used = true
-	g.used[strings.ToUpper(g.names[idx].name)] = true
+	name := g.names[idx].funnyName.Name()
+	g.used[strings.ToUpper(name)] = true
 
-	return g.names[idx].name, nil
+	return name, nil
 }
 
 // Reset marks all funny names as available and clears the used set.
@@ -190,6 +215,10 @@ func IsValidFunnyName(name string) bool {
 	if err := ValidateFunnyNameFormat(name); err != nil {
 		return false
 	}
+	return isFunnyNameInList(name)
+}
+
+func isFunnyNameInList(name string) bool {
 	upper := strings.ToUpper(name)
 	for _, valid := range funnyNameList {
 		if strings.ToUpper(valid) == upper {

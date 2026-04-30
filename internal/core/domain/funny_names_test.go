@@ -167,7 +167,9 @@ func TestFunnyNameGenerator_MarkAsUsed(t *testing.T) {
 		t.Errorf("After GetRandomName() returned %q, IsUsed(%q) = false, expected true", name, name)
 	}
 
-	gen.MarkAsAvailable(name)
+	if err := gen.MarkAsAvailable(name); err != nil {
+		t.Fatalf("MarkAsAvailable(%q) returned error: %v", name, err)
+	}
 	if gen.IsUsed(name) {
 		t.Errorf("After MarkAsAvailable(%q), IsUsed(%q) = true, expected false", name, name)
 	}
@@ -187,7 +189,9 @@ func TestFunnyNameGenerator_MarkAsAvailable(t *testing.T) {
 		t.Errorf("After GetRandomName(), AvailableCount() = %d, expected %d", afterCount, initialCount-1)
 	}
 
-	gen.MarkAsAvailable(name)
+	if err := gen.MarkAsAvailable(name); err != nil {
+		t.Fatalf("MarkAsAvailable(%q) returned error: %v", name, err)
+	}
 	restoredCount := gen.AvailableCount()
 	if restoredCount != initialCount {
 		t.Errorf("After MarkAsAvailable(), AvailableCount() = %d, expected %d", restoredCount, initialCount)
@@ -344,7 +348,9 @@ func TestFunnyNameGenerator_AvailabilityTracking(t *testing.T) {
 		t.Errorf("After GetRandomName(), IsUsed(%q) = false, expected true", firstName)
 	}
 
-	gen.MarkAsAvailable(firstName)
+	if err := gen.MarkAsAvailable(firstName); err != nil {
+		t.Fatalf("MarkAsAvailable(%q) returned error: %v", firstName, err)
+	}
 	if gen.IsUsed(firstName) {
 		t.Errorf("After MarkAsAvailable(%q), IsUsed(%q) = true, expected false", firstName, firstName)
 	}

@@ -9,8 +9,10 @@ import (
 
 const (
 	MinFunnyNameLength = 3
-	MaxFunnyNameLength = 20
-	FunnyNamePattern   = `^[A-Za-z_]+$`
+	MaxFunnyNameLength = 30
+	// FunnyNamePattern is the regex pattern for valid funny names.
+	// Format: ^[A-Za-z_]+$ — letters and underscores only, no digits.
+	FunnyNamePattern = `^[A-Za-z_]+$`
 )
 
 type FunnyName struct {
@@ -20,10 +22,10 @@ type FunnyName struct {
 // NewFunnyName creates a validated funny-name value object.
 func NewFunnyName(name string) (FunnyName, error) {
 	if err := ValidateFunnyNameFormat(name); err != nil {
-		return FunnyName{}, err
+		return FunnyName{}, fmt.Errorf("NewFunnyName: %w", err)
 	}
 	if !isFunnyNameInList(name) {
-		return FunnyName{}, ErrInvalidFunnyName
+		return FunnyName{}, fmt.Errorf("NewFunnyName: %w", ErrInvalidFunnyName)
 	}
 	return FunnyName{name: name}, nil
 }

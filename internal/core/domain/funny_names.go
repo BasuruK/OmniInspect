@@ -112,7 +112,11 @@ func (g *FunnyNameGenerator) AvailableCount() int {
 func (g *FunnyNameGenerator) IsUsed(name string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.used[strings.ToUpper(name)]
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	return g.used[strings.ToUpper(trimmed)]
 }
 
 // MarkAsUsed marks the given funny name as used so it won't be returned by GetRandomName.

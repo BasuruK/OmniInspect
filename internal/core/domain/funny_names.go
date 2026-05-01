@@ -7,13 +7,18 @@ import (
 	"sync"
 )
 
+// ==========================================
+// Constants
+// ==========================================
+
 const (
 	MinFunnyNameLength = 3
 	MaxFunnyNameLength = 30
-	// FunnyNamePattern is the regex pattern for valid funny names.
-	// Format: ^[A-Za-z_]+$ — letters and underscores only, no digits.
-	FunnyNamePattern = `^[A-Za-z_]+$`
 )
+
+// ==========================================
+// Funny Name Value Object
+// ==========================================
 
 type FunnyName struct {
 	name string
@@ -30,6 +35,10 @@ func NewFunnyName(name string) (FunnyName, error) {
 	return FunnyName{name: name}, nil
 }
 
+// ==========================================
+// Getters (Read-Only Accessors)
+// ==========================================
+
 // Name returns the funny name value.
 func (f FunnyName) Name() string {
 	return f.name
@@ -45,6 +54,10 @@ func (f FunnyName) IsValid() bool {
 	return IsValidFunnyName(f.name)
 }
 
+// ==========================================
+// Generator Support Types
+// ==========================================
+
 type funnyNameEntry struct {
 	funnyName FunnyName
 	used      bool
@@ -58,10 +71,18 @@ type FunnyNameGenerator struct {
 	source *rand.Rand
 }
 
+// ==========================================
+// Generator State
+// ==========================================
+
 var (
 	defaultGenerator *FunnyNameGenerator
 	once             sync.Once
 )
+
+// ==========================================
+// Generator Construction
+// ==========================================
 
 func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
 	names := make([]funnyNameEntry, len(funnyNameList))
@@ -94,6 +115,10 @@ func DefaultFunnyNameGenerator() *FunnyNameGenerator {
 func NewFunnyNameGenerator(seed int64) *FunnyNameGenerator {
 	return newFunnyNameGenerator(seed)
 }
+
+// ==========================================
+// Generator Operations
+// ==========================================
 
 // AvailableCount returns the number of funny names that are still available (not yet assigned).
 func (g *FunnyNameGenerator) AvailableCount() int {
@@ -194,6 +219,10 @@ func (g *FunnyNameGenerator) Reset() {
 	g.used = make(map[string]bool)
 }
 
+// ==========================================
+// Validation Helpers
+// ==========================================
+
 // ValidateFunnyNameFormat validates that a name conforms to the funny name format.
 // Valid names must be 3-30 characters, contain only letters and underscores, and not be empty.
 func ValidateFunnyNameFormat(name string) error {
@@ -241,6 +270,10 @@ func IsFunnyNameAvailable(name string) bool {
 	}
 	return !DefaultFunnyNameGenerator().IsUsed(name)
 }
+
+// ==========================================
+// Curated Funny Name List
+// ==========================================
 
 var funnyNameList = []string{
 	"ABBY",

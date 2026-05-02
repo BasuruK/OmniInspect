@@ -61,7 +61,6 @@ func (f FunnyName) IsValid() bool {
 type funnyNameEntry struct {
 	funnyName FunnyName
 	used      bool
-	index     int
 }
 
 type FunnyNameGenerator struct {
@@ -91,7 +90,7 @@ func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
 		if err != nil {
 			panic(fmt.Sprintf("initialize funny name generator: %v", err))
 		}
-		names[i] = funnyNameEntry{funnyName: funnyName, index: i}
+		names[i] = funnyNameEntry{funnyName: funnyName}
 	}
 	src := rand.NewSource(seed)
 	return &FunnyNameGenerator{

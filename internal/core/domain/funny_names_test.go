@@ -156,7 +156,7 @@ func TestFunnyNameGenerator_NoDuplicates(t *testing.T) {
 	}
 }
 
-func TestFunnyNameGenerator_MarkAsUsed(t *testing.T) {
+func TestFunnyNameGenerator_GetRandomNameMarksUsed(t *testing.T) {
 	gen := NewFunnyNameGenerator(99)
 
 	name, err := gen.GetRandomName()
@@ -172,6 +172,33 @@ func TestFunnyNameGenerator_MarkAsUsed(t *testing.T) {
 	}
 	if gen.IsUsed(name) {
 		t.Errorf("After MarkAsAvailable(%q), IsUsed(%q) = true, expected false", name, name)
+	}
+}
+
+func TestFunnyNameGenerator_MarkAsUsed(t *testing.T) {
+	gen := NewFunnyNameGenerator(99)
+
+	knownValidName, err := gen.GetRandomName()
+	if err != nil {
+		t.Fatalf("GetRandomName() returned error: %v", err)
+	}
+	if err := gen.MarkAsAvailable(knownValidName); err != nil {
+		t.Fatalf("MarkAsAvailable(%q) returned error: %v", knownValidName, err)
+	}
+
+	if err := gen.MarkAsUsed(knownValidName); err != nil {
+		t.Fatalf("MarkAsUsed(%q) returned error: %v", knownValidName, err)
+	}
+	if !gen.IsUsed(knownValidName) {
+		t.Errorf("After MarkAsUsed(%q), IsUsed(%q) = false, expected true", knownValidName, knownValidName)
+	}
+
+	testCases := []string{"", "   ", "NOTANAME"}
+	for _, name := range testCases {
+		err := gen.MarkAsUsed(name)
+		if !errors.Is(err, ErrInvalidFunnyName) {
+			t.Errorf("MarkAsUsed(%q) error = %v, expected ErrInvalidFunnyName", name, err)
+		}
 	}
 }
 

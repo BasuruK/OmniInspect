@@ -81,16 +81,23 @@ var (
 
 // ==========================================
 // Generator Construction
-// ==========================================
+// ==========================================//
 
+// newFunnyNameGenerator initializes a FunnyNameGenerator with the provided seed.
 func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
-	names := make([]funnyNameEntry, len(funnyNameList))
-	for i, name := range funnyNameList {
+	seen := make(map[string]bool, len(funnyNameList))
+	names := make([]funnyNameEntry, 0, len(funnyNameList))
+	for _, name := range funnyNameList {
 		funnyName, err := NewFunnyName(strings.ToUpper(name))
 		if err != nil {
 			panic(fmt.Sprintf("initialize funny name generator: %v", err))
 		}
-		names[i] = funnyNameEntry{funnyName: funnyName}
+		upper := funnyName.Name()
+		if seen[upper] {
+			panic(fmt.Sprintf("initialize funny name generator: duplicate name %q in curated list", upper))
+		}
+		seen[upper] = true
+		names = append(names, funnyNameEntry{funnyName: funnyName})
 	}
 	src := rand.NewSource(seed)
 	return &FunnyNameGenerator{
@@ -252,6 +259,7 @@ func IsValidFunnyName(name string) bool {
 	return isFunnyNameInList(name)
 }
 
+// isFunnyNameInList checks if the given name exists in the curated funny name list (case-insensitive).
 func isFunnyNameInList(name string) bool {
 	upper := strings.ToUpper(name)
 	for _, valid := range funnyNameList {

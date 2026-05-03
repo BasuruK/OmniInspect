@@ -33,7 +33,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 - Follow existing Go constructor patterns: `New...` functions validate inputs and usually return pointers.
 - Keep domain entities validated and infrastructure-agnostic; prefer private struct fields with read-only methods instead of exposing mutable state.
-- Use sentinel domain errors from `internal/core/domain/errors.go` and wrap with context via `fmt.Errorf("operation: %w", err)`.
+- Use sentinel domain errors from `internal/core/domain/errors.go` and wrap with context via `fmt.Errorf("operation: %w", err)`. Domain sentinel errors (like `ErrInvalidFunnyName`, `ErrNoAvailableNames`) live in `errors.go` alongside other domain errors — not in feature-specific files.
 - Prefer pointer receivers for services, adapters, and Bubble Tea models that own mutable state.
 - Inject dependencies through constructor arguments or option structs; do not instantiate cross-layer dependencies inside adapters or services.
 - Keep nil checks explicit at construction boundaries for required collaborators.

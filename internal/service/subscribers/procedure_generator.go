@@ -5,6 +5,7 @@ import (
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -24,8 +25,11 @@ type ProcedureGenerator struct {
 	db ports.DatabaseRepository
 }
 
-func NewProcedureGenerator(db ports.DatabaseRepository) *ProcedureGenerator {
-	return &ProcedureGenerator{db: db}
+func NewProcedureGenerator(db ports.DatabaseRepository) (*ProcedureGenerator, error) {
+	if db == nil {
+		return nil, domain.ErrNilDatabase
+	}
+	return &ProcedureGenerator{db: db}, nil
 }
 
 func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error) {
@@ -68,7 +72,7 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 	return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
 }
 
-func (pg *ProcedureGenerator) ReleaseFunnyName(funnyName string) {
+func (pg *ProcedureGenerator) ReleaseFunnyName(_ context.Context, funnyName string) {
 	if funnyName == "" {
 		return
 	}
@@ -133,6 +137,10 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: failed to load package source: %w", err)
 	}
+	packageSpec, packageBody, err = normalizePackageSource(packageSpec, packageBody)
+	if err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: failed to normalize package source: %w", err)
+	}
 
 	packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
 	if err != nil {
@@ -147,17 +155,20 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: failed to deploy package: %w", err)
 	}
 
-	pg.ReleaseFunnyName(funnyName)
+	pg.ReleaseFunnyName(ctx, funnyName)
 	return nil
 }
 
 func (pg *ProcedureGenerator) loadPackageSource(ctx context.Context) (string, string, error) {
 	packageSpec, packageBody, err := pg.fetchCurrentPackageSource(ctx)
-	if err == nil && packageHasEnqueueForSubscriber(packageSpec, packageBody) {
-		return packageSpec, packageBody, nil
+	if err == nil {
+		return normalizePackageSource(packageSpec, packageBody)
+	}
+	if errors.Is(err, domain.ErrPackageNotFound) {
+		return loadBasePackageSource()
 	}
 
-	return loadBasePackageSource()
+	return "", "", fmt.Errorf("fetchCurrentPackageSource: %w", err)
 }
 
 func (pg *ProcedureGenerator) fetchCurrentPackageSource(ctx context.Context) (string, string, error) {
@@ -170,7 +181,7 @@ func (pg *ProcedureGenerator) fetchCurrentPackageSource(ctx context.Context) (st
 		return "", "", err
 	}
 	if len(packageSpecLines) == 0 || len(packageBodyLines) == 0 {
-		return "", "", fmt.Errorf("package source not found")
+		return "", "", domain.ErrPackageNotFound
 	}
 
 	return strings.Join(packageSpecLines, "\n"), strings.Join(packageBodyLines, "\n"), nil
@@ -241,6 +252,23 @@ func injectProcedureBody(packageBody string, funnyName string) (string, error) {
 	return insertBeforePackageEnd(packageBody, procedureBody)
 }
 
+func normalizePackageSource(packageSpec string, packageBody string) (string, string, error) {
+	var err error
+	packageSpec, err = removeProcedureBlock(packageSpec, "PROCEDURE Enqueue_For_Subscriber(", ");")
+	if err != nil {
+		return "", "", err
+	}
+	packageBody, err = removeProcedureBlock(packageBody, "PROCEDURE Enqueue_For_Subscriber(", "END Enqueue_For_Subscriber;")
+	if err != nil {
+		return "", "", err
+	}
+	packageBody, err = replaceProcedureBlock(packageBody, "PROCEDURE Enqueue_Event___ (", "END Enqueue_Event___;", standardEnqueueEventBody())
+	if err != nil {
+		return "", "", err
+	}
+	return packageSpec, packageBody, nil
+}
+
 func removeProcedureDeclaration(packageSpec string, procedureName string) (string, error) {
 	return removeProcedureBlock(packageSpec, fmt.Sprintf("PROCEDURE %s(", procedureName), ");")
 }
@@ -281,10 +309,22 @@ func removeProcedureBlock(packageSource string, startNeedle string, endNeedle st
 	return prefix + "\n\n" + suffix, nil
 }
 
-func packageHasEnqueueForSubscriber(packageSpec string, packageBody string) bool {
-	upperSpec := strings.ToUpper(packageSpec)
-	upperBody := strings.ToUpper(packageBody)
-	return strings.Contains(upperSpec, "PROCEDURE ENQUEUE_FOR_SUBSCRIBER(") && strings.Contains(upperBody, "PROCEDURE ENQUEUE_FOR_SUBSCRIBER(")
+func replaceProcedureBlock(packageSource string, startNeedle string, endNeedle string, replacement string) (string, error) {
+	upperSource := strings.ToUpper(packageSource)
+	startIdx := strings.Index(upperSource, strings.ToUpper(startNeedle))
+	if startIdx == -1 {
+		return "", fmt.Errorf("procedure start marker not found")
+	}
+
+	endRelIdx := strings.Index(upperSource[startIdx:], strings.ToUpper(endNeedle))
+	if endRelIdx == -1 {
+		return "", fmt.Errorf("procedure end marker not found")
+	}
+	endIdx := startIdx + endRelIdx + len(endNeedle)
+
+	prefix := strings.TrimRight(packageSource[:startIdx], "\n")
+	suffix := strings.TrimLeft(packageSource[endIdx:], "\n")
+	return prefix + "\n\n" + replacement + "\n\n" + suffix, nil
 }
 
 func validateFunnyNameForProcedure(name string) error {
@@ -321,10 +361,111 @@ func generateProcedureBody(funnyName string) string {
     )
     IS
     BEGIN
-        OMNI_TRACER_API.Enqueue_For_Subscriber(
-            subscriber_name_ => '%s',
-            message_         => message_,
-            log_level_       => log_level_
+        Enqueue_Event___(
+            log_level_        => log_level_,
+            payload           => message_,
+            subscriber_name_  => '%s'
         );
     END %s;`, procedureName, upperName, procedureName)
+}
+
+func standardEnqueueEventBody() string {
+	return `    PROCEDURE Enqueue_Event___ (
+        process_name_       IN VARCHAR2,
+        log_level_          IN VARCHAR2,
+        payload             IN CLOB,
+        additional_props_   IN CLOB DEFAULT NULL,
+        subscriber_name_    IN VARCHAR2 DEFAULT NULL )
+    IS
+        message_            JSON_OBJECT_T;
+        additional_props_obj_ JSON_OBJECT_T;
+        additional_prop_keys_ JSON_KEY_LIST;
+        enqueue_options_    DBMS_AQ.ENQUEUE_OPTIONS_T;
+        message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
+        message_handle_     RAW(16);
+        json_payload_       CLOB;
+        temp_blob_          BLOB;
+        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;
+        resolved_process_   VARCHAR2(100);
+    BEGIN
+        enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message visible immediately without waiting for commit
+
+        resolved_process_ := process_name_;
+        IF resolved_process_ IS NULL THEN
+            resolved_process_ := SYS_CONTEXT('USERENV', 'MODULE');
+            IF resolved_process_ IS NULL THEN
+                resolved_process_ := 'OMNI_TRACER_API';
+            END IF;
+        END IF;
+
+        IF subscriber_name_ IS NOT NULL THEN
+            message_properties_.recipient_list := SYS.AQ$_RECIPIENT_LIST_T(
+                SYS.AQ$_AGENT(subscriber_name_, NULL, NULL)
+            );
+        END IF;
+
+        message_ := JSON_OBJECT_T();
+        message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
+        message_.PUT('PROCESS_NAME', resolved_process_);
+        message_.PUT('LOG_LEVEL', log_level_);
+        message_.PUT('PAYLOAD', payload);
+        message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+
+        -- Merge additional properties if provided (for extensibility)
+        IF additional_props_ IS NOT NULL AND DBMS_LOB.GETLENGTH(additional_props_) > 0 THEN
+            additional_props_obj_ := JSON_OBJECT_T.parse(additional_props_);
+            additional_prop_keys_ := additional_props_obj_.get_keys;
+
+            IF additional_prop_keys_.COUNT = 2
+               AND additional_props_obj_.has('key')
+               AND additional_props_obj_.has('value') THEN
+                message_.PUT(
+                    additional_props_obj_.get_string('key'),
+                    additional_props_obj_.get('value')
+                );
+            ELSE
+                FOR i_ IN 1 .. additional_prop_keys_.COUNT LOOP
+                    message_.PUT(
+                        additional_prop_keys_(i_),
+                        additional_props_obj_.get(additional_prop_keys_(i_))
+                    );
+                END LOOP;
+            END IF;
+        END IF;
+
+        IF subscriber_name_ IS NOT NULL THEN
+            message_.PUT('SUBSCRIBER', subscriber_name_);
+        END IF;
+
+        json_payload_ := message_.TO_CLOB();
+        temp_blob_ := Clob_To_Blob___(json_payload_);
+        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(temp_blob_);
+
+        DBMS_AQ.ENQUEUE (
+            queue_name          => TRACER_QUEUE_NAME,
+            enqueue_options     => enqueue_options_,
+            message_properties  => message_properties_,
+            payload             => payload_object_,
+            msgid               => message_handle_
+        );
+
+        IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
+        END IF;
+
+        IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(json_payload_);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(temp_blob_);
+            END IF;
+
+            IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(json_payload_);
+            END IF;
+
+            RAISE;
+    END Enqueue_Event___;`
 }

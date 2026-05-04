@@ -328,7 +328,10 @@ func (m *Model) initializeServices() error {
 	}
 	if m.subscriberService == nil {
 		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-		procGen := subscribers.NewProcedureGenerator(m.dbAdapter)
+		procGen, err := subscribers.NewProcedureGenerator(m.dbAdapter)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create procedure generator: %w", err)
+		}
 		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo, procGen)
 	}
 

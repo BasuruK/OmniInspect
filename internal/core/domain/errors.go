@@ -42,6 +42,8 @@ var (
 	ErrDefaultSettingsNotFound = errors.New("default database settings not found")
 	ErrNilRepository           = errors.New("repository cannot be nil")
 	ErrNilConfig               = errors.New("config repository cannot be nil")
+	ErrNilDatabase             = errors.New("database repository cannot be nil")
+	ErrPackageNotFound         = errors.New("package source not found")
 
 	// Permission errors
 	ErrPermissionDenied      = errors.New("permission denied")

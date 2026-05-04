@@ -156,8 +156,8 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - Simplifies permissions and deployment
 
 **Implementation Note**:
-- `Enqueue_For_Subscriber()` must be added to base package as part of this development
-- Generated procedures call `Enqueue_For_Subscriber()` internally
+- `Enqueue_Event___()` in the base package must support an optional `subscriber_name_` parameter as part of this development
+- Generated procedures call `Enqueue_Event___()` internally with `subscriber_name_` set to the assigned funny name
 
 ---
 
@@ -298,15 +298,15 @@ PROCEDURE TRACE_MESSAGE_BARNACLE(
 )
 IS
 BEGIN
-    OMNI_TRACER_API.Enqueue_For_Subscriber(
-        subscriber_name_ => 'BARNACLE',
-        message_         => message_,
-        log_level_       => log_level_
+    Enqueue_Event___(
+        log_level_        => log_level_,
+        payload           => message_,
+        subscriber_name_  => 'BARNACLE'
     );
 END TRACE_MESSAGE_BARNACLE;
 ```
 
-**Required Prerequisite**: `Enqueue_For_Subscriber()` must exist in `OMNI_TRACER_API` package before generated procedures can call it.
+**Required Prerequisite**: `Enqueue_Event___()` must support optional `subscriber_name_` routing before generated procedures can call it.
 
 **Validation Rules**:
 - Name MUST be validated against funny name list before DDL generation
@@ -509,7 +509,7 @@ Service Layer
 ```text
 OMNI_TRACER_API
 ├── Trace_Message(message_, log_level_)      # Original - unchanged
-├── Enqueue_For_Subscriber(...)             # [NEW] Internal helper for generated procedures
+├── Enqueue_Event___(..., subscriber_name_) # Internal helper with optional subscriber routing
 └── TRACE_MESSAGE_<FUNNY_NAME>(...)        # [NEW] Generated per subscriber
 ```
 
@@ -519,7 +519,7 @@ Per-subscriber procedures are generated as runtime DDL and executed via `Execute
 **Data Flow:**
 ```text
 IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
-         → Enqueue_For_Subscriber(subscriber_=<NAME>, ...)
+         → Enqueue_Event___(..., subscriber_name_=<NAME>)
          → AQ Queue
          → OmniView dequeues
          → Only matching subscriber receives
@@ -559,7 +559,7 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 | FR-7: Display method name | ✅ | `main_screen.go` header area |
 
 **Additional Requirements (User-Confirmed):**
-1. `Enqueue_For_Subscriber()` must be implemented as part of this development
+1. `Enqueue_Event___()` must support optional `subscriber_name_` routing as part of this development
 2. All generated procedures must be inside `OMNI_TRACER_API` package — no standalone schema objects
 3. Package invalidation is accepted risk
 
@@ -578,7 +578,7 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 **Critical Gaps:** None remaining after user decisions
 
 **Resolved:**
-- `Enqueue_For_Subscriber()` will be added to base package during implementation
+- `Enqueue_Event___()` will be extended with subscriber routing during implementation
 - All procedures inside package (no standalone procedures)
 - Package invalidation accepted risk
 
@@ -621,15 +621,14 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 **Key Decisions Resolved:**
 - Procedure naming: Funny cartoon character names (auto-assigned)
 - Generation approach: Inside `OMNI_TRACER_API` package via ALTER PACKAGE
-- `Enqueue_For_Subscriber()`: Must be added to base package
+- `Enqueue_Event___()`: Must support optional subscriber routing in the base package
 - Package invalidation: Accepted risk
 
 **First Implementation Priority:**
-`funny_names.go` (domain value object) → `Enqueue_For_Subscriber()` (base package addition) → procedure generation in `subscriber_service.go`
+`funny_names.go` (domain value object) → `Enqueue_Event___()` subscriber routing extension → procedure generation in `subscriber_service.go`
 
 ---
 
 ## Next Step
 
 [C] Continue to complete the architecture workflow
-

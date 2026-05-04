@@ -51,7 +51,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 - **Funny Name System:** Auto-assign curated cartoon character names (e.g., Mickey, Donald, Bugs, Daffy, Scooby, Tom, Jerry) to subscribers for procedure naming
 - **Name Collision Handling:** System automatically picks another available name if collision occurs
-- **Enqueue_For_Subscriber():** Must be added to base OMNI_TRACER_API package as prerequisite for generated procedures
+- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper must support an optional `subscriber_name_` parameter for generated procedures
 - **SQL Injection Prevention:** Strict format validation on all funny names before DDL generation
 - **Idempotent Procedure Creation:** Check if procedure exists before creating (skip if already exists)
 - **Backwards Compatibility:** Existing `Trace_Message()` callers remain unaffected
@@ -140,10 +140,10 @@ So that procedure names are memorable and unique.
 
 ---
 
-### Story 1.2: Procedure Generation with Enqueue_For_Subscriber
+### Story 1.2: Procedure Generation with Subscriber-Routed Enqueue
 
 As a system,
-I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call `Enqueue_For_Subscriber()`, using the subscriber's auto-assigned funny name.
+I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call the internal enqueue helper with a subscriber routing parameter, using the subscriber's auto-assigned funny name.
 So that messages are routed to the correct subscriber.
 
 **Acceptance Criteria:**
@@ -151,7 +151,7 @@ So that messages are routed to the correct subscriber.
 **Given** a subscriber with name BARNACLE is registered
 **When** OmniView generates their procedure
 **Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_)` is created inside OMNI_TRACER_API package
-**And** it calls `OMNI_TRACER_API.Enqueue_For_Subscriber(subscriber_name_ => 'BARNACLE', message_ => message_, log_level_ => log_level_)`
+**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE')`
 
 **Given** the subscriber's procedure already exists
 **When** OmniView starts
@@ -188,7 +188,7 @@ So that I can redeploy it if missing.
 
 **Given** OmniView starts
 **When** the system checks for OMNI_TRACER_API package
-**Then** if missing, it deploys the base package with `Enqueue_For_Subscriber()`
+**Then** if missing, it deploys the base package with subscriber-routed `Enqueue_Event___()` support
 **And** it then generates all subscriber procedures
 
 **Given** OmniView starts and OMNI_TRACER_API package exists
@@ -247,5 +247,5 @@ So that I can remove all generated procedures at once.
 
 **Given** the package is dropped
 **When** OmniView restarts
-**Then** it redeploys the base package with `Enqueue_For_Subscriber()`
+**Then** it redeploys the base package with subscriber-routed `Enqueue_Event___()` support
 **And** it regenerates all subscriber procedures

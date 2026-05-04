@@ -401,7 +401,7 @@ func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) 
 
 	count, err := parseCountResult(results)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse count result: %v", err)
+		return false, fmt.Errorf("failed to parse count result: %w", err)
 	}
 
 	return count > 0, nil

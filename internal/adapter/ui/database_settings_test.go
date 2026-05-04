@@ -106,6 +106,11 @@ func (m *MockDatabaseRepository) PackageExists(ctx context.Context, packageName 
 	return false, nil
 }
 
+// ProcedureExists implements ports.DatabaseRepository (no-op for mock).
+func (m *MockDatabaseRepository) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
+	return false, nil
+}
+
 // DeployPackages implements ports.DatabaseRepository (no-op for mock).
 func (m *MockDatabaseRepository) DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error {
 	return nil

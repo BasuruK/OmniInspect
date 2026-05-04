@@ -8,17 +8,20 @@ import "errors"
 
 var (
 	// Subscriber errors
-	ErrSubscriberNotFound    = errors.New("subscriber not found")
-	ErrInvalidSubscriberName = errors.New("invalid subscriber name")
-	ErrSubscriberNotActive   = errors.New("subscriber is not active")
-	ErrInvalidBatchSize      = errors.New("invalid batch size")
-	ErrInvalidWaitTime       = errors.New("invalid wait time")
-	ErrInvalidFunnyName      = errors.New("invalid funny name")
-	ErrNoAvailableNames      = errors.New("no available funny names")
-	ErrFunnyNameTooLong      = errors.New("funny name exceeds maximum length")
-	ErrFunnyNameTooShort     = errors.New("funny name too short")
-	ErrNilSubscriber         = errors.New("nil subscriber")
-	ErrTracerNotInitialized  = errors.New("tracer service not initialized")
+	ErrSubscriberNotFound      = errors.New("subscriber not found")
+	ErrInvalidSubscriberName  = errors.New("invalid subscriber name")
+	ErrSubscriberNotActive    = errors.New("subscriber is not active")
+	ErrInvalidBatchSize       = errors.New("invalid batch size")
+	ErrInvalidWaitTime        = errors.New("invalid wait time")
+	ErrInvalidFunnyName       = errors.New("invalid funny name")
+	ErrNoAvailableNames       = errors.New("no available funny names")
+	ErrFunnyNameTooLong       = errors.New("funny name exceeds maximum length")
+	ErrFunnyNameTooShort      = errors.New("funny name too short")
+	ErrNilSubscriber          = errors.New("nil subscriber")
+	ErrTracerNotInitialized   = errors.New("tracer service not initialized")
+	ErrProcedureGeneration    = errors.New("procedure generation failed")
+	ErrProcedureNotFound     = errors.New("procedure not found")
+	ErrInvalidProcedureName   = errors.New("invalid procedure name")
 
 	// Queue message errors
 	ErrInvalidMessageID = errors.New("invalid message ID")

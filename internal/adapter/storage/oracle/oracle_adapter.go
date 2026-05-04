@@ -407,6 +407,33 @@ func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) 
 	return count > 0, nil
 }
 
+// ProcedureExists checks if a procedure exists inside a package in the connected Oracle database.
+func (oa *OracleAdapter) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
+	query := `SELECT COUNT(1) 
+			FROM user_procedures 
+			WHERE object_name = 'OMNI_TRACER_API' 
+			AND procedure_name = UPPER(:procedureName)
+			AND object_type = 'PACKAGE'`
+
+	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
+		"procedureName": procedureName,
+	})
+
+	if err != nil {
+		return false, err
+	}
+	if len(results) == 0 {
+		return false, fmt.Errorf("no results returned from procedure existence query")
+	}
+
+	count, err := parseCountResult(results)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse count result: %v", err)
+	}
+
+	return count > 0, nil
+}
+
 // FetchWithParams executes a SELECT query with parameters and returns all results as a slice of strings.
 func (oa *OracleAdapter) FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error) {
 	// Context is accepted to satisfy the repository interface, but ODPI-C calls are synchronous/blocking and do not support cancellation.

@@ -47,7 +47,7 @@ func newTestModelForWebhookSettings(t *testing.T) *Model {
 		dbAdapter:          mockDB,
 		permissionService:  permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, boltAdapter),
 		tracerService:      tracerService,
-		subscriberService:  subscribers.NewSubscriberService(mockDB, nil),
+		subscriberService:  subscribers.NewSubscriberService(mockDB, nil, nil),
 		updaterService:     updaterSvc.NewUpdaterService("test"),
 		eventChannel:       eventChannel,
 		updateEventChannel: make(chan tea.Msg, 16),

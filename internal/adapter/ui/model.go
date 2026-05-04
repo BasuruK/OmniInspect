@@ -328,7 +328,8 @@ func (m *Model) initializeServices() error {
 	}
 	if m.subscriberService == nil {
 		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+		procGen := subscribers.NewProcedureGenerator(m.dbAdapter)
+		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo, procGen)
 	}
 
 	return nil

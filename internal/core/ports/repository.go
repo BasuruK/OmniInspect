@@ -97,6 +97,9 @@ type DatabaseRepository interface {
 	// PackageExists checks if a package exists
 	PackageExists(ctx context.Context, packageName string) (bool, error)
 
+	// ProcedureExists checks if a procedure exists inside a package
+	ProcedureExists(ctx context.Context, procedureName string) (bool, error)
+
 	// DeployPackages deploys PL/SQL packages
 	DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error
 

@@ -112,7 +112,7 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 		dbSettingsRepo:    stubDatabaseSettingsRepository{},
 		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, configRepo),
 		tracerService:     tracerService,
-		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
+		subscriberService: subscribers.NewSubscriberService(mockDB, nil, nil),
 		eventChannel:      eventChannel,
 	}
 }

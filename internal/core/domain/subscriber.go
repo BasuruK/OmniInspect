@@ -62,6 +62,7 @@ func (w WaitTime) Int() int { return int(w) }
 // Entity : Subscriber information
 type Subscriber struct {
 	name      string
+	funnyName string
 	batchSize BatchSize
 	waitTime  WaitTime
 	createdAt time.Time
@@ -85,11 +86,24 @@ func NewSubscriber(name string, batchSize BatchSize, waitTime WaitTime) (*Subscr
 
 	return &Subscriber{
 		name:      name,
+		funnyName: "",
 		batchSize: batchSize,
 		waitTime:  waitTime,
 		createdAt: time.Now(),
 		active:    true,
 	}, nil
+}
+
+// NewSubscriberWithFunnyName creates a subscriber with a funny name assigned
+func NewSubscriberWithFunnyName(name string, funnyName string, batchSize BatchSize, waitTime WaitTime) (*Subscriber, error) {
+	subscriber, err := NewSubscriber(name, batchSize, waitTime)
+	if err != nil {
+		return nil, err
+	}
+	if err := subscriber.AssignFunnyName(funnyName); err != nil {
+		return nil, err
+	}
+	return subscriber, nil
 }
 
 // NewSubscriberWithDefaults creates a subscriber with default values
@@ -108,7 +122,17 @@ func NewRandomSubscriber() (*Subscriber, error) {
 // Getters (Read-Only Accessors)
 // ==========================================
 
-func (s *Subscriber) Name() string         { return s.name }
+func (s *Subscriber) Name() string      { return s.name }
+func (s *Subscriber) FunnyName() string { return s.funnyName }
+
+// ConsumerName returns the Oracle AQ consumer name used for registration and dequeue.
+func (s *Subscriber) ConsumerName() string {
+	if s.funnyName != "" {
+		return s.funnyName
+	}
+	return s.name
+}
+
 func (s *Subscriber) BatchSize() BatchSize { return s.batchSize }
 func (s *Subscriber) WaitTime() WaitTime   { return s.waitTime }
 func (s *Subscriber) CreatedAt() time.Time { return s.createdAt }
@@ -117,6 +141,19 @@ func (s *Subscriber) IsActive() bool       { return s.active }
 // ==========================================
 // Business Methods
 // ==========================================
+
+// AssignFunnyName validates and stores the subscriber's procedure alias.
+func (s *Subscriber) AssignFunnyName(funnyName string) error {
+	if s == nil {
+		return ErrNilSubscriber
+	}
+	validated, err := NewFunnyName(strings.ToUpper(funnyName))
+	if err != nil {
+		return err
+	}
+	s.funnyName = validated.Name()
+	return nil
+}
 
 // CanProcess returns true if the subscriber can process messages
 func (s *Subscriber) CanProcess() bool {
@@ -146,6 +183,7 @@ func (s *Subscriber) String() string {
 // subscriberJSON provides a JSON-friendly intermediate representation
 type subscriberJSON struct {
 	Name      string `json:"name"`
+	FunnyName string `json:"funny_name,omitempty"`
 	BatchSize int    `json:"batch_size"`
 	WaitTime  int    `json:"wait_time"`
 	CreatedAt int64  `json:"created_at"`
@@ -156,6 +194,7 @@ type subscriberJSON struct {
 func (s *Subscriber) MarshalJSON() ([]byte, error) {
 	j := subscriberJSON{
 		Name:      s.name,
+		FunnyName: s.funnyName,
 		BatchSize: int(s.batchSize),
 		WaitTime:  int(s.waitTime),
 		CreatedAt: s.createdAt.Unix(),
@@ -200,6 +239,11 @@ func (s *Subscriber) UnmarshalJSON(data []byte) error {
 	// If createdAt is provided, override the default value
 	if err != nil {
 		return err
+	}
+	if j.FunnyName != "" {
+		if err := sub.AssignFunnyName(j.FunnyName); err != nil {
+			return fmt.Errorf("invalid funny name: %w", err)
+		}
 	}
 	if j.CreatedAt != 0 {
 		sub.createdAt = time.Unix(j.CreatedAt, 0)

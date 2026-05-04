@@ -102,6 +102,11 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     PROCEDURE Initialize;
     PROCEDURE Trace_Message(message_ IN CLOB, log_level_ IN VARCHAR2 DEFAULT 'INFO');
     PROCEDURE Trace_Message_To_Webhook(message_ IN CLOB, log_level_ IN VARCHAR2 DEFAULT 'INFO');
+    PROCEDURE Enqueue_For_Subscriber(
+        subscriber_name_ IN VARCHAR2,
+        message_         IN CLOB,
+        log_level_       IN VARCHAR2 DEFAULT 'INFO'
+    );
     PROCEDURE Dequeue_Array_Events(
         subscriber_name_ IN  VARCHAR2,
         batch_size_      IN  INTEGER,
@@ -314,6 +319,75 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             additional_props_   => '{"SEND_TO_WEBHOOK":"TRUE"}'
         );
     END Trace_Message_To_Webhook;
+
+
+    PROCEDURE Enqueue_For_Subscriber (
+        subscriber_name_ IN VARCHAR2,
+        message_         IN CLOB,
+        log_level_       IN VARCHAR2 DEFAULT 'INFO')
+    IS
+        message_obj_        JSON_OBJECT_T;
+        enqueue_options_    DBMS_AQ.ENQUEUE_OPTIONS_T;
+        message_properties_ DBMS_AQ.MESSAGE_PROPERTIES_T;
+        message_handle_     RAW(16);
+        json_payload_       CLOB;
+        temp_blob_          BLOB;
+        payload_object_     OMNI_TRACER_PAYLOAD_TYPE;
+        calling_process_    VARCHAR2(100);
+    BEGIN
+        IF subscriber_name_ IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
+        END IF;
+
+        calling_process_ := SYS_CONTEXT('USERENV', 'MODULE');
+        IF calling_process_ IS NULL THEN
+            calling_process_ := 'OMNI_TRACER_API';
+        END IF;
+
+        enqueue_options_.visibility := DBMS_AQ.IMMEDIATE;
+        message_properties_.recipient_list := SYS.AQ$_RECIPIENT_LIST_T(
+            SYS.AQ$_AGENT(subscriber_name_, NULL, NULL)
+        );
+
+        message_obj_ := JSON_OBJECT_T();
+        message_obj_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
+        message_obj_.PUT('PROCESS_NAME', calling_process_);
+        message_obj_.PUT('LOG_LEVEL', log_level_);
+        message_obj_.PUT('PAYLOAD', message_);
+        message_obj_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+        message_obj_.PUT('SUBSCRIBER', subscriber_name_);
+
+        json_payload_ := message_obj_.TO_CLOB();
+        temp_blob_ := Clob_To_Blob___(json_payload_);
+        payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(temp_blob_);
+
+        DBMS_AQ.ENQUEUE (
+            queue_name          => TRACER_QUEUE_NAME,
+            enqueue_options     => enqueue_options_,
+            message_properties  => message_properties_,
+            payload             => payload_object_,
+            msgid               => message_handle_
+        );
+
+        IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(temp_blob_);
+        END IF;
+
+        IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(json_payload_);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF temp_blob_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(temp_blob_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(temp_blob_);
+            END IF;
+
+            IF json_payload_ IS NOT NULL AND DBMS_LOB.ISTEMPORARY(json_payload_) = 1 THEN
+                DBMS_LOB.FREETEMPORARY(json_payload_);
+            END IF;
+
+            RAISE;
+    END Enqueue_For_Subscriber;
 
 
     PROCEDURE Dequeue_Array_Events(

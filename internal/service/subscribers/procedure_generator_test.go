@@ -11,9 +11,11 @@ import (
 type stubDBRepo struct {
 	procedureExists     map[string]bool
 	procedureExistsErr  error
+	executeStatementErr error
 	deployFileErr       error
 	deployFileCallCount int
 	deployedSQL         string
+	executedStatements  []string
 	registerErr         error
 	registeredConsumers []string
 	packageSpecSource   []string
@@ -48,6 +50,10 @@ func (s *stubDBRepo) Fetch(ctx context.Context, query string) ([]string, error) 
 }
 
 func (s *stubDBRepo) ExecuteStatement(ctx context.Context, query string) error {
+	s.executedStatements = append(s.executedStatements, query)
+	if s.executeStatementErr != nil {
+		return s.executeStatementErr
+	}
 	return nil
 }
 
@@ -158,6 +164,15 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_DeploysPackageUpdate(t *
 	if stub.deployFileCallCount != 1 {
 		t.Fatalf("expected 1 package deploy, got %d", stub.deployFileCallCount)
 	}
+	if len(stub.executedStatements) != 2 {
+		t.Fatalf("expected 2 lock statements, got %d", len(stub.executedStatements))
+	}
+	if !strings.Contains(stub.executedStatements[0], "DBMS_LOCK.REQUEST") {
+		t.Fatalf("expected acquire lock statement, got %s", stub.executedStatements[0])
+	}
+	if !strings.Contains(stub.executedStatements[1], "DBMS_LOCK.RELEASE") {
+		t.Fatalf("expected release lock statement, got %s", stub.executedStatements[1])
+	}
 	if !strings.Contains(stub.deployedSQL, "PROCEDURE TRACE_MESSAGE_BARNACLE(") {
 		t.Fatalf("generated deployment SQL missing procedure declaration: %s", stub.deployedSQL)
 	}
@@ -251,6 +266,9 @@ END OMNI_TRACER_API;`),
 	if stub.deployFileCallCount != 1 {
 		t.Fatalf("expected 1 package deploy, got %d", stub.deployFileCallCount)
 	}
+	if len(stub.executedStatements) != 2 {
+		t.Fatalf("expected 2 lock statements, got %d", len(stub.executedStatements))
+	}
 	if strings.Contains(stub.deployedSQL, "TRACE_MESSAGE_BARNACLE") {
 		t.Fatalf("package deployment still contains dropped procedure: %s", stub.deployedSQL)
 	}
@@ -292,6 +310,37 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_PropagatesFetchErrors(t 
 	}
 	if stub.deployFileCallCount != 0 {
 		t.Fatalf("expected no package deploy when fetch fails, got %d", stub.deployFileCallCount)
+	}
+	if len(stub.executedStatements) != 2 {
+		t.Fatalf("expected lock acquire and release around fetch failure, got %d statements", len(stub.executedStatements))
+	}
+}
+
+func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFails(t *testing.T) {
+	domain.DefaultFunnyNameGenerator().Reset()
+
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
+		deployFileErr:   errors.New("deploy failed"),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	err = pg.GenerateSubscriberProcedure(context.Background(), subscriber)
+	if !errors.Is(err, stub.deployFileErr) {
+		t.Fatalf("GenerateSubscriberProcedure() error = %v, want wrapped deploy error", err)
+	}
+	if len(stub.executedStatements) != 2 {
+		t.Fatalf("expected lock acquire and release when deploy fails, got %d statements", len(stub.executedStatements))
+	}
+	if !strings.Contains(stub.executedStatements[1], "DBMS_LOCK.RELEASE") {
+		t.Fatalf("expected release lock statement after deploy failure, got %s", stub.executedStatements[1])
 	}
 }
 

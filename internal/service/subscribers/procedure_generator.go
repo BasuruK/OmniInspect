@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 
 type ProcedureGenerator struct {
 	db ports.DatabaseRepository
+	mu sync.Mutex
 }
 
 func NewProcedureGenerator(db ports.DatabaseRepository) (*ProcedureGenerator, error) {
@@ -183,6 +185,9 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 }
 
 func (pg *ProcedureGenerator) withPackageDeployLock(ctx context.Context, fn func() error) (err error) {
+	pg.mu.Lock()
+	defer pg.mu.Unlock()
+
 	if err := pg.acquirePackageDeployLock(ctx); err != nil {
 		return fmt.Errorf("failed to acquire package deploy lock: %w", err)
 	}

@@ -6,26 +6,6 @@ Do not modify this file directly unless you are certain of the implications.
 Copyright (c) 2025.
 */
 
--- @SECTION: SEQUENCE_CREATION
-
-DECLARE
-    v_count NUMBER;
-BEGIN
-    -- Check if sequence exists
-    SELECT COUNT(*)
-    INTO v_count
-    FROM user_sequences
-    WHERE sequence_name = 'OMNI_TRACER_ID_SEQ';
-    
-    -- Create only if it doesn't exist
-    IF v_count = 0 THEN
-        EXECUTE IMMEDIATE 'CREATE SEQUENCE OMNI_TRACER_ID_SEQ START WITH 1 INCREMENT BY 1 NOCACHE';
-    END IF;
-END;
-/
-
--- @END_SECTION: SEQUENCE_CREATION
-
 -- @SECTION: TYPE_CREATION
 
 DECLARE
@@ -205,7 +185,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         process_name_       IN VARCHAR2,
         log_level_          IN VARCHAR2,
         payload             IN CLOB,
-        additional_props_   IN CLOB DEFAULT NULL )
+        additional_props_   IN CLOB DEFAULT NULL,
+        subscriber_name_    IN VARCHAR2 DEFAULT NULL )
     IS
         message_            JSON_OBJECT_T;
         additional_props_obj_ JSON_OBJECT_T;
@@ -216,12 +197,27 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         json_payload_       CLOB;
         temp_blob_          BLOB;
         payload_object_     OMNI_TRACER_PAYLOAD_TYPE;
+        resolved_process_   VARCHAR2(100);
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message visible immediately without waiting for commit
 
+        resolved_process_ := process_name_;
+        IF resolved_process_ IS NULL THEN
+            resolved_process_ := SYS_CONTEXT('USERENV', 'MODULE');
+            IF resolved_process_ IS NULL THEN
+                resolved_process_ := 'OMNI_TRACER_API';
+            END IF;
+        END IF;
+
+        IF subscriber_name_ IS NOT NULL THEN
+            message_properties_.recipient_list := SYS.AQ$_RECIPIENT_LIST_T(
+                SYS.AQ$_AGENT(subscriber_name_, NULL, NULL)
+            );
+        END IF;
+
         message_ := JSON_OBJECT_T();
         message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
-        message_.PUT('PROCESS_NAME', process_name_);
+        message_.PUT('PROCESS_NAME', resolved_process_);
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
@@ -246,6 +242,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                     );
                 END LOOP;
             END IF;
+        END IF;
+
+        IF subscriber_name_ IS NOT NULL THEN
+            message_.PUT('SUBSCRIBER', subscriber_name_);
         END IF;
 
         json_payload_ := message_.TO_CLOB();
@@ -314,8 +314,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             additional_props_   => '{"SEND_TO_WEBHOOK":"TRUE"}'
         );
     END Trace_Message_To_Webhook;
-
-
     PROCEDURE Dequeue_Array_Events(
         subscriber_name_ IN  VARCHAR2,
         batch_size_      IN  INTEGER,

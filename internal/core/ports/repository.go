@@ -97,6 +97,9 @@ type DatabaseRepository interface {
 	// PackageExists checks if a package exists
 	PackageExists(ctx context.Context, packageName string) (bool, error)
 
+	// ProcedureExists checks if a procedure exists inside a package
+	ProcedureExists(ctx context.Context, procedureName string) (bool, error)
+
 	// DeployPackages deploys PL/SQL packages
 	DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error
 
@@ -108,6 +111,24 @@ type DatabaseRepository interface {
 
 	// Close closes the database connection
 	Close(ctx context.Context) error
+}
+
+// ==========================================
+// Procedure Generator Interface
+// ==========================================
+
+type ProcedureGeneratorPort interface {
+	// ReserveFunnyName reserves a funny name for the subscriber and returns the reserved name, whether it was newly reserved, and any error encountered
+	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error)
+
+	// ReleaseFunnyName releases a previously reserved funny name
+	ReleaseFunnyName(ctx context.Context, funnyName string)
+
+	// GenerateSubscriberProcedure generates a PL/SQL procedure for the subscriber
+	GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error
+
+	// DropSubscriberProcedure drops the PL/SQL procedure for the subscriber
+	DropSubscriberProcedure(ctx context.Context, funnyName string) error
 }
 
 // ==========================================

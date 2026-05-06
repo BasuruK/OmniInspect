@@ -56,8 +56,8 @@ type welcomeState struct {
 }
 
 type loadingState struct {
-	started         bool                // Whether the startup connection sequence has begun
-	complete        bool                // Whether the startup connection sequence finished successfully
+	started         bool               // Whether the startup connection sequence has begun
+	complete        bool               // Whether the startup connection sequence finished successfully
 	steps           []string           // Completed steps descriptions
 	current         string             // Step currently in progress
 	err             error              // Error encountered during loading, if any
@@ -328,7 +328,11 @@ func (m *Model) initializeServices() error {
 	}
 	if m.subscriberService == nil {
 		subscriberRepo := boltdb.NewSubscriberRepository(m.boltAdapter)
-		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo)
+		procGen, err := subscribers.NewProcedureGenerator(m.dbAdapter)
+		if err != nil {
+			return fmt.Errorf("initializeServices: failed to create procedure generator: %w", err)
+		}
+		m.subscriberService = subscribers.NewSubscriberService(m.dbAdapter, subscriberRepo, procGen)
 	}
 
 	return nil

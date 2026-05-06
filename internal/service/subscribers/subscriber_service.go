@@ -13,13 +13,15 @@ import (
 type SubscriberService struct {
 	db      ports.DatabaseRepository
 	subRepo ports.SubscriberRepository
+	procGen ports.ProcedureGeneratorPort
 }
 
 // Constructor: NewSubscriberService Constructor for SubscriberService
-func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository) *SubscriberService {
+func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen ports.ProcedureGeneratorPort) *SubscriberService {
 	return &SubscriberService{
 		db:      db,
 		subRepo: subRepo,
+		procGen: procGen,
 	}
 }
 
@@ -70,14 +72,48 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 			return nil, err // return other errors
 		}
 		// If not found, create a new subscriber
-		subscriber, err = ss.NewSubscriber(ctx)
+		subscriber, err = domain.NewRandomSubscriber()
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	reservedFunnyName := ""
+	reservedNewFunnyName := false
+	if ss.procGen != nil {
+		reservedFunnyName, reservedNewFunnyName, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reserve funny name: %w", err)
+		}
+		if subscriber.FunnyName() == "" {
+			if err := subscriber.AssignFunnyName(reservedFunnyName); err != nil {
+				if reservedNewFunnyName {
+					ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+				}
+				return nil, fmt.Errorf("failed to assign funny name: %w", err)
+			}
+		}
+	}
+
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
+		if reservedNewFunnyName {
+			ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+		}
 		return nil, err
+	}
+
+	if ss.procGen != nil {
+		if err := ss.procGen.GenerateSubscriberProcedure(ctx, subscriber); err != nil {
+			if reservedNewFunnyName {
+				ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+			}
+			return nil, fmt.Errorf("failed to generate subscriber procedure: %w", err)
+		}
+	}
+
+	if err := ss.SetSubscriber(ctx, subscriber); err != nil {
+		return nil, fmt.Errorf("failed to save subscriber: %w", err)
 	}
 
 	return subscriber, nil

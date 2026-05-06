@@ -42,6 +42,7 @@ func (stubDatabaseRepository) FetchWithParams(context.Context, string, map[strin
 	return nil, nil
 }
 func (stubDatabaseRepository) PackageExists(context.Context, string) (bool, error) { return false, nil }
+func (stubDatabaseRepository) ProcedureExists(context.Context, string) (bool, error) { return false, nil }
 func (stubDatabaseRepository) DeployPackages(context.Context, []string, []string, []string, []string) error {
 	return nil
 }

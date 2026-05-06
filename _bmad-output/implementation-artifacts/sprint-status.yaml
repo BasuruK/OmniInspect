@@ -32,12 +32,12 @@ development_status:
     notes: "Review approved. FunnyName value object implemented with 120+ cartoon names, uppercase procedure-safe assignment, collision handling, validation, and passing tests."
 
   1-2-procedure-generation:
-    status: "ready-for-dev"
-    title: "Procedure Generation with Enqueue_For_Subscriber"
+    status: "done"
+    title: "Procedure Generation with Subscriber-Routed Enqueue"
     epic: "Epic 1: Multi-Subscriber Procedure Generation"
     owner: "dev-agent"
-    last_updated: "2026-04-28"
-    notes: "Generate TRACE_MESSAGE_<name> procedures that call Enqueue_For_Subscriber"
+    last_updated: "2026-05-03"
+    notes: "Refactored to a single enqueue helper: generated procedures now call Enqueue_Event___ with optional subscriber routing, while persisted funny-name alias routing and failure-safe local saves remain intact. make test and make build passing."
 
   1-3-sql-injection-prevention:
     status: "ready-for-dev"
@@ -86,11 +86,11 @@ development_status:
 # ==========================================
 metrics:
   total_stories: 7
-  completed: 1
+  completed: 2
   in_progress: 0
-  ready_for_dev: 6
+  ready_for_dev: 5
   blocked: 0
-  completion_percentage: 14
+  completion_percentage: 28
 
 # ==========================================
 # EPIC SUMMARY
@@ -99,7 +99,7 @@ epic_summary:
   epic-1:
     title: "Epic 1: Multi-Subscriber Procedure Generation"
     stories_total: 4
-    stories_completed: 1
+    stories_completed: 2
     stories_in_progress: 0
     status: "in-progress"
 
@@ -121,10 +121,10 @@ epic_summary:
 # NEXT ACTIONS
 # ==========================================
 next_actions:
-  - story: "1-2-procedure-generation"
-    action: "Implement procedure generation with Enqueue_For_Subscriber"
+  - story: "1-3-sql-injection-prevention"
+    action: "Validate funny names against format before package DDL generation"
     priority: "high"
-    depends_on: ["1-1-funny-name-value-object"]
+    depends_on: ["1-2-procedure-generation"]
 
 # ==========================================
 # RECENT Activity
@@ -144,3 +144,8 @@ activity_log:
     story: "1-1-funny-name-value-object"
     action: "Review approved"
     notes: "Review findings fixed; make test and make lint passing; doc comments added to all exported functions; domain error location rule documented in project-context.md"
+
+  - date: "2026-05-03"
+    story: "1-2-procedure-generation"
+    action: "Review approved"
+    notes: "Review findings fixed; packaged procedure deployment, persisted funny-name alias routing, and base package helper added. make test and make build passing."

@@ -347,6 +347,7 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFai
 func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGenerationSucceeds(t *testing.T) {
 	domain.DefaultFunnyNameGenerator().Reset()
 
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
 	db := &stubDBRepo{deployFileErr: errors.New("deploy failed")}
 	repo := &stubSubscriberRepo{}
 	procGen, err := NewProcedureGenerator(db)
@@ -361,6 +362,9 @@ func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGener
 	}
 	if len(repo.saved) != 0 {
 		t.Fatalf("expected no persisted subscriber on failure, got %d saves", len(repo.saved))
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
+		t.Fatalf("expected reserved funny name to be released, available count = %d, want %d", got, initialAvailable)
 	}
 }
 

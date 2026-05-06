@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -101,6 +102,14 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 	}
 
 	if err := pg.withPackageDeployLock(ctx, func() error {
+		exists, err := pg.db.ProcedureExists(ctx, procedureName)
+		if err != nil {
+			return fmt.Errorf("failed to check procedure existence: %w", err)
+		}
+		if exists {
+			return nil
+		}
+
 		packageSpec, packageBody, err := pg.loadPackageSource(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to load package source: %w", err)
@@ -184,7 +193,7 @@ func (pg *ProcedureGenerator) withPackageDeployLock(ctx context.Context, fn func
 			return
 		}
 		if err != nil {
-			err = fmt.Errorf("%w; failed to release package deploy lock: %v", err, releaseErr)
+			err = fmt.Errorf("%w; failed to release package deploy lock: %w", err, releaseErr)
 			return
 		}
 		err = fmt.Errorf("failed to release package deploy lock: %w", releaseErr)
@@ -303,19 +312,21 @@ func renderPackageDeploymentSQL(packageSpec string, packageBody string) string {
 }
 
 func injectProcedureDeclaration(packageSpec string, funnyName string) (string, error) {
-	procedureDeclaration := generateProcedureDeclaration(funnyName)
-	if strings.Contains(strings.ToUpper(packageSpec), strings.ToUpper(procedureDeclaration)) {
+	procedureName := buildProcedureName(funnyName)
+	pattern := regexp.MustCompile(`(?i)PROCEDURE\s+` + regexp.QuoteMeta(procedureName) + `\s*\(`)
+	if pattern.MatchString(packageSpec) {
 		return packageSpec, nil
 	}
-	return insertBeforePackageEnd(packageSpec, procedureDeclaration)
+	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName))
 }
 
 func injectProcedureBody(packageBody string, funnyName string) (string, error) {
-	procedureBody := generateProcedureBody(funnyName)
-	if strings.Contains(strings.ToUpper(packageBody), strings.ToUpper(procedureBody)) {
+	procedureName := buildProcedureName(funnyName)
+	pattern := regexp.MustCompile(`(?i)PROCEDURE\s+` + regexp.QuoteMeta(procedureName) + `\s*\(`)
+	if pattern.MatchString(packageBody) {
 		return packageBody, nil
 	}
-	return insertBeforePackageEnd(packageBody, procedureBody)
+	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName))
 }
 
 func normalizePackageSource(packageSpec string, packageBody string) (string, string, error) {

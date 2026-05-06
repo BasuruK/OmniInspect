@@ -6,26 +6,6 @@ Do not modify this file directly unless you are certain of the implications.
 Copyright (c) 2025.
 */
 
--- @SECTION: SEQUENCE_CREATION
-
-DECLARE
-    v_count NUMBER;
-BEGIN
-    -- Check if sequence exists
-    SELECT COUNT(*)
-    INTO v_count
-    FROM user_sequences
-    WHERE sequence_name = 'OMNI_TRACER_ID_SEQ';
-    
-    -- Create only if it doesn't exist
-    IF v_count = 0 THEN
-        EXECUTE IMMEDIATE 'CREATE SEQUENCE OMNI_TRACER_ID_SEQ START WITH 1 INCREMENT BY 1 NOCACHE';
-    END IF;
-END;
-/
-
--- @END_SECTION: SEQUENCE_CREATION
-
 -- @SECTION: TYPE_CREATION
 
 DECLARE

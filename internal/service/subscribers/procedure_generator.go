@@ -9,15 +9,12 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const (
 	procedureNamePrefix = "TRACE_MESSAGE_"
 	packageName         = "OMNI_TRACER_API"
 	baseSQLFile         = "Omni_Tracer.sql"
-	packageDeployLock   = "OMNI_TRACER_API_DEPLOY_LOCK"
-	lockTimeoutSeconds  = 30
 
 	packageSpecStart = "-- @SECTION: PACKAGE_SPECIFICATION"
 	packageSpecEnd   = "-- @END_SECTION: PACKAGE_SPECIFICATION"
@@ -27,7 +24,6 @@ const (
 
 type ProcedureGenerator struct {
 	db ports.DatabaseRepository
-	mu sync.Mutex
 }
 
 func NewProcedureGenerator(db ports.DatabaseRepository) (*ProcedureGenerator, error) {
@@ -103,35 +99,21 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 		return nil
 	}
 
-	if err := pg.withPackageDeployLock(ctx, func() error {
-		exists, err := pg.db.ProcedureExists(ctx, procedureName)
-		if err != nil {
-			return fmt.Errorf("failed to check procedure existence: %w", err)
-		}
-		if exists {
-			return nil
-		}
+	packageSpec, packageBody, err := pg.loadPackageSource(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load package source: %w", err)
+	}
 
-		packageSpec, packageBody, err := pg.loadPackageSource(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load package source: %w", err)
-		}
+	packageSpec, err = injectProcedureDeclaration(packageSpec, funnyName)
+	if err != nil {
+		return fmt.Errorf("failed to update package spec: %w", err)
+	}
+	packageBody, err = injectProcedureBody(packageBody, funnyName)
+	if err != nil {
+		return fmt.Errorf("failed to update package body: %w", err)
+	}
 
-		packageSpec, err = injectProcedureDeclaration(packageSpec, funnyName)
-		if err != nil {
-			return fmt.Errorf("failed to update package spec: %w", err)
-		}
-		packageBody, err = injectProcedureBody(packageBody, funnyName)
-		if err != nil {
-			return fmt.Errorf("failed to update package body: %w", err)
-		}
-
-		if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {
-			return fmt.Errorf("failed to deploy package: %w", err)
-		}
-
-		return nil
-	}); err != nil {
+	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {
 		return fmt.Errorf("GenerateSubscriberProcedure: %w", err)
 	}
 
@@ -149,94 +131,34 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: failed to check procedure existence: %w", err)
 	}
 	if !exists {
+		pg.ReleaseFunnyName(ctx, funnyName)
 		return nil
 	}
 
-	if err := pg.withPackageDeployLock(ctx, func() error {
-		packageSpec, packageBody, err := pg.fetchCurrentPackageSource(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load package source: %w", err)
-		}
-		packageSpec, packageBody, err = normalizePackageSource(packageSpec, packageBody)
-		if err != nil {
-			return fmt.Errorf("failed to normalize package source: %w", err)
-		}
+	packageSpec, packageBody, err := pg.fetchCurrentPackageSource(ctx)
+	if err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
+	packageSpec, packageBody, err = normalizePackageSource(packageSpec, packageBody)
+	if err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
 
-		packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
-		if err != nil {
-			return fmt.Errorf("failed to update package spec: %w", err)
-		}
-		packageBody, err = removeProcedureBody(packageBody, procedureName)
-		if err != nil {
-			return fmt.Errorf("failed to update package body: %w", err)
-		}
+	packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
+	if err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
+	packageBody, err = removeProcedureBody(packageBody, procedureName)
+	if err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
 
-		if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {
-			return fmt.Errorf("failed to deploy package: %w", err)
-		}
-
-		return nil
-	}); err != nil {
+	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
 
 	pg.ReleaseFunnyName(ctx, funnyName)
 	return nil
-}
-
-func (pg *ProcedureGenerator) withPackageDeployLock(ctx context.Context, fn func() error) (err error) {
-	pg.mu.Lock()
-	defer pg.mu.Unlock()
-
-	if err := pg.acquirePackageDeployLock(ctx); err != nil {
-		return fmt.Errorf("failed to acquire package deploy lock: %w", err)
-	}
-
-	defer func() {
-		releaseErr := pg.releasePackageDeployLock(ctx)
-		if releaseErr == nil {
-			return
-		}
-		if err != nil {
-			err = fmt.Errorf("%w; failed to release package deploy lock: %w", err, releaseErr)
-			return
-		}
-		err = fmt.Errorf("failed to release package deploy lock: %w", releaseErr)
-	}()
-
-	err = fn()
-	return err
-}
-
-func (pg *ProcedureGenerator) acquirePackageDeployLock(ctx context.Context) error {
-	return pg.db.ExecuteStatement(ctx, fmt.Sprintf(`DECLARE
-	lock_handle_ VARCHAR2(128);
-	result_      INTEGER;
-BEGIN
-	DBMS_LOCK.ALLOCATE_UNIQUE(lockname => '%s', lockhandle => lock_handle_);
-	result_ := DBMS_LOCK.REQUEST(
-		lockhandle        => lock_handle_,
-		lockmode          => DBMS_LOCK.X_MODE,
-		timeout           => %d,
-		release_on_commit => FALSE
-	);
-	IF result_ <> 0 THEN
-		RAISE_APPLICATION_ERROR(-20001, 'failed to acquire package deploy lock: ' || result_);
-	END IF;
-END;`, packageDeployLock, lockTimeoutSeconds))
-}
-
-func (pg *ProcedureGenerator) releasePackageDeployLock(ctx context.Context) error {
-	return pg.db.ExecuteStatement(ctx, fmt.Sprintf(`DECLARE
-	lock_handle_ VARCHAR2(128);
-	result_      INTEGER;
-BEGIN
-	DBMS_LOCK.ALLOCATE_UNIQUE(lockname => '%s', lockhandle => lock_handle_);
-	result_ := DBMS_LOCK.RELEASE(lockhandle => lock_handle_);
-	IF result_ <> 0 THEN
-		RAISE_APPLICATION_ERROR(-20002, 'failed to release package deploy lock: ' || result_);
-	END IF;
-END;`, packageDeployLock))
 }
 
 func (pg *ProcedureGenerator) loadPackageSource(ctx context.Context) (string, string, error) {

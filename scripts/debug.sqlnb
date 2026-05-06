@@ -258,5 +258,13 @@ cells:
       /
     languageId: oracle-sql
   - kind: 2
+    value: |-
+      SELECT *
+      FROM user_procedures 
+      WHERE object_name = 'OMNI_TRACER_API' 
+      --AND procedure_name = UPPER(:procedureName)
+      AND object_type = 'PACKAGE';
+    languageId: oracle-sql
+  - kind: 2
     value: ""
     languageId: oracle-sql

@@ -192,7 +192,7 @@ type subscriberJSON struct {
 
 // MarshalJSON implements custom JSON marshaling for Subscriber
 func (s *Subscriber) MarshalJSON() ([]byte, error) {
-	j := subscriberJSON{
+	subscriberObj := subscriberJSON{
 		Name:      s.name,
 		FunnyName: s.funnyName,
 		BatchSize: int(s.batchSize),
@@ -200,23 +200,23 @@ func (s *Subscriber) MarshalJSON() ([]byte, error) {
 		CreatedAt: s.createdAt.Unix(),
 		Active:    &s.active,
 	}
-	return json.Marshal(j)
+	return json.Marshal(subscriberObj)
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for Subscriber
 func (s *Subscriber) UnmarshalJSON(data []byte) error {
-	var j subscriberJSON
-	if err := json.Unmarshal(data, &j); err != nil {
+	var subscriberObj subscriberJSON
+	if err := json.Unmarshal(data, &subscriberObj); err != nil {
 		return fmt.Errorf("failed to unmarshal Subscriber: %w", err)
 	}
 	// Validate subscriber name
-	name := strings.TrimSpace(j.Name)
+	name := strings.TrimSpace(subscriberObj.Name)
 	if name == "" {
 		return ErrInvalidSubscriberName
 	}
 
 	// Use defaults for zero values
-	batchSize := j.BatchSize
+	batchSize := subscriberObj.BatchSize
 	if batchSize == 0 {
 		batchSize = int(DefaultBatchSize)
 	}
@@ -226,7 +226,7 @@ func (s *Subscriber) UnmarshalJSON(data []byte) error {
 	}
 
 	// Use defaults for zero values
-	waitTime := j.WaitTime
+	waitTime := subscriberObj.WaitTime
 	if waitTime == 0 {
 		waitTime = int(DefaultWaitTime)
 	}
@@ -240,16 +240,16 @@ func (s *Subscriber) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if j.FunnyName != "" {
-		if err := sub.AssignFunnyName(j.FunnyName); err != nil {
+	if subscriberObj.FunnyName != "" {
+		if err := sub.AssignFunnyName(subscriberObj.FunnyName); err != nil {
 			return fmt.Errorf("invalid funny name: %w", err)
 		}
 	}
-	if j.CreatedAt != 0 {
-		sub.createdAt = time.Unix(j.CreatedAt, 0)
+	if subscriberObj.CreatedAt != 0 {
+		sub.createdAt = time.Unix(subscriberObj.CreatedAt, 0)
 	}
-	if j.Active != nil {
-		sub.active = *j.Active
+	if subscriberObj.Active != nil {
+		sub.active = *subscriberObj.Active
 	}
 	*s = *sub
 

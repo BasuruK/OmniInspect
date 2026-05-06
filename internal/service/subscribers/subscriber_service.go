@@ -13,11 +13,11 @@ import (
 type SubscriberService struct {
 	db      ports.DatabaseRepository
 	subRepo ports.SubscriberRepository
-	procGen *ProcedureGenerator
+	procGen ports.ProcedureGeneratorPort
 }
 
 // Constructor: NewSubscriberService Constructor for SubscriberService
-func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen *ProcedureGenerator) *SubscriberService {
+func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen ports.ProcedureGeneratorPort) *SubscriberService {
 	return &SubscriberService{
 		db:      db,
 		subRepo: subRepo,

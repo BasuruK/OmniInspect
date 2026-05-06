@@ -114,6 +114,24 @@ type DatabaseRepository interface {
 }
 
 // ==========================================
+// Procedure Generator Interface
+// ==========================================
+
+type ProcedureGeneratorPort interface {
+	// ReserveFunnyName reserves a funny name for the subscriber and returns the reserved name, whether it was newly reserved, and any error encountered
+	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error)
+
+	// ReleaseFunnyName releases a previously reserved funny name
+	ReleaseFunnyName(ctx context.Context, funnyName string)
+
+	// GenerateSubscriberProcedure generates a PL/SQL procedure for the subscriber
+	GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error
+
+	// DropSubscriberProcedure drops the PL/SQL procedure for the subscriber
+	DropSubscriberProcedure(ctx context.Context, funnyName string) error
+}
+
+// ==========================================
 // Config Repository Interface (BoltDB)
 // ==========================================
 

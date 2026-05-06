@@ -56,8 +56,8 @@ type welcomeState struct {
 }
 
 type loadingState struct {
-	started         bool                // Whether the startup connection sequence has begun
-	complete        bool                // Whether the startup connection sequence finished successfully
+	started         bool               // Whether the startup connection sequence has begun
+	complete        bool               // Whether the startup connection sequence finished successfully
 	steps           []string           // Completed steps descriptions
 	current         string             // Step currently in progress
 	err             error              // Error encountered during loading, if any

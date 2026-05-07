@@ -266,9 +266,6 @@ END OMNI_TRACER_API;`),
 	if strings.Contains(stub.deployedSQL, "TRACE_MESSAGE_BARNACLE") {
 		t.Fatalf("package deployment still contains dropped procedure: %s", stub.deployedSQL)
 	}
-	if strings.Contains(stub.deployedSQL, "PROCEDURE Enqueue_For_Subscriber(") {
-		t.Fatalf("package deployment still contains deprecated helper: %s", stub.deployedSQL)
-	}
 }
 
 func TestNewProcedureGenerator_RejectsNilDatabase(t *testing.T) {

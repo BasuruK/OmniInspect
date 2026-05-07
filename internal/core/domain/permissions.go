@@ -15,6 +15,8 @@ type PermissionStatus struct {
 	AQUserRole          bool `json:"AQUserRole"`
 	DBMSAQADMExecute    bool `json:"DBMSAQADMExecute"`
 	DBMSAQExecute       bool `json:"DBMSAQExecute"`
+	AQRecipientListT    bool `json:"AQRecipientListT"`
+	AQAgentType         bool `json:"AQAgentType"`
 }
 
 // HasAllPermissions returns true if all permissions are granted
@@ -25,7 +27,9 @@ func (ps *PermissionStatus) HasAllPermissions() bool {
 		ps.AQAdministratorRole &&
 		ps.AQUserRole &&
 		ps.DBMSAQADMExecute &&
-		ps.DBMSAQExecute
+		ps.DBMSAQExecute &&
+		ps.AQRecipientListT &&
+		ps.AQAgentType
 }
 
 // ==========================================

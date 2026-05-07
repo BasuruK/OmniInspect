@@ -138,6 +138,8 @@ func checkPermissions(ctx context.Context, ps *PermissionService, schema string)
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
 		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
+		"│ %-25s │ %-7s │\n"+
 		"└───────────────────────────┴─────────┘",
 		"Permission", "Status",
 		"Create Sequence", statusMark(permsStatus.CreateSequence),
@@ -146,7 +148,9 @@ func checkPermissions(ctx context.Context, ps *PermissionService, schema string)
 		"AQ Administrator Role", statusMark(permsStatus.AQAdministratorRole),
 		"AQ User Role", statusMark(permsStatus.AQUserRole),
 		"Execute DBMS AQADM", statusMark(permsStatus.DBMSAQADMExecute),
-		"Execute DBMS AQ", statusMark(permsStatus.DBMSAQExecute))
+		"Execute DBMS AQ", statusMark(permsStatus.DBMSAQExecute),
+		"EXECUTE SYS.AQ$_RECIPIENT_LIST_T", statusMark(permsStatus.AQRecipientListT),
+		"EXECUTE SYS.AQ$_AGENT", statusMark(permsStatus.AQAgentType))
 
 	// Evaluate if all permissions are valid
 	if !perStatus.IsValid() {

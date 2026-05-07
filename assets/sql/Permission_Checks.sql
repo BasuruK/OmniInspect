@@ -115,6 +115,34 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         RETURN count_ > 0;
     END Has_DBMS_AQ_Exec;
 
+    FUNCTION Has_AQ_Recipient_List_Exec(p_schema IN VARCHAR2) RETURN BOOLEAN IS
+        count_ NUMBER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO count_
+        FROM user_tab_privs
+        WHERE table_name = 'AQ$_RECIPIENT_LIST_T'
+          AND privilege = 'EXECUTE'
+          AND owner = 'SYS'
+          AND grantee = UPPER(p_schema);
+
+        RETURN count_ > 0;
+    END Has_AQ_Recipient_List_Exec;
+
+    FUNCTION Has_AQ_Agent_Exec(p_schema IN VARCHAR2) RETURN BOOLEAN IS
+        count_ NUMBER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO count_
+        FROM user_tab_privs
+        WHERE table_name = 'AQ$_AGENT'
+          AND privilege = 'EXECUTE'
+          AND owner = 'SYS'
+          AND grantee = UPPER(p_schema);
+
+        RETURN count_ > 0;
+    END Has_AQ_Agent_Exec;
+
     FUNCTION Validate_All_Permissions(p_schema IN VARCHAR2) RETURN BOOLEAN IS
     BEGIN
         RETURN Has_Create_Sequence_Priv(p_schema)
@@ -123,7 +151,9 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
            AND Has_AQ_Admin_Role(p_schema)
            AND Has_AQ_User_Role(p_schema)
            AND Has_DBMS_AQADM_Exec(p_schema)
-           AND Has_DBMS_AQ_Exec(p_schema);
+           AND Has_DBMS_AQ_Exec(p_schema)
+           AND Has_AQ_Recipient_List_Exec(p_schema)
+           AND Has_AQ_Agent_Exec(p_schema);
     END Validate_All_Permissions;
 
     FUNCTION Get_Permission_Report(p_schema IN VARCHAR2) RETURN VARCHAR2 IS
@@ -135,6 +165,8 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         aq_user_        BOOLEAN;
         dbms_aqadm_     BOOLEAN;
         dbms_aq_        BOOLEAN;
+        aq_recipient_   BOOLEAN;
+        aq_agent_       BOOLEAN;
         all_valid_      BOOLEAN;
     BEGIN
         -- Call each check once
@@ -145,7 +177,9 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         aq_user_        := Has_AQ_User_Role(p_schema);
         dbms_aqadm_     := Has_DBMS_AQADM_Exec(p_schema);
         dbms_aq_        := Has_DBMS_AQ_Exec(p_schema);
-        all_valid_      := create_seq_ AND create_proc_ AND create_type_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_;
+        aq_recipient_   := Has_AQ_Recipient_List_Exec(p_schema);
+        aq_agent_       := Has_AQ_Agent_Exec(p_schema);
+        all_valid_      := create_seq_ AND create_proc_ AND create_type_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_ AND aq_recipient_ AND aq_agent_;
 
         report_ := '{';
         report_ := report_ || '"Schema":"' || p_schema || '",';
@@ -168,10 +202,16 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         report_ := report_ || '"DBMSAQADMExecute":' || 
             CASE WHEN dbms_aqadm_ THEN 'true' ELSE 'false' END || ',';
 
-        report_ := report_ || '"DBMSAQExecute":' || 
+report_ := report_ || '"DBMSAQExecute":' ||
             CASE WHEN dbms_aq_ THEN 'true' ELSE 'false' END || ',';
 
-        report_ := report_ || '"AllValid":' || 
+        report_ := report_ || '"AQRecipientListT":' ||
+            CASE WHEN Has_AQ_Recipient_List_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+
+        report_ := report_ || '"AQAgentType":' ||
+            CASE WHEN Has_AQ_Agent_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+
+        report_ := report_ || '"AllValid":' ||
             CASE WHEN all_valid_ THEN 'true' ELSE 'false' END;
 
         report_ := report_ || '}';

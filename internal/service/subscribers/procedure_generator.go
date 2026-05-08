@@ -233,7 +233,20 @@ func extractSQLSection(sqlContent string, startMarker string, endMarker string) 
 
 // renderPackageDeploymentSQL builds a complete deployable SQL script from package
 // spec and body sections, including section markers and delimiters.
+// Oracle's user_source view omits the 'CREATE OR REPLACE' DDL prefix — this
+// function restores it if absent so the rendered SQL is always executable.
 func renderPackageDeploymentSQL(packageSpec string, packageBody string) string {
+	spec := strings.TrimSpace(packageSpec)
+	body := strings.TrimSpace(packageBody)
+
+	// Restore CREATE OR REPLACE prefix stripped by user_source
+	if !strings.HasPrefix(strings.ToUpper(spec), "CREATE") {
+		spec = "CREATE OR REPLACE " + spec
+	}
+	if !strings.HasPrefix(strings.ToUpper(body), "CREATE") {
+		body = "CREATE OR REPLACE " + body
+	}
+
 	return fmt.Sprintf(`%s
 
 %s
@@ -245,7 +258,7 @@ func renderPackageDeploymentSQL(packageSpec string, packageBody string) string {
 %s
 /
 %s
-`, packageSpecStart, strings.TrimSpace(packageSpec), packageSpecEnd, packageBodyStart, strings.TrimSpace(packageBody), packageBodyEnd)
+`, packageSpecStart, spec, packageSpecEnd, packageBodyStart, body, packageBodyEnd)
 }
 
 // injectProcedureDeclaration adds a new procedure declaration to the package spec
@@ -342,7 +355,8 @@ func generateProcedureDeclaration(funnyName string) string {
 	procedureName := buildProcedureName(funnyName)
 	return fmt.Sprintf(`    PROCEDURE %s(
         message_   IN CLOB,
-        log_level_ IN VARCHAR2 DEFAULT 'INFO'
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+		process_name_  IN VARCHAR2 DEFAULT NULL
     );`, procedureName)
 }
 

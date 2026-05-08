@@ -202,7 +202,7 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         report_ := report_ || '"DBMSAQADMExecute":' || 
             CASE WHEN dbms_aqadm_ THEN 'true' ELSE 'false' END || ',';
 
-report_ := report_ || '"DBMSAQExecute":' ||
+        report_ := report_ || '"DBMSAQExecute":' ||
             CASE WHEN dbms_aq_ THEN 'true' ELSE 'false' END || ',';
 
         report_ := report_ || '"AQRecipientListT":' ||

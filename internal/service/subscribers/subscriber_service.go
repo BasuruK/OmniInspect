@@ -79,17 +79,17 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 	}
 
 	reservedFunnyName := ""
-	reservedNewFunnyName := false
+	generatorSlotConsumed := false
 	if ss.procGen != nil {
-		reservedFunnyName, reservedNewFunnyName, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
+		var nameAssigned bool
+		reservedFunnyName, nameAssigned, generatorSlotConsumed, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
+		_ = nameAssigned
 		if err != nil {
 			return nil, fmt.Errorf("failed to reserve funny name: %w", err)
 		}
-		if subscriber.FunnyName() == "" {
+		if generatorSlotConsumed {
 			if err := subscriber.AssignFunnyName(reservedFunnyName); err != nil {
-				if reservedNewFunnyName {
-					ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
-				}
+				ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
 				return nil, fmt.Errorf("failed to assign funny name: %w", err)
 			}
 		}
@@ -97,16 +97,16 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
-		if reservedNewFunnyName {
-			ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+		if generatorSlotConsumed {
+			_ = ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
 		}
 		return nil, err
 	}
 
 	if ss.procGen != nil {
 		if err := ss.procGen.GenerateSubscriberProcedure(ctx, subscriber); err != nil {
-			if reservedNewFunnyName {
-				ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+			if generatorSlotConsumed {
+				_ = ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
 			}
 			return nil, fmt.Errorf("failed to generate subscriber procedure: %w", err)
 		}

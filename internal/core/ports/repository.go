@@ -118,11 +118,17 @@ type DatabaseRepository interface {
 // ==========================================
 
 type ProcedureGeneratorPort interface {
-	// ReserveFunnyName reserves a funny name for the subscriber and returns the reserved name, whether it was newly reserved, and any error encountered
-	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error)
+	// ReserveFunnyName reserves a funny name for the subscriber.
+	// Returns: (name, nameWasAssignedToSubscriber, generatorSlotConsumed, error).
+	// generatorSlotConsumed is true when the generator's list had to be modified
+	// (either a new slot was claimed from AvailableNames, or an existing name was
+	// marked as Used). It is false when the subscriber already had a FunnyName set
+	// and we merely validated it. Use generatorSlotConsumed to decide whether to
+	// ReleaseFunnyName on failure.
+	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, bool, error)
 
 	// ReleaseFunnyName releases a previously reserved funny name
-	ReleaseFunnyName(ctx context.Context, funnyName string)
+	ReleaseFunnyName(ctx context.Context, funnyName string) error
 
 	// GenerateSubscriberProcedure generates a PL/SQL procedure for the subscriber
 	GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error

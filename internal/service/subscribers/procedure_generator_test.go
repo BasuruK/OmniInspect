@@ -8,6 +8,22 @@ import (
 	"testing"
 )
 
+func resetDefaultFunnyNameGenerator(t *testing.T) {
+	t.Helper()
+
+	gen := domain.DefaultFunnyNameGenerator()
+	initialCount := gen.AvailableCount()
+	gen.Reset()
+	usedCount := initialCount - gen.AvailableCount()
+
+	t.Cleanup(func() {
+		gen.Reset()
+		for i := 0; i < usedCount; i++ {
+			_, _ = gen.GetRandomName()
+		}
+	})
+}
+
 type stubDBRepo struct {
 	procedureExists     map[string]bool
 	procedureExistsErr  error
@@ -72,6 +88,9 @@ func (s *stubDBRepo) PackageExists(ctx context.Context, packageName string) (boo
 func (s *stubDBRepo) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
 	if s.procedureExistsErr != nil {
 		return false, s.procedureExistsErr
+	}
+	if s.procedureExists == nil {
+		return false, nil
 	}
 	return s.procedureExists[procedureName], nil
 }
@@ -143,7 +162,7 @@ func (s *stubSubscriberRepo) Delete(ctx context.Context, name string) error {
 }
 
 func TestProcedureGenerator_GenerateSubscriberProcedure_DeploysPackageUpdate(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	stub := &stubDBRepo{
 		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
@@ -185,7 +204,7 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_DeploysPackageUpdate(t *
 }
 
 func TestProcedureGenerator_GenerateSubscriberProcedure_SkipsExistingProcedure(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	stub := &stubDBRepo{
 		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
@@ -279,7 +298,7 @@ func TestNewProcedureGenerator_RejectsNilDatabase(t *testing.T) {
 }
 
 func TestProcedureGenerator_GenerateSubscriberProcedure_PropagatesFetchErrors(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	fetchErr := errors.New("fetch failed")
 	stub := &stubDBRepo{
@@ -308,7 +327,7 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_PropagatesFetchErrors(t 
 }
 
 func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFails(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	stub := &stubDBRepo{
 		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
@@ -333,7 +352,7 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFai
 }
 
 func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGenerationSucceeds(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
 	db := &stubDBRepo{deployFileErr: errors.New("deploy failed")}
@@ -357,7 +376,7 @@ func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGener
 }
 
 func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
 	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
 	checkErr := errors.New("procedure exists failed")
@@ -382,19 +401,45 @@ func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(
 }
 
 func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAlias(t *testing.T) {
-	domain.DefaultFunnyNameGenerator().Reset()
+	resetDefaultFunnyNameGenerator(t)
 
-	db := &stubDBRepo{}
+	gen := domain.DefaultFunnyNameGenerator()
+	name, err := gen.GetRandomName()
+	if err != nil {
+		t.Fatalf("GetRandomName() returned error: %v", err)
+	}
+	if releaseErr := gen.MarkAsAvailable(name); releaseErr != nil {
+		t.Fatalf("MarkAsAvailable() returned error: %v", releaseErr)
+	}
+
+	db := &stubDBRepo{procedureExists: map[string]bool{}}
 	repo := &stubSubscriberRepo{}
 	procGen, err := NewProcedureGenerator(db)
 	if err != nil {
 		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
 	}
 	service := NewSubscriberService(db, repo, procGen)
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	if initialAvailable == 0 {
+		t.Fatal("expected at least one available funny name before registration")
+	}
+	reservedName, assigned, consumed, reserveErr := procGen.ReserveFunnyName(context.Background(), mustNewRandomSubscriber(t))
+	if reserveErr != nil {
+		t.Fatalf("ReserveFunnyName() returned error: %v", reserveErr)
+	}
+	if !assigned || !consumed || reservedName == "" {
+		t.Fatalf("unexpected reserve result: name=%q assigned=%v consumed=%v", reservedName, assigned, consumed)
+	}
+	if err := procGen.ReleaseFunnyName(context.Background(), reservedName); err != nil {
+		t.Fatalf("ReleaseFunnyName() returned error: %v", err)
+	}
 
 	subscriber, err := service.RegisterSubscriber(context.Background())
 	if err != nil {
 		t.Fatalf("RegisterSubscriber() returned error: %v", err)
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got >= initialAvailable {
+		t.Fatalf("expected a funny name to be reserved, available count = %d, want less than %d", got, initialAvailable)
 	}
 
 	if subscriber.FunnyName() == "" {
@@ -420,6 +465,16 @@ func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAl
 	}
 }
 
+func mustNewRandomSubscriber(t *testing.T) *domain.Subscriber {
+	t.Helper()
+
+	subscriber, err := domain.NewRandomSubscriber()
+	if err != nil {
+		t.Fatalf("NewRandomSubscriber() returned error: %v", err)
+	}
+	return subscriber
+}
+
 func TestValidateFunnyNameForProcedure(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -441,5 +496,9 @@ func TestValidateFunnyNameForProcedure(t *testing.T) {
 }
 
 func splitLines(input string) []string {
-	return strings.Split(input, "\n")
+	lines := strings.Split(input, "\n")
+	for i := range lines {
+		lines[i] += "\n"
+	}
+	return lines
 }

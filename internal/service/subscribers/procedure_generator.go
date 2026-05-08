@@ -33,19 +33,19 @@ func NewProcedureGenerator(db ports.DatabaseRepository) (*ProcedureGenerator, er
 	return &ProcedureGenerator{db: db}, nil
 }
 
-func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error) {
+func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, bool, error) {
 	if subscriber == nil {
-		return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNilSubscriber)
+		return "", false, false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNilSubscriber)
 	}
 
 	if subscriber.FunnyName() != "" {
 		if err := validateFunnyNameForProcedure(subscriber.FunnyName()); err != nil {
-			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 		if err := domain.DefaultFunnyNameGenerator().MarkAsUsed(subscriber.FunnyName()); err != nil {
-			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
-		return subscriber.FunnyName(), false, nil
+		return subscriber.FunnyName(), true, false, nil
 	}
 
 	gen := domain.DefaultFunnyNameGenerator()
@@ -53,31 +53,34 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 	for i := 0; i < attempts; i++ {
 		funnyName, err := gen.GetRandomName()
 		if err != nil {
-			return "", false, fmt.Errorf("ReserveFunnyName: failed to get funny name: %w", err)
+			return "", false, false, fmt.Errorf("ReserveFunnyName: failed to get funny name: %w", err)
 		}
 		if err := validateFunnyNameForProcedure(funnyName); err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
-			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 
 		exists, err := pg.db.ProcedureExists(ctx, buildProcedureName(funnyName))
 		if err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
-			return "", false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
+			return "", false, false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
 		}
 		if !exists {
-			return funnyName, true, nil
+			return funnyName, true, true, nil
 		}
 	}
 
-	return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
+	return "", false, false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
 }
 
-func (pg *ProcedureGenerator) ReleaseFunnyName(_ context.Context, funnyName string) {
+func (pg *ProcedureGenerator) ReleaseFunnyName(_ context.Context, funnyName string) error {
 	if funnyName == "" {
-		return
+		return nil
 	}
-	_ = domain.DefaultFunnyNameGenerator().MarkAsAvailable(funnyName)
+	if err := domain.DefaultFunnyNameGenerator().MarkAsAvailable(funnyName); err != nil {
+		return fmt.Errorf("ReleaseFunnyName: %w", err)
+	}
+	return nil
 }
 
 func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error {
@@ -131,7 +134,9 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: failed to check procedure existence: %w", err)
 	}
 	if !exists {
-		pg.ReleaseFunnyName(ctx, funnyName)
+		if err := pg.ReleaseFunnyName(ctx, funnyName); err != nil {
+			return fmt.Errorf("DropSubscriberProcedure: %w", err)
+		}
 		return nil
 	}
 
@@ -153,7 +158,9 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
 
-	pg.ReleaseFunnyName(ctx, funnyName)
+	if err := pg.ReleaseFunnyName(ctx, funnyName); err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
 	return nil
 }
 
@@ -182,7 +189,7 @@ func (pg *ProcedureGenerator) fetchCurrentPackageSource(ctx context.Context) (st
 		return "", "", domain.ErrPackageNotFound
 	}
 
-	return strings.Join(packageSpecLines, "\n"), strings.Join(packageBodyLines, "\n"), nil
+	return strings.Join(packageSpecLines, ""), strings.Join(packageBodyLines, ""), nil
 }
 
 // loadBasePackageSource loads the base OMNI_TRACER_API package source from the

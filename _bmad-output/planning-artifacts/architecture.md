@@ -52,7 +52,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Auto-redeploy | Already implemented - if package missing, OmniView redeploys |
 | Permissions | Any database user can call generated procedures |
 | Scalability | N subscribers supported, no hard limit |
-| Message routing | Application-level payload filtering in Go (DEC-6). Oracle sharded queues broadcast all messages to all subscribers; Go filters by `SUBSCRIBER` JSON field |
+| Message routing | Correlation-based subscriber rules at Oracle queue level (DEC-6). `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. Broadcast messages (NULL correlation) reach all; subscriber-specific messages reach only the matching subscriber |
 
 ---
 
@@ -104,7 +104,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - SQL injection prevention via format validation
 - Package invalidation recovery mechanism (already implemented)
 - Backward compatibility with existing `Trace_Message()` callers
-- Oracle sharded queue limitation: `recipient_list` not supported (ORA-24205) — message routing handled at Go application layer via `SUBSCRIBER` JSON payload field (see DEC-6)
+- Oracle sharded queue limitation: `recipient_list` not supported (ORA-24205) — message routing handled via `message_properties_.correlation` and subscriber rules with `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'` (see DEC-6)
 
 ---
 
@@ -158,9 +158,9 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - Simplifies permissions and deployment
 
 **Implementation Note**:
-- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that embeds a `SUBSCRIBER` field into the JSON payload
+- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that sets `message_properties_.correlation` for routing and embeds a `SUBSCRIBER` field in the JSON payload for informational purposes
 - Generated procedures call `Enqueue_Event___()` internally with `subscriber_name_` set to the assigned funny name
-- Message routing is enforced at the Go application layer via payload filtering (see DEC-6), NOT at the Oracle queue level
+- Message routing is enforced at the Oracle queue level via correlation-based subscriber rules (see DEC-6)
 
 ---
 
@@ -239,9 +239,9 @@ Guts, Griffith, Casca, Farnese, Serpico
 
 ---
 
-### DEC-6: Message Routing Strategy — Application-Level Payload Filtering
+### DEC-6: Message Routing Strategy — Correlation-Based Subscriber Rules
 
-**Status**: DECIDED ✅ (2026-05-09)
+**Status**: DECIDED ✅ (2026-05-09, revised from payload filtering to correlation)
 
 **Problem**: Oracle Sharded Queues (and their successor TxEventQ) do NOT support `recipient_list` on enqueue (`ORA-24205: feature not supported for sharded queues`). The original design assumed `message_properties_.recipient_list` could route messages to specific subscribers at the queue level. This is only supported on classic AQ queues, not sharded/TxEventQ.
 
@@ -250,52 +250,60 @@ Guts, Griffith, Casca, Farnese, Serpico
 | Alternative | Reason Rejected |
 |-------------|-----------------|
 | **Switch to classic AQ queue** | Would lose sharded queue performance benefits; breaking migration for existing deployments |
-| **Per-subscriber queue (Option B)** | Requires separate queues per subscriber, C dequeue layer changes, dynamic queue targeting in Go — too much complexity for the value delivered |
-| **Correlation-based routing (Option A)** | Every subscriber still dequeues all messages, but non-matching ones sit in queue until expiration; requires message expiration management |
-| **Hybrid broadcast + correlation (Option C)** | Same dead-message accumulation as correlation; more complex dequeue logic |
+| **Per-subscriber queue** | Requires separate queues per subscriber, C dequeue layer changes, dynamic queue targeting in Go — too much complexity for the value delivered |
+| **Application-level payload filtering** | Works but pushes routing to Go — all subscribers dequeue and deserialize all messages, discarding non-matching ones. Unnecessary when Oracle can filter natively via correlation rules |
 
-**Decision**: Application-level payload filtering in Go
+**Decision**: Correlation-based routing using Oracle AQ subscriber rules
 
 **How it works**:
-1. `Enqueue_Event___()` already embeds a `"SUBSCRIBER"` field in the JSON payload when `subscriber_name_` is non-NULL
-2. **Remove** the `recipient_list` assignment from `Enqueue_Event___()` — this was the line causing ORA-24205
-3. All subscribers receive all messages (broadcast at the queue level — this is how sharded queues work)
-4. After dequeue and JSON unmarshal in Go, filter by the `SUBSCRIBER` field:
-   - `SUBSCRIBER` field present → only dispatch to the subscriber whose funny name matches
-   - `SUBSCRIBER` field absent → broadcast message, dispatch to all subscribers (existing `Trace_Message()` behavior)
+1. **Enqueue**: `Enqueue_Event___()` sets `message_properties_.correlation := subscriber_name_`. When `subscriber_name_` is NULL (broadcast via `Trace_Message()`), correlation is NULL.
+2. **Subscriber Registration**: `Register_Subscriber()` calls `DBMS_AQADM.ADD_SUBSCRIBER` with a rule: `tab.CORRELATION IS NULL OR tab.CORRELATION = '<subscriber_name_>'`
+3. **Dequeue**: Each subscriber dequeues with `consumer_name := '<funny_name>'`. Oracle AQ applies the rule and only delivers messages where correlation matches OR is NULL.
+4. **Result**:
+   - `Trace_Message('hello')` → correlation=NULL → matches `IS NULL` → **all subscribers receive** (broadcast)
+   - `TRACE_MESSAGE_BARNACLE('hello')` → correlation='BARNACLE' → matches only BARNACLE's rule → **only BARNACLE receives** (isolated)
 
-**PL/SQL Change** (`assets/sql/Omni_Tracer.sql` — `Enqueue_Event___`):
+**PL/SQL Changes** (`assets/sql/Omni_Tracer.sql`):
+
+`Enqueue_Event___` — Remove `recipient_list`, add correlation:
 ```sql
--- REMOVE these 3 lines (they cause ORA-24205 on sharded queues):
+-- REMOVED (causes ORA-24205):
 --   IF subscriber_name_ IS NOT NULL THEN
 --       message_properties_.recipient_list(1) := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
 --   END IF;
 
--- KEEP the SUBSCRIBER JSON field (already present):
-IF subscriber_name_ IS NOT NULL THEN
-    message_.PUT('SUBSCRIBER', subscriber_name_);
-END IF;
+-- ADDED:
+message_properties_.correlation := subscriber_name_;
 ```
 
-**Go Domain Change** (`internal/core/domain/queue_message.go`):
-- Add `subscriber string` field to `QueueMessage` struct
-- Add `Subscriber() string` getter
-- Add `"subscriber"` to JSON marshal/unmarshal structs
-- Wire through `NewQueueMessage` constructor
+`Register_Subscriber` — Add correlation rule:
+```sql
+DBMS_AQADM.ADD_SUBSCRIBER (
+    queue_name => TRACER_QUEUE_NAME,
+    subscriber => sub_,
+    rule       => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''' || subscriber_name_ || ''''
+);
+```
 
-**Go Service Change** (`internal/service/tracer/tracer_service.go`):
-- In `processBatch()`, after unmarshal, check `msg.Subscriber()`:
-  - If non-empty and doesn't match `subscriber.FunnyName()` → skip (discard silently)
-  - If empty or matches → dispatch normally via `handleTracerMessage()`
+**Go Changes**: NONE. No domain model changes. No service filtering. No C changes. Routing is handled entirely at the Oracle queue level before messages reach Go.
 
-**Trade-off accepted**: Every subscriber dequeues and deserializes all messages, including ones destined for other subscribers. For a debugging tool with < 20 concurrent subscribers and ephemeral trace messages, this CPU overhead is negligible compared to the complexity cost of solving routing at the Oracle queue level.
+**Subscriber Identity Model**:
+
+| Identifier | Example | Scope | Purpose |
+|------------|---------|-------|---------|
+| UUID Name (`name`) | `SUB_825418F0_B22F_...` | Go / BoltDB | Internal identity — BoltDB storage key, stable across restarts |
+| FunnyName (`funnyName`) | `BARNACLE` | Oracle AQ | Oracle consumer name, correlation value, generated procedure name, subscriber rule |
+
+`ConsumerName()` returns FunnyName when assigned (always after registration), falling back to UUID for legacy subscribers.
+
+**The `SUBSCRIBER` JSON field** in the payload (`message_.PUT('SUBSCRIBER', subscriber_name_)`) remains as informational metadata. It is NOT used for routing — correlation handles that. It may be used for UI display purposes in a future story.
 
 **Key properties**:
-- Zero Oracle queue-level changes beyond removing the broken `recipient_list` line
-- No C code changes
-- No dequeue behavior changes — all subscribers still dequeue all messages via `consumer_name`
-- Filtering is in Go — testable, debuggable, no Oracle black-box behavior
-- Backward compatible — existing `Trace_Message()` callers produce messages without `SUBSCRIBER` field, which are displayed to all subscribers
+- Routing handled at Oracle queue level — zero Go/C code changes for routing
+- Broadcast messages (`Trace_Message()`) reach all subscribers via `correlation IS NULL` rule
+- Subscriber-specific messages reach only the matching subscriber via correlation value match
+- No dead messages — Oracle only delivers messages matching each subscriber's rule
+- Clean queue — no messages accumulate for non-matching subscribers
 
 ---
 

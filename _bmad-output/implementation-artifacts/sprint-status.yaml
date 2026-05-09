@@ -73,13 +73,13 @@ development_status:
     last_updated: "2026-04-28"
     notes: "Add danger zone option to delete subscriber-specific procedure"
 
-  1-5-application-level-message-routing:
+  1-5-correlation-based-message-routing:
     status: "ready-for-dev"
-    title: "Application-Level Message Routing (Payload Filtering)"
+    title: "Correlation-Based Message Routing"
     epic: "Epic 1: Multi-Subscriber Procedure Generation"
     owner: "dev-agent"
     last_updated: "2026-05-09"
-    notes: "Fix ORA-24205: Remove recipient_list from Enqueue_Event___, add subscriber field to QueueMessage, filter in processBatch. See Architecture DEC-6."
+    notes: "Fix ORA-24205: Use message_properties_.correlation and subscriber rules instead of recipient_list. PL/SQL changes already implemented by Basuruk. No Go code changes needed. See Architecture DEC-6."
 
   3-2-drop-entire-package:
     status: "ready-for-dev"
@@ -89,16 +89,24 @@ development_status:
     last_updated: "2026-04-28"
     notes: "Add danger zone option to drop entire OMNI_TRACER_API package"
 
+  3-3-safe-subscriber-unregistration:
+    status: "ready-for-dev"
+    title: "Safe Subscriber Unregistration on Shutdown"
+    epic: "Epic 3: Danger Zone Implementation"
+    owner: "dev-agent"
+    last_updated: "2026-05-09"
+    notes: "Unregister subscriber from Oracle AQ on graceful shutdown via DBMS_AQADM.REMOVE_SUBSCRIBER. Uncomment and implement Unregister_Subscriber in OMNI_TRACER_API. Handle timeout for unreachable Oracle."
+
 # ==========================================
 # SPRINT METRICS
 # ==========================================
 metrics:
-  total_stories: 8
+  total_stories: 9
   completed: 2
   in_progress: 0
-  ready_for_dev: 6
+  ready_for_dev: 7
   blocked: 0
-  completion_percentage: 25
+  completion_percentage: 22
 
 # ==========================================
 # EPIC SUMMARY
@@ -120,7 +128,7 @@ epic_summary:
 
   epic-3:
     title: "Epic 3: Danger Zone Implementation"
-    stories_total: 2
+    stories_total: 3
     stories_completed: 0
     stories_in_progress: 0
     status: "pending"
@@ -129,8 +137,8 @@ epic_summary:
 # NEXT ACTIONS
 # ==========================================
 next_actions:
-  - story: "1-5-application-level-message-routing"
-    action: "Fix ORA-24205: Remove recipient_list from PL/SQL, add subscriber field to QueueMessage, add filtering in processBatch"
+  - story: "1-5-correlation-based-message-routing"
+    action: "Verify PL/SQL changes (correlation + subscriber rule) already implemented. Deploy, test broadcast + subscriber-specific routing. No Go changes needed."
     priority: "critical"
     depends_on: ["1-2-procedure-generation"]
 

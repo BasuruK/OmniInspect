@@ -118,49 +118,49 @@ Rationale:
 
 Story `1-2-procedure-generation` implemented subscriber routing via Oracle AQ `recipient_list` in `Enqueue_Event___()`. This causes `ORA-24205: feature not supported for sharded queues` because Oracle Sharded Queues / TxEventQ do NOT support the `recipient_list` feature on enqueue.
 
-The `SUBSCRIBER` JSON field was already being embedded in the message payload by `Enqueue_Event___()`. The fix is to remove the broken `recipient_list` line and filter messages at the Go application layer using the existing `SUBSCRIBER` payload field.
+The fix uses Oracle AQ's built-in `correlation` property and subscriber rules. `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` registers with rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. This gives us both broadcast (NULL correlation → all subscribers) and subscriber-specific (non-NULL correlation → matching subscriber only) routing at the Oracle queue level with zero Go code changes.
 
 ## Impact Analysis
 
 ### Epic Impact
 
-- **Epic 1** gains one new story (1-5)
-- No scope expansion beyond this fix — no new Oracle features, no new queue types
+- **Epic 1** gains one new story (1-5: Correlation-Based Message Routing)
+- **Epic 3** gains one new story (3-3: Safe Subscriber Unregistration on Shutdown)
+- No scope expansion beyond these — the PL/SQL changes are already implemented
 
 ### Story Impact
 
-- **New Story `1-5-application-level-message-routing`** added to Epic 1
-- **Story `1-2`** is already done — the generated procedures correctly call `Enqueue_Event___` with `subscriber_name_`, which embeds the `SUBSCRIBER` JSON field. The only broken line is the `recipient_list` assignment.
+- **New Story `1-5-correlation-based-message-routing`** added to Epic 1 (PL/SQL already done)
+- **New Story `3-3-safe-subscriber-unregistration`** added to Epic 3 (future work)
+- **Story `1-2`** is done — generated procedures correctly call `Enqueue_Event___` with `subscriber_name_`
 - No changes to stories 1-3, 1-4, 2-1, 3-1, 3-2
 
 ### Artifact Impact
 
-- Updated: `_bmad-output/planning-artifacts/architecture.md` (DEC-6 added)
-- Updated: `_bmad-output/planning-artifacts/epics.md` (Story 1-5 + FR-8)
-- Created: `_bmad-output/implementation-artifacts/stories/1-5-application-level-message-routing.md`
+- Updated: `_bmad-output/planning-artifacts/architecture.md` (DEC-6 — correlation-based routing)
+- Updated: `_bmad-output/planning-artifacts/epics.md` (Story 1.5, Story 3.3, FR-8, FR-9)
+- Created: `_bmad-output/implementation-artifacts/stories/1-5-correlation-based-message-routing.md`
 - Updated: `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Technical Impact
 
-- `assets/sql/Omni_Tracer.sql`: remove 3 lines (`recipient_list` assignment)
-- `internal/core/domain/queue_message.go`: add `subscriber` field + JSON
-- `internal/service/tracer/tracer_service.go`: add filtering in `processBatch()`
-- Zero changes to C code, Oracle adapter, or queue configuration
+- `assets/sql/Omni_Tracer.sql`: `Enqueue_Event___` — replaced `recipient_list` with `message_properties_.correlation := subscriber_name_`
+- `assets/sql/Omni_Tracer.sql`: `Register_Subscriber` — added `rule => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''<name>'''`
+- **Zero Go code changes** — routing is handled entirely at the Oracle queue level
+- **Zero C code changes**
 
 ## Recommended Approach
 
-### Chosen Path: Application-Level Payload Filtering
+### Chosen Path: Correlation-Based Subscriber Rules
 
-Route messages by checking the `SUBSCRIBER` field in the JSON payload after dequeue, instead of trying to route at the Oracle queue level.
+Route messages using Oracle AQ's `correlation` property and subscriber rule matching, instead of `recipient_list` (unsupported) or application-level filtering (unnecessary).
 
 Rationale:
-- Oracle sharded queues broadcast to all subscribers by design
-- Filtering in Go is cheap, testable, and transparent
-- The `SUBSCRIBER` JSON field is already embedded by `Enqueue_Event___`
-- Zero Oracle infrastructure changes needed
+- Oracle AQ natively supports correlation on sharded queues
+- Subscriber rules evaluated at queue level — no Go filtering needed
+- Broadcast via NULL correlation + `IS NULL` rule — clean and simple
+- Already implemented and tested by Basuruk
 
-Risk:
-- Negligible — each subscriber deserializes all messages including non-matching ones. For < 20 subscribers with ephemeral trace messages, CPU cost is trivial.
+Risk: None — tested and working.
 
-Timeline impact:
-- Estimated 25 lines of code changes across 3 files. Same sprint.
+Timeline impact: PL/SQL changes already done. Story 1-5 is verification only.

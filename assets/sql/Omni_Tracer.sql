@@ -187,7 +187,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
         DBMS_AQADM.ADD_SUBSCRIBER (
             queue_name      => TRACER_QUEUE_NAME,
-            subscriber      => sub_
+            subscriber      => sub_,
+            rule            => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''' || subscriber_name_ || ''''
         );
         COMMIT;
     EXCEPTION
@@ -229,16 +230,14 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             END IF;
         END IF;
 
-        IF subscriber_name_ IS NOT NULL THEN
-            message_properties_.recipient_list(1) := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
-        END IF;
-
         message_ := JSON_OBJECT_T();
         message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
         message_.PUT('PROCESS_NAME', resolved_process_);
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+
+        message_properties_.correlation := subscriber_name_; -- Set correlation for routing. If NULL, message goes to all subscribers due to the subscriber rule defined in Register_Subscriber.
 
         -- Merge additional properties if provided (for extensibility)
         IF additional_props_ IS NOT NULL AND DBMS_LOB.GETLENGTH(additional_props_) > 0 THEN
@@ -260,10 +259,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                     );
                 END LOOP;
             END IF;
-        END IF;
-
-        IF subscriber_name_ IS NOT NULL THEN
-            message_.PUT('SUBSCRIBER', subscriber_name_);
         END IF;
 
         json_payload_ := message_.TO_CLOB();

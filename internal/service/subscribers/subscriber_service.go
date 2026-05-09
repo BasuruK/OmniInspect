@@ -13,11 +13,11 @@ import (
 type SubscriberService struct {
 	db      ports.DatabaseRepository
 	subRepo ports.SubscriberRepository
-	procGen ports.ProcedureGeneratorPort
+	procGen ports.ProcedureGeneratorRepository
 }
 
 // Constructor: NewSubscriberService Constructor for SubscriberService
-func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen ports.ProcedureGeneratorPort) *SubscriberService {
+func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen ports.ProcedureGeneratorRepository) *SubscriberService {
 	return &SubscriberService{
 		db:      db,
 		subRepo: subRepo,
@@ -28,7 +28,7 @@ func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberR
 // SetSubscriber stores the subscriber in the bolt database
 func (ss *SubscriberService) SetSubscriber(ctx context.Context, subscriber *domain.Subscriber) error {
 	if subscriber == nil {
-		return errors.New("subscriber cannot be nil")
+		return domain.ErrNilSubscriber
 	}
 	return ss.subRepo.Save(ctx, *subscriber)
 }
@@ -81,39 +81,36 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 	reservedFunnyName := ""
 	generatorSlotConsumed := false
 	if ss.procGen != nil {
-		var nameAssigned bool
-		reservedFunnyName, nameAssigned, generatorSlotConsumed, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
-		_ = nameAssigned
+		reservedFunnyName, generatorSlotConsumed, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
 		if err != nil {
 			return nil, fmt.Errorf("failed to reserve funny name: %w", err)
 		}
-		if generatorSlotConsumed {
+		if subscriber.FunnyName() == "" && reservedFunnyName != "" {
 			if err := subscriber.AssignFunnyName(reservedFunnyName); err != nil {
-				ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+				if releaseErr := ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName); releaseErr != nil {
+					return nil, fmt.Errorf("failed to assign funny name: %w; failed to release funny name: %v", err, releaseErr)
+				}
 				return nil, fmt.Errorf("failed to assign funny name: %w", err)
 			}
 		}
 	}
 
-	// Register Subscriber in Oracle DB
-	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
+	if err := ss.SetSubscriber(ctx, subscriber); err != nil {
 		if generatorSlotConsumed {
 			_ = ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to save subscriber: %w", err)
+	}
+
+	// Register Subscriber in Oracle DB
+	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
+		return nil, fmt.Errorf("failed to register subscriber in database: %w", err)
 	}
 
 	if ss.procGen != nil {
 		if err := ss.procGen.GenerateSubscriberProcedure(ctx, subscriber); err != nil {
-			if generatorSlotConsumed {
-				_ = ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
-			}
 			return nil, fmt.Errorf("failed to generate subscriber procedure: %w", err)
 		}
-	}
-
-	if err := ss.SetSubscriber(ctx, subscriber); err != nil {
-		return nil, fmt.Errorf("failed to save subscriber: %w", err)
 	}
 
 	return subscriber, nil

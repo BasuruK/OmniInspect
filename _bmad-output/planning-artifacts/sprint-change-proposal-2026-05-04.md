@@ -109,3 +109,58 @@ Rationale:
 - generated procedures still route only to the matching subscriber
 - `make test` passes
 - `make build` passes
+
+---
+
+# Sprint Change Proposal — 2026-05-09: ORA-24205 Fix (Application-Level Message Routing)
+
+## Issue Summary
+
+Story `1-2-procedure-generation` implemented subscriber routing via Oracle AQ `recipient_list` in `Enqueue_Event___()`. This causes `ORA-24205: feature not supported for sharded queues` because Oracle Sharded Queues / TxEventQ do NOT support the `recipient_list` feature on enqueue.
+
+The `SUBSCRIBER` JSON field was already being embedded in the message payload by `Enqueue_Event___()`. The fix is to remove the broken `recipient_list` line and filter messages at the Go application layer using the existing `SUBSCRIBER` payload field.
+
+## Impact Analysis
+
+### Epic Impact
+
+- **Epic 1** gains one new story (1-5)
+- No scope expansion beyond this fix — no new Oracle features, no new queue types
+
+### Story Impact
+
+- **New Story `1-5-application-level-message-routing`** added to Epic 1
+- **Story `1-2`** is already done — the generated procedures correctly call `Enqueue_Event___` with `subscriber_name_`, which embeds the `SUBSCRIBER` JSON field. The only broken line is the `recipient_list` assignment.
+- No changes to stories 1-3, 1-4, 2-1, 3-1, 3-2
+
+### Artifact Impact
+
+- Updated: `_bmad-output/planning-artifacts/architecture.md` (DEC-6 added)
+- Updated: `_bmad-output/planning-artifacts/epics.md` (Story 1-5 + FR-8)
+- Created: `_bmad-output/implementation-artifacts/stories/1-5-application-level-message-routing.md`
+- Updated: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+### Technical Impact
+
+- `assets/sql/Omni_Tracer.sql`: remove 3 lines (`recipient_list` assignment)
+- `internal/core/domain/queue_message.go`: add `subscriber` field + JSON
+- `internal/service/tracer/tracer_service.go`: add filtering in `processBatch()`
+- Zero changes to C code, Oracle adapter, or queue configuration
+
+## Recommended Approach
+
+### Chosen Path: Application-Level Payload Filtering
+
+Route messages by checking the `SUBSCRIBER` field in the JSON payload after dequeue, instead of trying to route at the Oracle queue level.
+
+Rationale:
+- Oracle sharded queues broadcast to all subscribers by design
+- Filtering in Go is cheap, testable, and transparent
+- The `SUBSCRIBER` JSON field is already embedded by `Enqueue_Event___`
+- Zero Oracle infrastructure changes needed
+
+Risk:
+- Negligible — each subscriber deserializes all messages including non-matching ones. For < 20 subscribers with ephemeral trace messages, CPU cost is trivial.
+
+Timeline impact:
+- Estimated 25 lines of code changes across 3 files. Same sprint.

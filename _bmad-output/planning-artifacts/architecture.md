@@ -33,9 +33,9 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Topic:** Per-subscriber message isolation for OmniView/OmniInspect trace messages over Oracle AQ
 
-**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`)
+**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`) with application-level payload filtering
 
-**Key Insight:** Moves subscriber identity to compile-time — the method name IS the routing key.
+**Key Insight:** Moves subscriber identity to compile-time — the method name IS the routing key. Routing is enforced at the Go application layer via a `SUBSCRIBER` field in the JSON payload, not at the Oracle queue level.
 
 ---
 
@@ -52,6 +52,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Auto-redeploy | Already implemented - if package missing, OmniView redeploys |
 | Permissions | Any database user can call generated procedures |
 | Scalability | N subscribers supported, no hard limit |
+| Message routing | Application-level payload filtering in Go (DEC-6). Oracle sharded queues broadcast all messages to all subscribers; Go filters by `SUBSCRIBER` JSON field |
 
 ---
 
@@ -103,6 +104,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - SQL injection prevention via format validation
 - Package invalidation recovery mechanism (already implemented)
 - Backward compatibility with existing `Trace_Message()` callers
+- Oracle sharded queue limitation: `recipient_list` not supported (ORA-24205) — message routing handled at Go application layer via `SUBSCRIBER` JSON payload field (see DEC-6)
 
 ---
 
@@ -156,8 +158,9 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - Simplifies permissions and deployment
 
 **Implementation Note**:
-- `Enqueue_Event___()` in the base package must support an optional `subscriber_name_` parameter as part of this development
+- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that embeds a `SUBSCRIBER` field into the JSON payload
 - Generated procedures call `Enqueue_Event___()` internally with `subscriber_name_` set to the assigned funny name
+- Message routing is enforced at the Go application layer via payload filtering (see DEC-6), NOT at the Oracle queue level
 
 ---
 
@@ -233,6 +236,66 @@ Guts, Griffith, Casca, Farnese, Serpico
 **Decision**: Store as Go constant array in `internal/core/domain/funny_names.go`
 
 **Rationale**: Domain layer - fits the value object pattern; follows existing project conventions
+
+---
+
+### DEC-6: Message Routing Strategy — Application-Level Payload Filtering
+
+**Status**: DECIDED ✅ (2026-05-09)
+
+**Problem**: Oracle Sharded Queues (and their successor TxEventQ) do NOT support `recipient_list` on enqueue (`ORA-24205: feature not supported for sharded queues`). The original design assumed `message_properties_.recipient_list` could route messages to specific subscribers at the queue level. This is only supported on classic AQ queues, not sharded/TxEventQ.
+
+**Rejected Alternatives**:
+
+| Alternative | Reason Rejected |
+|-------------|-----------------|
+| **Switch to classic AQ queue** | Would lose sharded queue performance benefits; breaking migration for existing deployments |
+| **Per-subscriber queue (Option B)** | Requires separate queues per subscriber, C dequeue layer changes, dynamic queue targeting in Go — too much complexity for the value delivered |
+| **Correlation-based routing (Option A)** | Every subscriber still dequeues all messages, but non-matching ones sit in queue until expiration; requires message expiration management |
+| **Hybrid broadcast + correlation (Option C)** | Same dead-message accumulation as correlation; more complex dequeue logic |
+
+**Decision**: Application-level payload filtering in Go
+
+**How it works**:
+1. `Enqueue_Event___()` already embeds a `"SUBSCRIBER"` field in the JSON payload when `subscriber_name_` is non-NULL
+2. **Remove** the `recipient_list` assignment from `Enqueue_Event___()` — this was the line causing ORA-24205
+3. All subscribers receive all messages (broadcast at the queue level — this is how sharded queues work)
+4. After dequeue and JSON unmarshal in Go, filter by the `SUBSCRIBER` field:
+   - `SUBSCRIBER` field present → only dispatch to the subscriber whose funny name matches
+   - `SUBSCRIBER` field absent → broadcast message, dispatch to all subscribers (existing `Trace_Message()` behavior)
+
+**PL/SQL Change** (`assets/sql/Omni_Tracer.sql` — `Enqueue_Event___`):
+```sql
+-- REMOVE these 3 lines (they cause ORA-24205 on sharded queues):
+--   IF subscriber_name_ IS NOT NULL THEN
+--       message_properties_.recipient_list(1) := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
+--   END IF;
+
+-- KEEP the SUBSCRIBER JSON field (already present):
+IF subscriber_name_ IS NOT NULL THEN
+    message_.PUT('SUBSCRIBER', subscriber_name_);
+END IF;
+```
+
+**Go Domain Change** (`internal/core/domain/queue_message.go`):
+- Add `subscriber string` field to `QueueMessage` struct
+- Add `Subscriber() string` getter
+- Add `"subscriber"` to JSON marshal/unmarshal structs
+- Wire through `NewQueueMessage` constructor
+
+**Go Service Change** (`internal/service/tracer/tracer_service.go`):
+- In `processBatch()`, after unmarshal, check `msg.Subscriber()`:
+  - If non-empty and doesn't match `subscriber.FunnyName()` → skip (discard silently)
+  - If empty or matches → dispatch normally via `handleTracerMessage()`
+
+**Trade-off accepted**: Every subscriber dequeues and deserializes all messages, including ones destined for other subscribers. For a debugging tool with < 20 concurrent subscribers and ephemeral trace messages, this CPU overhead is negligible compared to the complexity cost of solving routing at the Oracle queue level.
+
+**Key properties**:
+- Zero Oracle queue-level changes beyond removing the broken `recipient_list` line
+- No C code changes
+- No dequeue behavior changes — all subscribers still dequeue all messages via `consumer_name`
+- Filtering is in Go — testable, debuggable, no Oracle black-box behavior
+- Backward compatible — existing `Trace_Message()` callers produce messages without `SUBSCRIBER` field, which are displayed to all subscribers
 
 ---
 

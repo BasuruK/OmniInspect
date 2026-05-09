@@ -172,8 +172,8 @@ func (s *Subscriber) Reactivate() {
 
 // String returns a string representation
 func (s *Subscriber) String() string {
-	return fmt.Sprintf("Subscriber{Name: %s, BatchSize: %d, WaitTime: %ds, Active: %v}",
-		s.name, s.batchSize, s.waitTime, s.active)
+	return fmt.Sprintf("Subscriber{Name: %s, Alias: %s, BatchSize: %d, WaitTime: %ds, Active: %v}",
+		s.name, s.funnyName, s.batchSize, s.waitTime, s.active)
 }
 
 // ==========================================

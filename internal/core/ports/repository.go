@@ -117,15 +117,14 @@ type DatabaseRepository interface {
 // Procedure Generator Interface
 // ==========================================
 
-type ProcedureGeneratorPort interface {
+type ProcedureGeneratorRepository interface {
 	// ReserveFunnyName reserves a funny name for the subscriber.
-	// Returns: (name, nameWasAssignedToSubscriber, generatorSlotConsumed, error).
-	// generatorSlotConsumed is true when the generator's list had to be modified
+	// slotConsumed is true when the generator's list had to be modified
 	// (either a new slot was claimed from AvailableNames, or an existing name was
-	// marked as Used). It is false when the subscriber already had a FunnyName set
-	// and we merely validated it. Use generatorSlotConsumed to decide whether to
+	// marked as Used). It is false when no reservation occurred because the call
+	// failed before mutating generator state. Use slotConsumed to decide whether to
 	// ReleaseFunnyName on failure.
-	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, bool, error)
+	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (name string, slotConsumed bool, err error)
 
 	// ReleaseFunnyName releases a previously reserved funny name
 	ReleaseFunnyName(ctx context.Context, funnyName string) error

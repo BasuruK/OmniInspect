@@ -152,7 +152,6 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
            AND Has_AQ_User_Role(p_schema)
            AND Has_DBMS_AQADM_Exec(p_schema)
            AND Has_DBMS_AQ_Exec(p_schema)
-           AND Has_AQ_Recipient_List_Exec(p_schema)
            AND Has_AQ_Agent_Exec(p_schema);
     END Validate_All_Permissions;
 
@@ -206,10 +205,10 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
             CASE WHEN dbms_aq_ THEN 'true' ELSE 'false' END || ',';
 
         report_ := report_ || '"AQRecipientListT":' ||
-            CASE WHEN Has_AQ_Recipient_List_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+            CASE WHEN aq_recipient_ THEN 'true' ELSE 'false' END || ',';
 
         report_ := report_ || '"AQAgentType":' ||
-            CASE WHEN Has_AQ_Agent_Exec(p_schema) THEN 'true' ELSE 'false' END || ',';
+            CASE WHEN aq_agent_ THEN 'true' ELSE 'false' END || ',';
 
         report_ := report_ || '"AllValid":' ||
             CASE WHEN all_valid_ THEN 'true' ELSE 'false' END;

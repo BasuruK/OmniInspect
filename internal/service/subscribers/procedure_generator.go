@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -33,19 +32,20 @@ func NewProcedureGenerator(db ports.DatabaseRepository) (*ProcedureGenerator, er
 	return &ProcedureGenerator{db: db}, nil
 }
 
-func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, bool, error) {
+func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error) {
 	if subscriber == nil {
-		return "", false, false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNilSubscriber)
+		return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNilSubscriber)
 	}
 
 	if subscriber.FunnyName() != "" {
 		if err := validateFunnyNameForProcedure(subscriber.FunnyName()); err != nil {
-			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 		if err := domain.DefaultFunnyNameGenerator().MarkAsUsed(subscriber.FunnyName()); err != nil {
-			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
-		return subscriber.FunnyName(), true, false, nil
+		// MarkAsUsed mutated the pool, so the caller must release on failure.
+		return subscriber.FunnyName(), true, nil
 	}
 
 	gen := domain.DefaultFunnyNameGenerator()
@@ -53,24 +53,26 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 	for i := 0; i < attempts; i++ {
 		funnyName, err := gen.GetRandomName()
 		if err != nil {
-			return "", false, false, fmt.Errorf("ReserveFunnyName: failed to get funny name: %w", err)
+			return "", false, fmt.Errorf("ReserveFunnyName: failed to get funny name: %w", err)
 		}
 		if err := validateFunnyNameForProcedure(funnyName); err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
-			return "", false, false, fmt.Errorf("ReserveFunnyName: %w", err)
+			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 
 		exists, err := pg.db.ProcedureExists(ctx, buildProcedureName(funnyName))
 		if err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
-			return "", false, false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
+			return "", false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
 		}
 		if !exists {
-			return funnyName, true, true, nil
+			return funnyName, true, nil
 		}
+		// Procedure exists — release this name and try another
+		_ = gen.MarkAsAvailable(funnyName)
 	}
 
-	return "", false, false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
+	return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
 }
 
 func (pg *ProcedureGenerator) ReleaseFunnyName(_ context.Context, funnyName string) error {
@@ -173,7 +175,7 @@ func (pg *ProcedureGenerator) loadPackageSource(ctx context.Context) (string, st
 		return loadBasePackageSource()
 	}
 
-	return "", "", fmt.Errorf("fetchCurrentPackageSource: %w", err)
+	return "", "", fmt.Errorf("loadPackageSource: %w", err)
 }
 
 func (pg *ProcedureGenerator) fetchCurrentPackageSource(ctx context.Context) (string, string, error) {
@@ -262,25 +264,30 @@ func renderPackageDeploymentSQL(packageSpec string, packageBody string) string {
 }
 
 // injectProcedureDeclaration adds a new procedure declaration to the package spec
-// if it does not already exist. Uses regex search to detect duplicates.
+// if it does not already exist.
 func injectProcedureDeclaration(packageSpec string, funnyName string) (string, error) {
 	procedureName := buildProcedureName(funnyName)
-	pattern := regexp.MustCompile(`(?i)PROCEDURE\s+` + regexp.QuoteMeta(procedureName) + `\s*\(`)
-	if pattern.MatchString(packageSpec) {
+	if containsProcedureSignature(packageSpec, procedureName) {
 		return packageSpec, nil
 	}
 	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName))
 }
 
 // injectProcedureBody adds a new procedure body to the package body if it does not
-// already exist. Uses regex search to detect duplicates.
+// already exist.
 func injectProcedureBody(packageBody string, funnyName string) (string, error) {
 	procedureName := buildProcedureName(funnyName)
-	pattern := regexp.MustCompile(`(?i)PROCEDURE\s+` + regexp.QuoteMeta(procedureName) + `\s*\(`)
-	if pattern.MatchString(packageBody) {
+	if containsProcedureSignature(packageBody, procedureName) {
 		return packageBody, nil
 	}
 	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName))
+}
+
+func containsProcedureSignature(packageSource string, procedureName string) bool {
+	normalizedSource := strings.ToUpper(strings.Join(strings.Fields(packageSource), " "))
+	upperProcedureName := strings.ToUpper(procedureName)
+	return strings.Contains(normalizedSource, "PROCEDURE "+upperProcedureName+"(") ||
+		strings.Contains(normalizedSource, "PROCEDURE "+upperProcedureName+" (")
 }
 
 // removeProcedureDeclaration removes a procedure declaration from the package spec.

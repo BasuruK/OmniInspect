@@ -51,10 +51,11 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 - **Funny Name System:** Auto-assign curated cartoon character names (e.g., Mickey, Donald, Bugs, Daffy, Scooby, Tom, Jerry) to subscribers for procedure naming
 - **Name Collision Handling:** System automatically picks another available name if collision occurs
-- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper must support an optional `subscriber_name_` parameter for generated procedures
+- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter that embeds a `SUBSCRIBER` field in the JSON payload for generated procedures
+- **Application-Level Message Routing:** Go application filters dequeued messages by the `SUBSCRIBER` JSON field — messages with a `SUBSCRIBER` value are only displayed to the matching subscriber; messages without `SUBSCRIBER` (broadcast) are displayed to all subscribers
 - **SQL Injection Prevention:** Strict format validation on all funny names before DDL generation
 - **Idempotent Procedure Creation:** Check if procedure exists before creating (skip if already exists)
-- **Backwards Compatibility:** Existing `Trace_Message()` callers remain unaffected
+- **Backwards Compatibility:** Existing `Trace_Message()` callers remain unaffected (broadcast to all)
 
 ### UX Design Requirements
 
@@ -79,6 +80,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 | FR-5 | Auto-redeploy on startup | Epic 1 |
 | FR-6 | Strict name format validation | Epic 1 |
 | FR-7 | Display procedure name in TUI | Epic 2 |
+| FR-8 | Application-level message routing via SUBSCRIBER payload field | Epic 1 |
 
 ## Epic List
 
@@ -86,7 +88,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 **User Outcome:** IFS developers can call subscriber-specific procedures that route messages to only their OmniView instance.
 
-**FRs Covered:** FR-1, FR-2, FR-5, FR-6
+**FRs Covered:** FR-1, FR-2, FR-5, FR-6, FR-8
 
 ### Epic 2: TUI Procedure Name Display
 
@@ -143,15 +145,15 @@ So that procedure names are memorable and unique.
 ### Story 1.2: Procedure Generation with Subscriber-Routed Enqueue
 
 As a system,
-I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call the internal enqueue helper with a subscriber routing parameter, using the subscriber's auto-assigned funny name.
+I want to generate `TRACE_MESSAGE_<FUNNY_NAME>(message_, log_level_, process_name_?)` procedures that call the internal enqueue helper with a subscriber routing parameter, using the subscriber's auto-assigned funny name.
 So that messages are routed to the correct subscriber.
 
 **Acceptance Criteria:**
 
 **Given** a subscriber with name BARNACLE is registered
 **When** OmniView generates their procedure
-**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_)` is created inside OMNI_TRACER_API package
-**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE')`
+**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_, process_name_?)` is created inside OMNI_TRACER_API package
+**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE', process_name_ => process_name_)`
 
 **Given** the subscriber's procedure already exists
 **When** OmniView starts
@@ -195,6 +197,47 @@ So that I can redeploy it if missing.
 **When** the system checks
 **Then** it skips deployment and uses existing package
 **And** it generates any missing subscriber procedures
+
+---
+
+### Story 1.5: Application-Level Message Routing (Payload Filtering)
+
+As a subscriber,
+I want messages sent via my `TRACE_MESSAGE_<FUNNY_NAME>()` procedure to only appear in my OmniView instance,
+So that I only see trace messages intended for me, while still seeing broadcast messages from `Trace_Message()`.
+
+**Acceptance Criteria:**
+
+**Given** a message was enqueued via `TRACE_MESSAGE_BARNACLE('msg')`
+**When** subscriber BARNACLE's OmniView instance dequeues the message
+**Then** the message is displayed in BARNACLE's TUI
+
+**Given** a message was enqueued via `TRACE_MESSAGE_BARNACLE('msg')`
+**When** subscriber PEBBLES's OmniView instance dequeues the message
+**Then** the message is silently discarded (not displayed)
+
+**Given** a message was enqueued via `Trace_Message('msg')` (broadcast, no SUBSCRIBER field)
+**When** any subscriber's OmniView instance dequeues the message
+**Then** the message is displayed in all subscribers' TUIs
+
+**Technical Details:**
+
+This story fixes ORA-24205 (`recipient_list` not supported on sharded queues). See Architecture DEC-6.
+
+**PL/SQL change:** Remove `recipient_list` assignment from `Enqueue_Event___()` in `assets/sql/Omni_Tracer.sql` (3 lines removed). The `SUBSCRIBER` JSON field is already present and will continue to be embedded.
+
+**Go domain change:** Add `subscriber` field to `QueueMessage` struct in `internal/core/domain/queue_message.go`:
+- Add `subscriber string` private field
+- Add `Subscriber() string` getter
+- Add `"subscriber"` to `queueMessageJSON` struct for JSON unmarshal
+- Wire into `NewQueueMessage` constructor and `UnmarshalJSON`
+
+**Go service change:** In `internal/service/tracer/tracer_service.go`, in `processBatch()`:
+- After JSON unmarshal, check `msg.Subscriber()`
+- If non-empty AND does not match `subscriber.FunnyName()` → skip message
+- If empty (broadcast) or matches → dispatch via `handleTracerMessage()`
+
+**No changes to:** C dequeue code, Oracle adapter, queue configuration, dequeue options
 
 ---
 

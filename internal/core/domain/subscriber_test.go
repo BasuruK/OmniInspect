@@ -6,13 +6,24 @@ import (
 	"time"
 )
 
-func TestSubscriberJSONRoundTripPreservesFunnyName(t *testing.T) {
+func newTestSubscriberWithState(t *testing.T, createdAt time.Time, active bool) *Subscriber {
+	t.Helper()
+
 	subscriber, err := NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", DefaultBatchSize, DefaultWaitTime)
 	if err != nil {
 		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
 	}
-	subscriber.createdAt = time.Unix(1710000000, 0)
-	subscriber.active = false
+	subscriber.createdAt = createdAt
+	if active {
+		subscriber.Reactivate()
+	} else {
+		subscriber.Deactivate()
+	}
+	return subscriber
+}
+
+func TestSubscriberJSONRoundTripPreservesFunnyName(t *testing.T) {
+	subscriber := newTestSubscriberWithState(t, time.Unix(1710000000, 0), false)
 
 	encoded, err := json.Marshal(subscriber)
 	if err != nil {
@@ -30,8 +41,8 @@ func TestSubscriberJSONRoundTripPreservesFunnyName(t *testing.T) {
 	if decoded.FunnyName() != subscriber.FunnyName() {
 		t.Fatalf("decoded funny name = %q, want %q", decoded.FunnyName(), subscriber.FunnyName())
 	}
-	if decoded.ConsumerName() != subscriber.FunnyName() {
-		t.Fatalf("decoded consumer name = %q, want %q", decoded.ConsumerName(), subscriber.FunnyName())
+	if decoded.ConsumerName() != subscriber.ConsumerName() {
+		t.Fatalf("decoded consumer name = %q, want %q", decoded.ConsumerName(), subscriber.ConsumerName())
 	}
 	if !decoded.CreatedAt().Equal(subscriber.CreatedAt()) {
 		t.Fatalf("decoded createdAt = %v, want %v", decoded.CreatedAt(), subscriber.CreatedAt())

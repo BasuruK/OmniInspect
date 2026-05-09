@@ -335,17 +335,13 @@ func (ts *TracerService) DeployAndCheck(ctx context.Context) error {
 	return nil
 }
 
-// DeployTracerPackage deploys the Omni tracer package to the database if not already present
+// DeployTracerPackage deploys the Omni tracer package to the database.
+// The package SQL is always applied so embedded package updates reach existing databases.
 func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) error {
 	var err error
 	*exists, err = ts.db.PackageExists(ctx, "OMNI_TRACER_API")
 	if err != nil {
 		return fmt.Errorf("failed to check package existence: %w", err)
-	}
-
-	if *exists {
-		// Package already exists, no need to deploy
-		return nil
 	}
 
 	// Read the Omni tracer package file

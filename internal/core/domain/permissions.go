@@ -28,7 +28,6 @@ func (ps *PermissionStatus) HasAllPermissions() bool {
 		ps.AQUserRole &&
 		ps.DBMSAQADMExecute &&
 		ps.DBMSAQExecute &&
-		ps.AQRecipientListT &&
 		ps.AQAgentType
 }
 

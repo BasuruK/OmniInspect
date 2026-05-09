@@ -73,6 +73,14 @@ development_status:
     last_updated: "2026-04-28"
     notes: "Add danger zone option to delete subscriber-specific procedure"
 
+  1-5-application-level-message-routing:
+    status: "ready-for-dev"
+    title: "Application-Level Message Routing (Payload Filtering)"
+    epic: "Epic 1: Multi-Subscriber Procedure Generation"
+    owner: "dev-agent"
+    last_updated: "2026-05-09"
+    notes: "Fix ORA-24205: Remove recipient_list from Enqueue_Event___, add subscriber field to QueueMessage, filter in processBatch. See Architecture DEC-6."
+
   3-2-drop-entire-package:
     status: "ready-for-dev"
     title: "Drop Entire Package (Danger Zone)"
@@ -85,12 +93,12 @@ development_status:
 # SPRINT METRICS
 # ==========================================
 metrics:
-  total_stories: 7
+  total_stories: 8
   completed: 2
   in_progress: 0
-  ready_for_dev: 5
+  ready_for_dev: 6
   blocked: 0
-  completion_percentage: 28
+  completion_percentage: 25
 
 # ==========================================
 # EPIC SUMMARY
@@ -98,7 +106,7 @@ metrics:
 epic_summary:
   epic-1:
     title: "Epic 1: Multi-Subscriber Procedure Generation"
-    stories_total: 4
+    stories_total: 5
     stories_completed: 2
     stories_in_progress: 0
     status: "in-progress"
@@ -121,6 +129,11 @@ epic_summary:
 # NEXT ACTIONS
 # ==========================================
 next_actions:
+  - story: "1-5-application-level-message-routing"
+    action: "Fix ORA-24205: Remove recipient_list from PL/SQL, add subscriber field to QueueMessage, add filtering in processBatch"
+    priority: "critical"
+    depends_on: ["1-2-procedure-generation"]
+
   - story: "1-3-sql-injection-prevention"
     action: "Validate funny names against format before package DDL generation"
     priority: "high"

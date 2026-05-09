@@ -149,7 +149,7 @@ func checkPermissions(ctx context.Context, ps *PermissionService, schema string)
 		"AQ User Role", statusMark(permsStatus.AQUserRole),
 		"Execute DBMS AQADM", statusMark(permsStatus.DBMSAQADMExecute),
 		"Execute DBMS AQ", statusMark(permsStatus.DBMSAQExecute),
-		"EXECUTE SYS.AQ$_RECIPIENT_LIST_T", statusMark(permsStatus.AQRecipientListT),
+		"EXECUTE SYS.AQ$_RECIPIENT_LIST_T (optional)", statusMark(permsStatus.AQRecipientListT),
 		"EXECUTE SYS.AQ$_AGENT", statusMark(permsStatus.AQAgentType))
 
 	// Evaluate if all permissions are valid

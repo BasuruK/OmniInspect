@@ -12,9 +12,10 @@ func resetDefaultFunnyNameGenerator(t *testing.T) {
 	t.Helper()
 
 	gen := domain.DefaultFunnyNameGenerator()
-	initialCount := gen.AvailableCount()
+	availableAfterTest := gen.AvailableCount()
 	gen.Reset()
-	usedCount := initialCount - gen.AvailableCount()
+	initialCount := gen.AvailableCount()
+	usedCount := initialCount - availableAfterTest
 
 	t.Cleanup(func() {
 		gen.Reset()
@@ -326,7 +327,7 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_PropagatesFetchErrors(t 
 	}
 }
 
-func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFails(t *testing.T) {
+func TestProcedureGenerator_GenerateSubscriberProcedure_PropagatesDeployErrors(t *testing.T) {
 	resetDefaultFunnyNameGenerator(t)
 
 	stub := &stubDBRepo{
@@ -346,12 +347,9 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_ReleaseLockWhenDeployFai
 	if !errors.Is(err, stub.deployFileErr) {
 		t.Fatalf("GenerateSubscriberProcedure() error = %v, want wrapped deploy error", err)
 	}
-	if len(stub.executedStatements) != 0 {
-		t.Fatalf("expected 0 statements (locking removed), got %d", len(stub.executedStatements))
-	}
 }
 
-func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGenerationSucceeds(t *testing.T) {
+func TestSubscriberService_RegisterSubscriber_PersistsBeforeProcedureGenerationSucceeds(t *testing.T) {
 	resetDefaultFunnyNameGenerator(t)
 
 	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
@@ -367,8 +365,35 @@ func TestSubscriberService_RegisterSubscriber_DoesNotPersistBeforeProcedureGener
 	if err == nil {
 		t.Fatal("expected RegisterSubscriber() to fail when package deployment fails")
 	}
-	if len(repo.saved) != 0 {
-		t.Fatalf("expected no persisted subscriber on failure, got %d saves", len(repo.saved))
+	if len(repo.saved) != 1 {
+		t.Fatalf("expected subscriber to be persisted before procedure generation, got %d saves", len(repo.saved))
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got >= initialAvailable {
+		t.Fatalf("expected persisted funny name to remain reserved, available count = %d, want less than %d", got, initialAvailable)
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenSaveFails(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	db := &stubDBRepo{}
+	repo := &stubSubscriberRepo{saveErr: errors.New("save failed")}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+
+	_, err = service.RegisterSubscriber(context.Background())
+	if err == nil {
+		t.Fatal("expected RegisterSubscriber() to fail when save fails")
+	}
+	if len(db.registeredConsumers) != 0 {
+		t.Fatalf("expected no Oracle subscriber registration on save failure, got %d", len(db.registeredConsumers))
+	}
+	if db.deployFileCallCount != 0 {
+		t.Fatalf("expected no package deployment on save failure, got %d", db.deployFileCallCount)
 	}
 	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
 		t.Fatalf("expected reserved funny name to be released, available count = %d, want %d", got, initialAvailable)
@@ -423,12 +448,12 @@ func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAl
 	if initialAvailable == 0 {
 		t.Fatal("expected at least one available funny name before registration")
 	}
-	reservedName, assigned, consumed, reserveErr := procGen.ReserveFunnyName(context.Background(), mustNewRandomSubscriber(t))
+	reservedName, consumed, reserveErr := procGen.ReserveFunnyName(context.Background(), mustNewRandomSubscriber(t))
 	if reserveErr != nil {
 		t.Fatalf("ReserveFunnyName() returned error: %v", reserveErr)
 	}
-	if !assigned || !consumed || reservedName == "" {
-		t.Fatalf("unexpected reserve result: name=%q assigned=%v consumed=%v", reservedName, assigned, consumed)
+	if !consumed || reservedName == "" {
+		t.Fatalf("unexpected reserve result: name=%q consumed=%v", reservedName, consumed)
 	}
 	if err := procGen.ReleaseFunnyName(context.Background(), reservedName); err != nil {
 		t.Fatalf("ReleaseFunnyName() returned error: %v", err)

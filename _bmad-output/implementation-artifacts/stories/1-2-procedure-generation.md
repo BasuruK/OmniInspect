@@ -22,8 +22,8 @@ So that messages are routed to the correct subscriber.
 
 **Given** a subscriber with name BARNACLE is registered
 **When** OmniView generates their procedure
-**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_)` is created inside OMNI_TRACER_API package
-**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE')`
+**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_, process_name_?)` is created inside OMNI_TRACER_API package
+**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE', process_name_ => process_name_)`
 
 **Given** the subscriber's procedure already exists
 **When** OmniView starts
@@ -78,16 +78,19 @@ AND object_type = 'PACKAGE'
 ```sql
 PROCEDURE TRACE_MESSAGE_BARNACLE(
     message_   IN CLOB,
-    log_level_ IN VARCHAR2 DEFAULT 'INFO'
+    log_level_ IN VARCHAR2 DEFAULT 'INFO',
+    process_name_  IN VARCHAR2 DEFAULT NULL
 );
 
 PROCEDURE TRACE_MESSAGE_BARNACLE(
     message_   IN CLOB,
-    log_level_ IN VARCHAR2 DEFAULT 'INFO'
+    log_level_ IN VARCHAR2 DEFAULT 'INFO',
+    process_name_  IN VARCHAR2 DEFAULT NULL
 )
 IS
 BEGIN
     Enqueue_Event___(
+        process_name_     => process_name_,
         log_level_        => log_level_,
         payload           => message_,
         subscriber_name_  => 'BARNACLE'

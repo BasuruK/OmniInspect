@@ -184,6 +184,10 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
         END IF;
 
+        IF NOT REGEXP_LIKE(subscriber_name_, '^[A-Za-z0-9_]+$') THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Subscriber name contains invalid characters. Only alphanumeric and underscores are allowed.');
+        END IF;
+
         sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
         DBMS_AQADM.ADD_SUBSCRIBER (
             queue_name      => TRACER_QUEUE_NAME,

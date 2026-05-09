@@ -118,6 +118,18 @@ func NewRandomSubscriber() (*Subscriber, error) {
 	return NewSubscriberWithDefaults(subscriberName)
 }
 
+// NewSubscriberForTest creates a subscriber with specific state for testing.
+// This preserves encapsulation while allowing deterministic testing.
+func NewSubscriberForTest(name, funnyName string, batchSize BatchSize, waitTime WaitTime, createdAt time.Time, active bool) (*Subscriber, error) {
+	s, err := NewSubscriberWithFunnyName(name, funnyName, batchSize, waitTime)
+	if err != nil {
+		return nil, err
+	}
+	s.createdAt = createdAt
+	s.active = active
+	return s, nil
+}
+
 // ==========================================
 // Getters (Read-Only Accessors)
 // ==========================================

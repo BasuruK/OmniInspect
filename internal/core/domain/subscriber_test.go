@@ -9,15 +9,9 @@ import (
 func newTestSubscriberWithState(t *testing.T, createdAt time.Time, active bool) *Subscriber {
 	t.Helper()
 
-	subscriber, err := NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", DefaultBatchSize, DefaultWaitTime)
+	subscriber, err := NewSubscriberForTest("TEST_SUB", "BARNACLE", DefaultBatchSize, DefaultWaitTime, createdAt, active)
 	if err != nil {
-		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
-	}
-	subscriber.createdAt = createdAt
-	if active {
-		subscriber.Reactivate()
-	} else {
-		subscriber.Deactivate()
+		t.Fatalf("NewSubscriberForTest() returned error: %v", err)
 	}
 	return subscriber
 }

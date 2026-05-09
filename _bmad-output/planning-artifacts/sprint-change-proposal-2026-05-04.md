@@ -131,7 +131,10 @@ The fix uses Oracle AQ's built-in `correlation` property and subscriber rules. `
 ### Story Impact
 
 - **New Story `1-5-correlation-based-message-routing`** added to Epic 1 (PL/SQL already done)
-- **New Story `3-3-safe-subscriber-unregistration`** added to Epic 3 (future work)
+- **New Story `3-3-safe-subscriber-unregistration`** added to Epic 3 (future work).
+  - **Rationale**: Today, unregistration is "missing" rather than just unsafe — terminating an OmniView session leaves a dangling subscriber in `ALL_QUEUE_SUBSCRIBERS`.
+  - **Context**: The new `1-5` routing logic creates a tight coupling between the Oracle `correlation` rule and the Go-side `FunnyName`. If a subscriber crashes and restarts, it currently relies on idempotent re-registration, but redundant stale entries can bloat the queue metadata and potentially slow down message distribution if many unique FunnyNames are generated over time.
+  - **Priority**: This belongs in Epic 3 because Story `1-5` provides functional correctness (correct message routing), while `3-3` is a follows-up robustness task to ensure clean teardown and prevent long-term resource leakage.
 - **Story `1-2`** is done — generated procedures correctly call `Enqueue_Event___` with `subscriber_name_`
 - No changes to stories 1-3, 1-4, 2-1, 3-1, 3-2
 

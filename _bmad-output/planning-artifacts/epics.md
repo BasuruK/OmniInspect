@@ -203,7 +203,7 @@ So that I can redeploy it if missing.
 
 ---
 
-### Story 1.5: Correlation-Based Message Routing
+### Story 1.5: Correlation-Based Message Routing *(Validation/Integration)*
 
 As a subscriber,
 I want messages sent via my `TRACE_MESSAGE_<FUNNY_NAME>()` procedure to only appear in my OmniView instance,
@@ -223,15 +223,19 @@ So that I only see trace messages intended for me, while still seeing broadcast 
 **When** any subscriber's OmniView instance dequeues the message
 **Then** the message is displayed in all subscribers' TUIs
 
-**Technical Details:**
+**Implementation Status — PL/SQL (COMPLETE):**
 
-This story fixes ORA-24205 (`recipient_list` not supported on sharded queues). See Architecture DEC-6.
+All PL/SQL changes are implemented in `assets/sql/Omni_Tracer.sql`:
 
-**PL/SQL changes** (already implemented by Basuruk):
-- `Enqueue_Event___`: `message_properties_.correlation := subscriber_name_` (replaces `recipient_list`)
-- `Register_Subscriber`: `rule => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''<name>'''`
+- `Enqueue_Event___`: `recipient_list` assignment fully removed. Replaced with `message_properties_.correlation := subscriber_name_` — sets correlation to the subscriber's funny name (or NULL for broadcast). **Done.**
+- `Register_Subscriber`: `DBMS_AQADM.ADD_SUBSCRIBER` now includes `rule => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''<name>'''` — ensures broadcast messages (NULL correlation) reach all subscribers and subscriber-specific messages reach only the matching subscriber. **Done.**
 
-**No Go code changes needed** — routing is handled entirely at the Oracle queue level.
+**Remaining work — Validation/Integration only:**
+
+- Deploy the updated `OMNI_TRACER_API` package and run end-to-end tests with two subscribers
+- Verify subscriber-specific routing (correlation match) and broadcast routing (NULL correlation)
+- Run `make build` and `make test` to confirm no regressions
+- No Go or C code changes needed — routing is handled entirely at the Oracle queue level
 
 ---
 
@@ -317,4 +321,5 @@ So that stale subscribers don't accumulate in the queue and consume resources.
 - Call `DBMS_AQADM.REMOVE_SUBSCRIBER` with the subscriber's `ConsumerName()` (FunnyName)
 - Invoke unregistration in the Go shutdown path (where `StopEventListener` is called)
 - Handle graceful shutdown via OS signal handlers (SIGINT, SIGTERM)
-- Must NOT block shutdown if Oracle is unreachable — use a timeout
+- Must NOT block shutdown if Oracle is unreachable — use a 5-second timeout (e.g., `context.WithTimeout`).
+- Explanation: A 5s timeout provides sufficient head-room for a single `REMOVE_SUBSCRIBER` round-trip even on latent VPN connections, while remaining short enough to satisfy user expectations for a responsive CLI shutdown. If the timeout expires or a network error occurs, the application must exit immediately to avoid "hanging" processes; the next application startup will handle the stale subscriber via idempotent registration (Story 1.5).

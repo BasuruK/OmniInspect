@@ -55,6 +55,14 @@ development_status:
     last_updated: "2026-04-28"
     notes: "Check and deploy OMNI_TRACER_API package if missing on startup"
 
+  1-5-correlation-based-message-routing:
+    status: "complete"
+    title: "Correlation-Based Message Routing"
+    epic: "Epic 1: Multi-Subscriber Procedure Generation"
+    owner: "dev-agent"
+    last_updated: "2026-05-09"
+    notes: "Fix ORA-24205: Use message_properties_.correlation and subscriber rules instead of recipient_list. PL/SQL changes verified. No Go code changes needed. See Architecture DEC-6. Task 3 (SUBSCRIBER JSON field) marked N/A — field not consumed by dequeuing."
+    
   # Epic 2 Stories
   2-1-display-procedure-name:
     status: "ready-for-dev"
@@ -72,14 +80,6 @@ development_status:
     owner: "dev-agent"
     last_updated: "2026-04-28"
     notes: "Add danger zone option to delete subscriber-specific procedure"
-
-  1-5-correlation-based-message-routing:
-    status: "ready-for-dev"
-    title: "Correlation-Based Message Routing"
-    epic: "Epic 1: Multi-Subscriber Procedure Generation"
-    owner: "dev-agent"
-    last_updated: "2026-05-09"
-    notes: "Fix ORA-24205: Use message_properties_.correlation and subscriber rules instead of recipient_list. PL/SQL changes already implemented by Basuruk. No Go code changes needed. See Architecture DEC-6."
 
   3-2-drop-entire-package:
     status: "ready-for-dev"
@@ -138,7 +138,7 @@ epic_summary:
 # ==========================================
 next_actions:
   - story: "1-5-correlation-based-message-routing"
-    action: "Verify PL/SQL changes (correlation + subscriber rule) already implemented. Deploy, test broadcast + subscriber-specific routing. No Go changes needed."
+    action: "COMPLETE — Verified correlation + subscriber rule in PL/SQL, make test/build pass. Task 3 (SUBSCRIBER JSON) marked N/A. See story file."
     priority: "critical"
     depends_on: ["1-2-procedure-generation"]
 

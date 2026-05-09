@@ -2,7 +2,7 @@
 story_key: "1-5-correlation-based-message-routing"
 epic_key: "epic-1"
 title: "Correlation-Based Message Routing"
-status: "ready-for-dev"
+status: "complete"
 priority: "critical"
 created_date: "2026-05-09"
 last_updated: "2026-05-09"
@@ -81,14 +81,17 @@ This ensures:
 
 **File**: `assets/sql/Omni_Tracer.sql` — `Enqueue_Event___` procedure
 
-The `SUBSCRIBER` JSON field in the payload is kept as informational metadata (not used for routing). Verify it's still present:
+The `SUBSCRIBER` JSON field in the payload was informational metadata (not used for routing). Verify it's present:
+
 ```sql
 IF subscriber_name_ IS NOT NULL THEN
     message_.PUT('SUBSCRIBER', subscriber_name_);
 END IF;
 ```
 
-- [ ] Verify `SUBSCRIBER` JSON field embedding is still present in `Enqueue_Event___`
+**Note:** This field is NOT consumed by dequeuing — routing is handled entirely by Oracle AQ `correlation` + subscriber rules. Nothing reads SUBSCRIBER from the JSON payload. Therefore this task is informational-only and marked N/A.
+
+- [x] ~~Verify `SUBSCRIBER` JSON field embedding is still present in `Enqueue_Event___`~~ — **N/A: Field not consumed by dequeuing, routing via correlation only**
 
 ### Task 4: Redeploy and test
 

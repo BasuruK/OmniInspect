@@ -178,7 +178,7 @@ CREATE OR REPLACE PACKAGE BODY TXEVENTQ_PERMISSION_CHECK_API AS
         dbms_aq_        := Has_DBMS_AQ_Exec(p_schema);
         aq_recipient_   := Has_AQ_Recipient_List_Exec(p_schema);
         aq_agent_       := Has_AQ_Agent_Exec(p_schema);
-        all_valid_      := create_seq_ AND create_proc_ AND create_type_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_ AND aq_recipient_ AND aq_agent_;
+        all_valid_      := create_seq_ AND create_proc_ AND create_type_ AND aq_admin_ AND aq_user_ AND dbms_aqadm_ AND dbms_aq_ AND aq_agent_;
 
         report_ := '{';
         report_ := report_ || '"Schema":"' || p_schema || '",';

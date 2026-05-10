@@ -107,7 +107,7 @@ func (m *MockDatabaseRepository) PackageExists(ctx context.Context, packageName 
 }
 
 // ProcedureExists implements ports.DatabaseRepository (no-op for mock).
-func (m *MockDatabaseRepository) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
+func (m *MockDatabaseRepository) ProcedureExists(ctx context.Context, packageName string, procedureName string) (bool, error) {
 	return false, nil
 }
 

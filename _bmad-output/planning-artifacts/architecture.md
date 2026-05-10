@@ -33,9 +33,9 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Topic:** Per-subscriber message isolation for OmniView/OmniInspect trace messages over Oracle AQ
 
-**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`) with application-level payload filtering
++**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`) with Oracle AQ correlation-based routing
 
-**Key Insight:** Moves subscriber identity to compile-time — the method name IS the routing key. Routing is enforced at the Go application layer via a `SUBSCRIBER` field in the JSON payload, not at the Oracle queue level.
++**Key Insight:** Subscriber identity is bound at compile-time via method name, and routing is enforced at the Oracle queue level using `message_properties_.correlation` + subscriber rules (`tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`).
 
 ---
 

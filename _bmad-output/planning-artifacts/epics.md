@@ -51,7 +51,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 - **Funny Name System:** Auto-assign curated cartoon character names (e.g., Mickey, Donald, Bugs, Daffy, Scooby, Tom, Jerry) to subscribers for procedure naming
 - **Name Collision Handling:** System automatically picks another available name if collision occurs
-- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter that embeds a `SUBSCRIBER` field in the JSON payload for generated procedures
++- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter, which is set as the AQ message correlation (`message_properties_.correlation`) used by per-subscriber rules to route the message.
 - **Application-Level Message Routing:** Oracle AQ correlation-based subscriber rules handle message routing at the queue level. `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. Broadcast messages (NULL correlation) reach all subscribers; subscriber-specific messages reach only the matching subscriber. No Go code changes needed for routing.
 - **SQL Injection Prevention:** Strict format validation on all funny names before DDL generation
 - **Idempotent Procedure Creation:** Check if procedure exists before creating (skip if already exists)
@@ -319,7 +319,7 @@ So that stale subscribers don't accumulate in the queue and consume resources.
 
 - Add `Unregister_Subscriber` procedure to `OMNI_TRACER_API` package (currently commented out at line 116 of `assets/sql/Omni_Tracer.sql`)
 - Call `DBMS_AQADM.REMOVE_SUBSCRIBER` with the subscriber's `ConsumerName()` (FunnyName)
-- Invoke unregistration in the Go shutdown path (where `StopEventListener` is called)
+- Invoke unregistration by calling `CancelConnectionListener()` on the `TracerService`, which is where the dequeue loop is halted; wire the `DBMS_AQADM.REMOVE_SUBSCRIBER` call into that method alongside the existing listener cancellation
 - Handle graceful shutdown via OS signal handlers (SIGINT, SIGTERM)
 - Must NOT block shutdown if Oracle is unreachable — use a 5-second timeout (e.g., `context.WithTimeout`).
 - Explanation: A 5s timeout provides sufficient head-room for a single `REMOVE_SUBSCRIBER` round-trip even on latent VPN connections, while remaining short enough to satisfy user expectations for a responsive CLI shutdown. If the timeout expires or a network error occurs, the application must exit immediately to avoid "hanging" processes; the next application startup will handle the stale subscriber via idempotent registration (Story 1.5).

@@ -110,6 +110,8 @@ Rationale:
 - `make test` passes
 - `make build` passes
 
+> **Superseded by 2026-05-09 proposal** — see below.
+
 ---
 
 # Sprint Change Proposal — 2026-05-09: ORA-24205 Fix (Application-Level Message Routing)

@@ -43,7 +43,11 @@ var (
 	ErrNilRepository           = errors.New("repository cannot be nil")
 	ErrNilConfig               = errors.New("config repository cannot be nil")
 	ErrNilDatabase             = errors.New("database repository cannot be nil")
-	ErrPackageNotFound         = errors.New("package source not found")
+	ErrPackageNotFound          = errors.New("package source not found")
+	ErrSectionNotFound         = errors.New("section markers not found")
+	ErrSectionEmpty            = errors.New("section is empty")
+	ErrPackageEndMarkerNotFound = errors.New("package end marker not found")
+	ErrProcedureEndMarkerNotFound = errors.New("procedure end marker not found")
 
 	// Permission errors
 	ErrPermissionDenied      = errors.New("permission denied")

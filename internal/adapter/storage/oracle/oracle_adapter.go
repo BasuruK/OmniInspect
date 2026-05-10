@@ -407,10 +407,10 @@ func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) 
 	return count > 0, nil
 }
 
-// ProcedureExists checks if a procedure exists inside a package in the connected Oracle database.
-func (oa *OracleAdapter) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
-	query := `SELECT COUNT(1) 
-			  	FROM user_procedures p
+// ProcedureExists checks if a procedure exists inside the given package in the connected Oracle database.
+func (oa *OracleAdapter) ProcedureExists(ctx context.Context, packageName string, procedureName string) (bool, error) {
+	query := `SELECT COUNT(1)
+				FROM user_procedures p
 				JOIN user_objects spec
 				ON spec.object_name = p.object_name
 				AND spec.object_type = 'PACKAGE'
@@ -419,11 +419,12 @@ func (oa *OracleAdapter) ProcedureExists(ctx context.Context, procedureName stri
 				ON body.object_name = p.object_name
 				AND body.object_type = 'PACKAGE BODY'
 				AND body.status = 'VALID'
-				WHERE p.object_name = 'OMNI_TRACER_API'
+				WHERE p.object_name = UPPER(:packageName)
 				AND p.procedure_name = UPPER(:procedureName)
 				AND p.object_type = 'PACKAGE'`
 
 	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
+		"packageName":   packageName,
 		"procedureName": procedureName,
 	})
 

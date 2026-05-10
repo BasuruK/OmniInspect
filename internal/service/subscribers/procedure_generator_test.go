@@ -86,7 +86,7 @@ func (s *stubDBRepo) PackageExists(ctx context.Context, packageName string) (boo
 	return true, nil
 }
 
-func (s *stubDBRepo) ProcedureExists(ctx context.Context, procedureName string) (bool, error) {
+func (s *stubDBRepo) ProcedureExists(ctx context.Context, packageName string, procedureName string) (bool, error) {
 	if s.procedureExistsErr != nil {
 		return false, s.procedureExistsErr
 	}
@@ -368,8 +368,8 @@ func TestSubscriberService_RegisterSubscriber_PersistsBeforeProcedureGenerationS
 	if len(repo.saved) != 1 {
 		t.Fatalf("expected subscriber to be persisted before procedure generation, got %d saves", len(repo.saved))
 	}
-	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got >= initialAvailable {
-		t.Fatalf("expected persisted funny name to remain reserved, available count = %d, want less than %d", got, initialAvailable)
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
+		t.Fatalf("expected funny name to remain available for new subscriber, available count = %d, want %d", got, initialAvailable)
 	}
 }
 

@@ -41,11 +41,7 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 		if err := validateFunnyNameForProcedure(subscriber.FunnyName()); err != nil {
 			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
-		if err := domain.DefaultFunnyNameGenerator().MarkAsUsed(subscriber.FunnyName()); err != nil {
-			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
-		}
-		// MarkAsUsed mutated the pool, so the caller must release on failure.
-		return subscriber.FunnyName(), true, nil
+		return "", false, nil
 	}
 
 	gen := domain.DefaultFunnyNameGenerator()
@@ -60,7 +56,7 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 
-		exists, err := pg.db.ProcedureExists(ctx, buildProcedureName(funnyName))
+		exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, buildProcedureName(funnyName))
 		if err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
 			return "", false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
@@ -96,7 +92,7 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 	}
 
 	procedureName := buildProcedureName(funnyName)
-	exists, err := pg.db.ProcedureExists(ctx, procedureName)
+	exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, procedureName)
 	if err != nil {
 		return fmt.Errorf("GenerateSubscriberProcedure: failed to check procedure existence: %w", err)
 	}
@@ -131,7 +127,7 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	}
 
 	procedureName := buildProcedureName(funnyName)
-	exists, err := pg.db.ProcedureExists(ctx, procedureName)
+	exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, procedureName)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: failed to check procedure existence: %w", err)
 	}
@@ -221,13 +217,13 @@ func extractSQLSection(sqlContent string, startMarker string, endMarker string) 
 	startIdx := strings.Index(sqlContent, startMarker)
 	endIdx := strings.Index(sqlContent, endMarker)
 	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
-		return "", fmt.Errorf("section markers not found")
+		return "", fmt.Errorf("extractSQLSection: %w", domain.ErrSectionNotFound)
 	}
 
 	section := strings.TrimSpace(sqlContent[startIdx+len(startMarker) : endIdx])
 	section = strings.TrimSpace(strings.TrimSuffix(section, "/"))
 	if section == "" {
-		return "", fmt.Errorf("section is empty")
+		return "", fmt.Errorf("extractSQLSection: %w", domain.ErrSectionEmpty)
 	}
 
 	return section, nil
@@ -304,7 +300,7 @@ func removeProcedureBody(packageBody string, procedureName string) (string, erro
 func insertBeforePackageEnd(packageSource string, block string) (string, error) {
 	packageEndIdx := strings.LastIndex(strings.ToUpper(packageSource), fmt.Sprintf("END %s;", packageName))
 	if packageEndIdx == -1 {
-		return "", fmt.Errorf("package end marker not found")
+		return "", fmt.Errorf("insertBeforePackageEnd: %w", domain.ErrPackageEndMarkerNotFound)
 	}
 
 	prefix := strings.TrimRight(packageSource[:packageEndIdx], "\n")
@@ -323,7 +319,7 @@ func removeProcedureBlock(packageSource string, startNeedle string, endNeedle st
 
 	endRelIdx := strings.Index(upperSource[startIdx:], strings.ToUpper(endNeedle))
 	if endRelIdx == -1 {
-		return "", fmt.Errorf("procedure end marker not found")
+		return "", fmt.Errorf("removeProcedureBlock: %w", domain.ErrProcedureEndMarkerNotFound)
 	}
 	endIdx := startIdx + endRelIdx + len(endNeedle)
 

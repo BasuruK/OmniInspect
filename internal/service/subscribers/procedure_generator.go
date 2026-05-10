@@ -56,7 +56,8 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 			return "", false, fmt.Errorf("ReserveFunnyName: %w", err)
 		}
 
-		exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, buildProcedureName(funnyName))
+		procedureName := buildProcedureName(funnyName)
+		exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, procedureName)
 		if err != nil {
 			_ = gen.MarkAsAvailable(funnyName)
 			return "", false, fmt.Errorf("ReserveFunnyName: failed to check procedure existence: %w", err)
@@ -64,14 +65,13 @@ func (pg *ProcedureGenerator) ReserveFunnyName(ctx context.Context, subscriber *
 		if !exists {
 			return funnyName, true, nil
 		}
-		// Procedure exists — release this name and try another
 		_ = gen.MarkAsAvailable(funnyName)
 	}
 
 	return "", false, fmt.Errorf("ReserveFunnyName: %w", domain.ErrNoAvailableNames)
 }
 
-func (pg *ProcedureGenerator) ReleaseFunnyName(_ context.Context, funnyName string) error {
+func (pg *ProcedureGenerator) ReleaseFunnyName(ctx context.Context, funnyName string) error {
 	if funnyName == "" {
 		return nil
 	}
@@ -92,17 +92,34 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 	}
 
 	procedureName := buildProcedureName(funnyName)
-	exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, procedureName)
-	if err != nil {
-		return fmt.Errorf("GenerateSubscriberProcedure: failed to check procedure existence: %w", err)
-	}
-	if exists {
-		return nil
-	}
-
 	packageSpec, packageBody, err := pg.loadPackageSource(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load package source: %w", err)
+	}
+
+	// ALWAYS check both spec and body for the correct signature/content.
+	// injectProcedureDeclaration and injectProcedureBody skip if the signature matches.
+	// However, to ensure existing installations with old bodies (missing process_name_)
+	// are updated, we must first remove the old version if it exists but differs.
+	if containsProcedureSignature(packageSpec, procedureName) {
+		// If it's already using the new signature with process_name_, we can trust
+		// the body is likely correct or will be handled by body injection check.
+		// But the requirement asks for a content/version check.
+		// Since we don't have a version marker, we use the signature as a proxy for the 'version'.
+		if !strings.Contains(strings.ToUpper(packageSpec), "PROCESS_NAME_") {
+			// Old version found - strip it so we can re-inject new version
+			packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
+			if err != nil {
+				return fmt.Errorf("failed to strip old package spec: %w", err)
+			}
+			packageBody, err = removeProcedureBody(packageBody, procedureName)
+			if err != nil {
+				return fmt.Errorf("failed to strip old package body: %w", err)
+			}
+		} else {
+			// Current version exists
+			return nil
+		}
 	}
 
 	packageSpec, err = injectProcedureDeclaration(packageSpec, funnyName)
@@ -279,6 +296,7 @@ func injectProcedureBody(packageBody string, funnyName string) (string, error) {
 	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName))
 }
 
+// containsProcedureSignature checks if the package source contains a procedure declaration
 func containsProcedureSignature(packageSource string, procedureName string) bool {
 	normalizedSource := strings.ToUpper(strings.Join(strings.Fields(packageSource), " "))
 	upperProcedureName := strings.ToUpper(procedureName)

@@ -51,7 +51,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 - **Funny Name System:** Auto-assign curated cartoon character names (e.g., Mickey, Donald, Bugs, Daffy, Scooby, Tom, Jerry) to subscribers for procedure naming
 - **Name Collision Handling:** System automatically picks another available name if collision occurs
-+- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter, which is set as the AQ message correlation (`message_properties_.correlation`) used by per-subscriber rules to route the message.
+- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter, which is set as the AQ message correlation (`message_properties_.correlation`) used by per-subscriber rules to route the message.
 - **Application-Level Message Routing:** Oracle AQ correlation-based subscriber rules handle message routing at the queue level. `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. Broadcast messages (NULL correlation) reach all subscribers; subscriber-specific messages reach only the matching subscriber. No Go code changes needed for routing.
 - **SQL Injection Prevention:** Strict format validation on all funny names before DDL generation
 - **Idempotent Procedure Creation:** Check if procedure exists before creating (skip if already exists)

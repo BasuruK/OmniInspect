@@ -161,4 +161,11 @@ type ConfigRepository interface {
 
 	// DeleteWebhookConfig deletes a webhook configuration
 	DeleteWebhookConfig(id string) error
+
+	// GetTracerPackageVersion retrieves the stored package version hash.
+	// Returns empty string if no hash is stored.
+	GetTracerPackageVersion() (string, error)
+
+	// SetTracerPackageVersion stores the package version hash.
+	SetTracerPackageVersion(version string) error
 }

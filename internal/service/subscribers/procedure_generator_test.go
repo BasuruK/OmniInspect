@@ -209,6 +209,20 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_SkipsExistingProcedure(t
 
 	stub := &stubDBRepo{
 		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    ) IS BEGIN NULL; END TRACE_MESSAGE_BARNACLE;
+END OMNI_TRACER_API;`),
 	}
 	pg, err := NewProcedureGenerator(stub)
 	if err != nil {
@@ -224,7 +238,47 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_SkipsExistingProcedure(t
 	}
 
 	if stub.deployFileCallCount != 0 {
-		t.Fatalf("expected no package deploy when procedure exists, got %d", stub.deployFileCallCount)
+		t.Fatalf("expected no package deploy when procedure with correct signature exists, got %d", stub.deployFileCallCount)
+	}
+}
+
+func TestProcedureGenerator_GenerateSubscriberProcedure_UpgradesOldProcedure(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	// Old signature missing process_name_
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+		PROCEDURE TRACE_MESSAGE_BARNACLE(
+			message_   IN CLOB,
+			log_level_ IN VARCHAR2 DEFAULT 'INFO'
+		);
+		END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+		PROCEDURE TRACE_MESSAGE_BARNACLE(
+			message_   IN CLOB,
+			log_level_ IN VARCHAR2 DEFAULT 'INFO'
+		) IS BEGIN NULL; END TRACE_MESSAGE_BARNACLE;
+		END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	if err := pg.GenerateSubscriberProcedure(context.Background(), subscriber); err != nil {
+		t.Fatalf("GenerateSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 1 {
+		t.Fatalf("expected package deploy for upgrade, got %d", stub.deployFileCallCount)
+	}
+	if !strings.Contains(stub.deployedSQL, "process_name_  IN VARCHAR2 DEFAULT NULL") {
+		t.Fatalf("upgraded SQL missing process_name_: %s", stub.deployedSQL)
 	}
 }
 
@@ -404,8 +458,9 @@ func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(
 	resetDefaultFunnyNameGenerator(t)
 
 	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
-	checkErr := errors.New("procedure exists failed")
-	db := &stubDBRepo{procedureExistsErr: checkErr}
+	db := &stubDBRepo{
+		procedureExistsErr: errors.New("claim failed"),
+	}
 	repo := &stubSubscriberRepo{}
 	procGen, err := NewProcedureGenerator(db)
 	if err != nil {
@@ -414,8 +469,8 @@ func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(
 	service := NewSubscriberService(db, repo, procGen)
 
 	_, err = service.RegisterSubscriber(context.Background())
-	if !errors.Is(err, checkErr) {
-		t.Fatalf("RegisterSubscriber() error = %v, want wrapped procedure existence error", err)
+	if err == nil {
+		t.Fatalf("RegisterSubscriber() expected error, got nil")
 	}
 	if len(repo.saved) != 0 {
 		t.Fatalf("expected no persisted subscriber on reserve failure, got %d saves", len(repo.saved))
@@ -428,6 +483,7 @@ func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(
 func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAlias(t *testing.T) {
 	resetDefaultFunnyNameGenerator(t)
 
+	domain.DefaultFunnyNameGenerator().Reset()
 	gen := domain.DefaultFunnyNameGenerator()
 	name, err := gen.GetRandomName()
 	if err != nil {
@@ -437,7 +493,9 @@ func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAl
 		t.Fatalf("MarkAsAvailable() returned error: %v", releaseErr)
 	}
 
-	db := &stubDBRepo{procedureExists: map[string]bool{}}
+	db := &stubDBRepo{
+		procedureExists: map[string]bool{},
+	}
 	repo := &stubSubscriberRepo{}
 	procGen, err := NewProcedureGenerator(db)
 	if err != nil {

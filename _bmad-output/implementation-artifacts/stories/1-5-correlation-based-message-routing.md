@@ -2,7 +2,7 @@
 story_key: "1-5-correlation-based-message-routing"
 epic_key: "epic-1"
 title: "Correlation-Based Message Routing"
-status: "complete"
+status: "done"
 priority: "critical"
 created_date: "2026-05-09"
 last_updated: "2026-05-09"

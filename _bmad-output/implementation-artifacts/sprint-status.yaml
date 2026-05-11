@@ -65,12 +65,12 @@ development_status:
     
   # Epic 2 Stories
   2-1-display-procedure-name:
-    status: "ready-for-dev"
+    status: "done"
     title: "Display Procedure Name in Header"
     epic: "Epic 2: TUI Procedure Name Display"
     owner: "dev-agent"
-    last_updated: "2026-04-28"
-    notes: "Show OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg') in main screen header"
+    last_updated: "2026-05-11"
+    notes: "Review approved. Procedure call now renders in the actual header via mainProcedureCall/renderScreenHeader, with rendered-screen and narrow-width regression tests. make test and make build passing."
 
   # Epic 3 Stories
   3-1-drop-subscriber-procedure:

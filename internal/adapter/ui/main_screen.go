@@ -231,6 +231,7 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 		contentWidth,
 		"OmniView Trace Console",
 		m.mainSubtitle(),
+		m.mainProcedureCall(),
 		m.mainConnectionMeta(),
 	)
 	statusBar := renderInfoBar(contentWidth, m.mainStatusText())
@@ -731,6 +732,21 @@ func (m *Model) mainStatusText() string {
 		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll ["+autoScrollText+"]"),
 		styles.SubtitleStyle.Render("  •  "),
 		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
+	)
+}
+
+func (m *Model) mainProcedureCall() string {
+	if m.subscriber == nil {
+		return ""
+	}
+
+	funnyName := m.subscriber.FunnyName()
+	if funnyName == "" {
+		return ""
+	}
+
+	return styles.ProcedureCallStyle.Render(
+		fmt.Sprintf("OMNI_TRACER_API.TRACE_MESSAGE_%s('msg')", funnyName),
 	)
 }
 

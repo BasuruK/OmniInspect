@@ -6,6 +6,7 @@ import (
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/webhook"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -335,7 +336,14 @@ func (ts *TracerService) DeployAndCheck(ctx context.Context) error {
 	return nil
 }
 
-// DeployTracerPackage deploys the Omni tracer package to the database if not already present
+// DeployTracerPackage deploys the Omni tracer package to the database.
+//
+// If the embedded package content hash matches the previously stored hash,
+// DeployFile is skipped to avoid redundant database deployments (startup overhead
+// savings). If the hash differs or no prior hash exists, DeployFile is called
+// unconditionally to ensure embedded package updates reach existing databases
+// (guaranteed-update trade-off: every content change takes effect on next restart,
+// even if it means an extra database round-trip on startup).
 func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) error {
 	var err error
 	*exists, err = ts.db.PackageExists(ctx, "OMNI_TRACER_API")
@@ -343,19 +351,29 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 		return fmt.Errorf("failed to check package existence: %w", err)
 	}
 
-	if *exists {
-		// Package already exists, no need to deploy
-		return nil
-	}
-
-	// Read the Omni tracer package file
 	omniTracerSQLPackage, err := assets.GetSQLFile("Omni_Tracer.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read Omni tracer package file: %w", err)
 	}
 
+	currentHash := fmt.Sprintf("%x", sha256.Sum256(omniTracerSQLPackage))
+
+	storedHash, err := ts.bolt.GetTracerPackageVersion()
+	if err != nil {
+		return fmt.Errorf("failed to read stored package version: %w", err)
+	}
+
+	if *exists && storedHash == currentHash {
+		log.Printf("[Tracer] Omni_Tracer.sql content unchanged (hash=%s), skipping DeployFile", currentHash[:16])
+		return nil
+	}
+
 	if err := ts.db.DeployFile(ctx, string(omniTracerSQLPackage)); err != nil {
 		return fmt.Errorf("failed to deploy Omni tracer package: %w", err)
+	}
+
+	if err := ts.bolt.SetTracerPackageVersion(currentHash); err != nil {
+		log.Printf("[Tracer] warning: failed to store updated package hash: %v", err)
 	}
 
 	return nil

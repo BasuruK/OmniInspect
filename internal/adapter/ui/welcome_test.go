@@ -51,7 +51,7 @@ func newWelcomeTestModel(t *testing.T) *Model {
 		dbAdapter:         mockDB,
 		permissionService: permissions.NewPermissionService(mockDB, stubPermissionsRepository{}, configRepo),
 		tracerService:     tracerSvc,
-		subscriberService: subscribers.NewSubscriberService(mockDB, nil),
+		subscriberService: subscribers.NewSubscriberService(mockDB, nil, nil),
 		eventChannel:      eventChannel,
 		loading: loadingState{
 			spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),

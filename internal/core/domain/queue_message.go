@@ -23,9 +23,10 @@ const (
 )
 
 const (
-	QueueName        = "OMNI_TRACER_QUEUE"
-	QueueTableName   = "AQ$OMNI_TRACER_QUEUE"
-	QueuePayloadType = "OMNI_TRACER_PAYLOAD_TYPE"
+	QueueName          = "OMNI_TRACER_QUEUE"
+	QueueTableName     = "AQ$OMNI_TRACER_QUEUE"
+	QueuePayloadType   = "OMNI_TRACER_PAYLOAD_TYPE"
+	OmniTracerPackage   = "OMNI_TRACER_API"
 )
 
 // NewLogLevel creates a LogLevel with validation

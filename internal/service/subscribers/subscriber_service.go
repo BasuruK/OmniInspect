@@ -13,20 +13,22 @@ import (
 type SubscriberService struct {
 	db      ports.DatabaseRepository
 	subRepo ports.SubscriberRepository
+	procGen ports.ProcedureGeneratorRepository
 }
 
 // Constructor: NewSubscriberService Constructor for SubscriberService
-func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository) *SubscriberService {
+func NewSubscriberService(db ports.DatabaseRepository, subRepo ports.SubscriberRepository, procGen ports.ProcedureGeneratorRepository) *SubscriberService {
 	return &SubscriberService{
 		db:      db,
 		subRepo: subRepo,
+		procGen: procGen,
 	}
 }
 
 // SetSubscriber stores the subscriber in the bolt database
 func (ss *SubscriberService) SetSubscriber(ctx context.Context, subscriber *domain.Subscriber) error {
 	if subscriber == nil {
-		return errors.New("subscriber cannot be nil")
+		return domain.ErrNilSubscriber
 	}
 	return ss.subRepo.Save(ctx, *subscriber)
 }
@@ -70,14 +72,37 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 			return nil, err // return other errors
 		}
 		// If not found, create a new subscriber
-		subscriber, err = ss.NewSubscriber(ctx)
+		subscriber, err = domain.NewRandomSubscriber()
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	funnyNameChanged := false
+	if ss.procGen != nil {
+		funnyNameChanged, err = ss.procGen.EnsureOwnedFunnyName(ctx, subscriber)
+		if err != nil {
+			return nil, fmt.Errorf("failed to ensure owned funny name: %w", err)
+		}
+	}
+
+	if err := ss.SetSubscriber(ctx, subscriber); err != nil {
+		if ss.procGen != nil && funnyNameChanged {
+			_ = ss.procGen.ReleaseFunnyName(ctx, subscriber.FunnyName())
+		}
+		return nil, fmt.Errorf("failed to save subscriber: %w", err)
+	}
+
 	// Register Subscriber in Oracle DB
 	if err := ss.db.RegisterNewSubscriber(ctx, *subscriber); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register subscriber in database: %w", err)
+	}
+
+	if ss.procGen != nil {
+		if err := ss.procGen.EnsureSubscriberProcedure(ctx, subscriber); err != nil {
+			_ = ss.procGen.DropSubscriberProcedure(ctx, subscriber.FunnyName())
+			return nil, fmt.Errorf("failed to generate subscriber procedure: %w", err)
+		}
 	}
 
 	return subscriber, nil

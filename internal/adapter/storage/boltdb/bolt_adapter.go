@@ -24,6 +24,7 @@ const (
 	DATABASE_CONFIG_KEY_PREFIX = "DBconfig:"
 	LEGACY_CONFIG_KEY_PREFIX   = "cfg:"
 	DefaultWebhookKey          = "webhook:default"
+	TracerPackageVersionKey    = "tracer:package_version"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -396,6 +397,45 @@ func (ba *BoltAdapter) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	}
 
 	return config, nil
+}
+
+// GetTracerPackageVersion retrieves the stored package version hash.
+func (ba *BoltAdapter) GetTracerPackageVersion() (string, error) {
+	if ba.db == nil {
+		return "", fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var version string
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
+		val := b.Get([]byte(TracerPackageVersionKey))
+		if val != nil {
+			version = string(val)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return version, nil
+}
+
+// SetTracerPackageVersion stores the package version hash.
+func (ba *BoltAdapter) SetTracerPackageVersion(version string) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
+		return b.Put([]byte(TracerPackageVersionKey), []byte(version))
+	})
 }
 
 // DeleteWebhookConfig deletes a webhook configuration from BoltDB

@@ -184,10 +184,15 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
         END IF;
 
+        IF NOT REGEXP_LIKE(subscriber_name_, '^[A-Za-z0-9_]+$') THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Subscriber name contains invalid characters. Only alphanumeric and underscores are allowed.');
+        END IF;
+
         sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
         DBMS_AQADM.ADD_SUBSCRIBER (
             queue_name      => TRACER_QUEUE_NAME,
-            subscriber      => sub_
+            subscriber      => sub_,
+            rule            => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''' || subscriber_name_ || ''''
         );
         COMMIT;
     EXCEPTION
@@ -205,7 +210,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         process_name_       IN VARCHAR2,
         log_level_          IN VARCHAR2,
         payload             IN CLOB,
-        additional_props_   IN CLOB DEFAULT NULL )
+        additional_props_   IN CLOB DEFAULT NULL,
+        subscriber_name_    IN VARCHAR2 DEFAULT NULL )
     IS
         message_            JSON_OBJECT_T;
         additional_props_obj_ JSON_OBJECT_T;
@@ -216,15 +222,26 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         json_payload_       CLOB;
         temp_blob_          BLOB;
         payload_object_     OMNI_TRACER_PAYLOAD_TYPE;
+        resolved_process_   VARCHAR2(100);
     BEGIN
         enqueue_options_.visibility := DBMS_AQ.IMMEDIATE; -- Message visible immediately without waiting for commit
 
+        resolved_process_ := process_name_;
+        IF resolved_process_ IS NULL THEN
+            resolved_process_ := SYS_CONTEXT('USERENV', 'MODULE');
+            IF resolved_process_ IS NULL THEN
+                resolved_process_ := 'OMNI_TRACER_API';
+            END IF;
+        END IF;
+
         message_ := JSON_OBJECT_T();
         message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
-        message_.PUT('PROCESS_NAME', process_name_);
+        message_.PUT('PROCESS_NAME', resolved_process_);
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+
+        message_properties_.correlation := subscriber_name_; -- Set correlation for routing. If NULL, message goes to all subscribers due to the subscriber rule defined in Register_Subscriber.
 
         -- Merge additional properties if provided (for extensibility)
         IF additional_props_ IS NOT NULL AND DBMS_LOB.GETLENGTH(additional_props_) > 0 THEN
@@ -314,8 +331,6 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             additional_props_   => '{"SEND_TO_WEBHOOK":"TRUE"}'
         );
     END Trace_Message_To_Webhook;
-
-
     PROCEDURE Dequeue_Array_Events(
         subscriber_name_ IN  VARCHAR2,
         batch_size_      IN  INTEGER,

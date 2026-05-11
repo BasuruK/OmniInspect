@@ -51,10 +51,11 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 - **Funny Name System:** Auto-assign curated cartoon character names (e.g., Mickey, Donald, Bugs, Daffy, Scooby, Tom, Jerry) to subscribers for procedure naming
 - **Name Collision Handling:** System automatically picks another available name if collision occurs
-- **Enqueue_For_Subscriber():** Must be added to base OMNI_TRACER_API package as prerequisite for generated procedures
+- **Subscriber-Routed Enqueue:** Base `Enqueue_Event___()` helper supports an optional `subscriber_name_` parameter, which is set as the AQ message correlation (`message_properties_.correlation`) used by per-subscriber rules to route the message.
+- **Application-Level Message Routing:** Oracle AQ correlation-based subscriber rules handle message routing at the queue level. `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. Broadcast messages (NULL correlation) reach all subscribers; subscriber-specific messages reach only the matching subscriber. No Go code changes needed for routing.
 - **SQL Injection Prevention:** Strict format validation on all funny names before DDL generation
 - **Idempotent Procedure Creation:** Check if procedure exists before creating (skip if already exists)
-- **Backwards Compatibility:** Existing `Trace_Message()` callers remain unaffected
+- **Backwards Compatibility:** Existing `Trace_Message()` callers remain unaffected (broadcast to all)
 
 ### UX Design Requirements
 
@@ -79,6 +80,8 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 | FR-5 | Auto-redeploy on startup | Epic 1 |
 | FR-6 | Strict name format validation | Epic 1 |
 | FR-7 | Display procedure name in TUI | Epic 2 |
+| FR-8 | Correlation-based message routing via subscriber rules | Epic 1 |
+| FR-9 | Safe subscriber unregistration on shutdown | Epic 3 |
 
 ## Epic List
 
@@ -86,7 +89,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 **User Outcome:** IFS developers can call subscriber-specific procedures that route messages to only their OmniView instance.
 
-**FRs Covered:** FR-1, FR-2, FR-5, FR-6
+**FRs Covered:** FR-1, FR-2, FR-5, FR-6, FR-8
 
 ### Epic 2: TUI Procedure Name Display
 
@@ -96,9 +99,11 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 ### Epic 3: Danger Zone Implementation
 
-**User Outcome:** Subscribers can clean up their procedures or the entire package when needed.
+**User Outcome:** Subscribers can clean up their procedures or the entire package when needed, and the application safely unregisters from Oracle AQ on shutdown.
 
-**FRs Covered:** FR-3, FR-4
+**FRs Covered:** FR-3, FR-4, FR-9
+
+**FR-9:** Safe subscriber unregistration from Oracle AQ on application shutdown
 
 ## Epic 1: Multi-Subscriber Procedure Generation
 
@@ -140,18 +145,18 @@ So that procedure names are memorable and unique.
 
 ---
 
-### Story 1.2: Procedure Generation with Enqueue_For_Subscriber
+### Story 1.2: Procedure Generation with Subscriber-Routed Enqueue
 
 As a system,
-I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call `Enqueue_For_Subscriber()`, using the subscriber's auto-assigned funny name.
+I want to generate `TRACE_MESSAGE_<FUNNY_NAME>(message_, log_level_, process_name_?)` procedures that call the internal enqueue helper with a subscriber routing parameter, using the subscriber's auto-assigned funny name.
 So that messages are routed to the correct subscriber.
 
 **Acceptance Criteria:**
 
 **Given** a subscriber with name BARNACLE is registered
 **When** OmniView generates their procedure
-**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_)` is created inside OMNI_TRACER_API package
-**And** it calls `OMNI_TRACER_API.Enqueue_For_Subscriber(subscriber_name_ => 'BARNACLE', message_ => message_, log_level_ => log_level_)`
+**Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_, process_name_?)` is created inside OMNI_TRACER_API package
+**And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE', process_name_ => process_name_)`
 
 **Given** the subscriber's procedure already exists
 **When** OmniView starts
@@ -188,13 +193,49 @@ So that I can redeploy it if missing.
 
 **Given** OmniView starts
 **When** the system checks for OMNI_TRACER_API package
-**Then** if missing, it deploys the base package with `Enqueue_For_Subscriber()`
+**Then** if missing, it deploys the base package with subscriber-routed `Enqueue_Event___()` support
 **And** it then generates all subscriber procedures
 
 **Given** OmniView starts and OMNI_TRACER_API package exists
 **When** the system checks
 **Then** it skips deployment and uses existing package
 **And** it generates any missing subscriber procedures
+
+---
+
+### Story 1.5: Correlation-Based Message Routing *(Validation/Integration)*
+
+As a subscriber,
+I want messages sent via my `TRACE_MESSAGE_<FUNNY_NAME>()` procedure to only appear in my OmniView instance,
+So that I only see trace messages intended for me, while still seeing broadcast messages from `Trace_Message()`.
+
+**Acceptance Criteria:**
+
+**Given** a message was enqueued via `TRACE_MESSAGE_BARNACLE('msg')`
+**When** subscriber BARNACLE's OmniView instance dequeues the message
+**Then** the message is displayed in BARNACLE's TUI
+
+**Given** a message was enqueued via `TRACE_MESSAGE_BARNACLE('msg')`
+**When** subscriber PEBBLES's OmniView instance dequeues the message
+**Then** the message is NOT delivered to PEBBLES (Oracle AQ filters it via correlation subscriber rule)
+
+**Given** a message was enqueued via `Trace_Message('msg')` (broadcast, NULL correlation)
+**When** any subscriber's OmniView instance dequeues the message
+**Then** the message is displayed in all subscribers' TUIs
+
+**Implementation Status — PL/SQL (COMPLETE):**
+
+All PL/SQL changes are implemented in `assets/sql/Omni_Tracer.sql`:
+
+- `Enqueue_Event___`: `recipient_list` assignment fully removed. Replaced with `message_properties_.correlation := subscriber_name_` — sets correlation to the subscriber's funny name (or NULL for broadcast). **Done.**
+- `Register_Subscriber`: `DBMS_AQADM.ADD_SUBSCRIBER` now includes `rule => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''<name>'''` — ensures broadcast messages (NULL correlation) reach all subscribers and subscriber-specific messages reach only the matching subscriber. **Done.**
+
+**Remaining work — Validation/Integration only:**
+
+- Deploy the updated `OMNI_TRACER_API` package and run end-to-end tests with two subscribers
+- Verify subscriber-specific routing (correlation match) and broadcast routing (NULL correlation)
+- Run `make build` and `make test` to confirm no regressions
+- No Go or C code changes needed — routing is handled entirely at the Oracle queue level
 
 ---
 
@@ -247,5 +288,38 @@ So that I can remove all generated procedures at once.
 
 **Given** the package is dropped
 **When** OmniView restarts
-**Then** it redeploys the base package with `Enqueue_For_Subscriber()`
+**Then** it redeploys the base package with subscriber-routed `Enqueue_Event___()` support
 **And** it regenerates all subscriber procedures
+
+---
+
+### Story 3.3: Safe Subscriber Unregistration on Shutdown
+
+As a subscriber,
+I want my OmniView instance to safely unregister from Oracle AQ on shutdown,
+So that stale subscribers don't accumulate in the queue and consume resources.
+
+**Acceptance Criteria:**
+
+**Given** OmniView is running with an active subscriber
+**When** the application shuts down gracefully (Ctrl+C, quit command, or OS signal)
+**Then** the subscriber is removed from Oracle AQ via `DBMS_AQADM.REMOVE_SUBSCRIBER`
+**And** any pending messages for the subscriber are cleaned up
+
+**Given** OmniView crashes or is killed forcefully
+**When** the application restarts
+**Then** it re-registers the subscriber (idempotent registration already handles this)
+**And** the stale subscriber from the previous session is overwritten
+
+**Given** a subscriber is unregistered
+**When** the subscriber re-registers on next startup
+**Then** the correlation rule is re-applied and message routing works correctly
+
+**Technical Details:**
+
+- Add `Unregister_Subscriber` procedure to `OMNI_TRACER_API` package (currently commented out at line 116 of `assets/sql/Omni_Tracer.sql`)
+- Call `DBMS_AQADM.REMOVE_SUBSCRIBER` with the subscriber's `ConsumerName()` (FunnyName)
+- Invoke unregistration by calling `CancelConnectionListener()` on the `TracerService`, which is where the dequeue loop is halted; wire the `DBMS_AQADM.REMOVE_SUBSCRIBER` call into that method alongside the existing listener cancellation
+- Handle graceful shutdown via OS signal handlers (SIGINT, SIGTERM)
+- Must NOT block shutdown if Oracle is unreachable — use a 5-second timeout (e.g., `context.WithTimeout`).
+- Explanation: A 5s timeout provides sufficient head-room for a single `REMOVE_SUBSCRIBER` round-trip even on latent VPN connections, while remaining short enough to satisfy user expectations for a responsive CLI shutdown. If the timeout expires or a network error occurs, the application must exit immediately to avoid "hanging" processes; the next application startup will handle the stale subscriber via idempotent registration (Story 1.5).

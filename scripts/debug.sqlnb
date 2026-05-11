@@ -15,7 +15,7 @@ cells:
   - kind: 2
     value: >-
       BEGIN
-          FOR i IN 1..100 LOOP
+          FOR i IN 1..2 LOOP
               DECLARE
                   v_level VARCHAR2(10);
               BEGIN
@@ -24,7 +24,7 @@ cells:
                       WHEN 2 THEN v_level := 'ERROR';
                       WHEN 3 THEN v_level := 'DEBUG';
                   END CASE;
-                  OMNI_TRACER_API.Trace_Message('HI Trace Message No ' || i, v_level);
+                  OMNI_TRACER_API.TRACE_MESSAGE_PEBBLES('HI Trace Message No ' || i, v_level);
               END;
           END LOOP;
           --COMMIT;  -- Important!
@@ -256,6 +256,19 @@ cells:
           OMNI_TRACER_API.Trace_Message_To_Webhook(v_payload, 'INFO');
       END;
       /
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      SELECT *
+      FROM user_procedures 
+      WHERE object_name = 'OMNI_TRACER_API' 
+      --AND procedure_name = UPPER(:procedureName)
+      AND object_type = 'PACKAGE';
+    languageId: oracle-sql
+  - kind: 2
+    value: |-
+      GRANT EXECUTE ON SYS.AQ$_RECIPIENT_LIST_T TO IFSAPP;
+      GRANT EXECUTE ON SYS.AQ$_AGENT TO IFSAPP;
     languageId: oracle-sql
   - kind: 2
     value: ""

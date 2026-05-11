@@ -52,7 +52,7 @@ OmniInspect is a Go terminal application that listens to Oracle AQ messages, ren
 3. The Bubble Tea model starts with the welcome screen.
 4. The model checks persisted configuration and either routes the user to onboarding or into the loading flow.
 5. Service initialization is deferred until database settings are available.
-6. The loading flow connects to Oracle, checks or deploys required SQL assets, registers a subscriber, and starts the event listener.
+6. The loading flow connects to Oracle, checks or deploys required SQL assets, registers a subscriber, ensures the owned funny-name procedure is present, and starts the event listener.
 
 ### Trace Message Flow
 

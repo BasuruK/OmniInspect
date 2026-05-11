@@ -1,0 +1,722 @@
+package subscribers
+
+import (
+	"OmniView/internal/core/domain"
+	"context"
+	"errors"
+	"strings"
+	"testing"
+)
+
+func resetDefaultFunnyNameGenerator(t *testing.T) {
+	t.Helper()
+
+	gen := domain.DefaultFunnyNameGenerator()
+	availableAfterTest := gen.AvailableCount()
+	gen.Reset()
+	initialCount := gen.AvailableCount()
+	usedCount := initialCount - availableAfterTest
+
+	t.Cleanup(func() {
+		gen.Reset()
+		for i := 0; i < usedCount; i++ {
+			_, _ = gen.GetRandomName()
+		}
+	})
+}
+
+type stubDBRepo struct {
+	procedureExists     map[string]bool
+	procedureExistsErr  error
+	executeStatementErr error
+	deployFileErr       error
+	deployFileCallCount int
+	deployedSQL         string
+	executedStatements  []string
+	registerErr         error
+	registeredConsumers []string
+	packageSpecSource   []string
+	packageBodySource   []string
+	fetchErr            error
+}
+
+func (s *stubDBRepo) RegisterNewSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	s.registeredConsumers = append(s.registeredConsumers, subscriber.ConsumerName())
+	return s.registerErr
+}
+
+func (s *stubDBRepo) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
+	return nil, nil, 0, nil
+}
+
+func (s *stubDBRepo) CheckQueueDepth(ctx context.Context, subscriberID string, queueTableName string) (int, error) {
+	return 0, nil
+}
+
+func (s *stubDBRepo) Fetch(ctx context.Context, query string) ([]string, error) {
+	if s.fetchErr != nil {
+		return nil, s.fetchErr
+	}
+	if strings.Contains(query, "PACKAGE BODY") {
+		return append([]string(nil), s.packageBodySource...), nil
+	}
+	if strings.Contains(query, "type = 'PACKAGE'") {
+		return append([]string(nil), s.packageSpecSource...), nil
+	}
+	return nil, nil
+}
+
+func (s *stubDBRepo) ExecuteStatement(ctx context.Context, query string) error {
+	s.executedStatements = append(s.executedStatements, query)
+	if s.executeStatementErr != nil {
+		return s.executeStatementErr
+	}
+	return nil
+}
+
+func (s *stubDBRepo) ExecuteWithParams(ctx context.Context, query string, params map[string]interface{}) error {
+	return nil
+}
+
+func (s *stubDBRepo) FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubDBRepo) PackageExists(ctx context.Context, packageName string) (bool, error) {
+	return true, nil
+}
+
+func (s *stubDBRepo) ProcedureExists(ctx context.Context, packageName string, procedureName string) (bool, error) {
+	if s.procedureExistsErr != nil {
+		return false, s.procedureExistsErr
+	}
+	if s.procedureExists == nil {
+		return false, nil
+	}
+	return s.procedureExists[procedureName], nil
+}
+
+func (s *stubDBRepo) DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error {
+	return nil
+}
+
+func (s *stubDBRepo) DeployFile(ctx context.Context, sqlContent string) error {
+	s.deployFileCallCount++
+	s.deployedSQL = sqlContent
+	return s.deployFileErr
+}
+
+func (s *stubDBRepo) Connect(ctx context.Context) error { return nil }
+func (s *stubDBRepo) Close(ctx context.Context) error   { return nil }
+
+type stubSubscriberRepo struct {
+	list    []domain.Subscriber
+	saved   []domain.Subscriber
+	saveErr error
+}
+
+func (s *stubSubscriberRepo) Save(ctx context.Context, subscriber domain.Subscriber) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.saved = append(s.saved, subscriber)
+	if len(s.list) == 0 {
+		s.list = []domain.Subscriber{subscriber}
+	} else {
+		s.list[0] = subscriber
+	}
+	return nil
+}
+
+func (s *stubSubscriberRepo) GetByName(ctx context.Context, name string) (*domain.Subscriber, error) {
+	for i := range s.list {
+		if s.list[i].Name() == name {
+			subscriber := s.list[i]
+			return &subscriber, nil
+		}
+	}
+	return nil, domain.ErrSubscriberNotFound
+}
+
+func (s *stubSubscriberRepo) List(ctx context.Context) ([]domain.Subscriber, error) {
+	return append([]domain.Subscriber(nil), s.list...), nil
+}
+
+func (s *stubSubscriberRepo) Exists(ctx context.Context, name string) (bool, error) {
+	for _, subscriber := range s.list {
+		if subscriber.Name() == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *stubSubscriberRepo) Delete(ctx context.Context, name string) error {
+	filtered := s.list[:0]
+	for _, subscriber := range s.list {
+		if subscriber.Name() != name {
+			filtered = append(filtered, subscriber)
+		}
+	}
+	s.list = filtered
+	return nil
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_DeploysPackageUpdate(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	if err := pg.EnsureSubscriberProcedure(context.Background(), subscriber); err != nil {
+		t.Fatalf("EnsureSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 1 {
+		t.Fatalf("expected 1 package deploy, got %d", stub.deployFileCallCount)
+	}
+	if len(stub.executedStatements) != 0 {
+		t.Fatalf("expected 0 lock statements (locking removed), got %d", len(stub.executedStatements))
+	}
+	if !strings.Contains(stub.deployedSQL, "PROCEDURE TRACE_MESSAGE_BARNACLE(") {
+		t.Fatalf("generated deployment SQL missing procedure declaration: %s", stub.deployedSQL)
+	}
+	if !strings.Contains(stub.deployedSQL, "subscriber_name_  => 'BARNACLE'") {
+		t.Fatalf("generated deployment SQL missing subscriber alias: %s", stub.deployedSQL)
+	}
+	if !strings.Contains(stub.deployedSQL, subscriberMethodStartMarker(subscriber.Name())) {
+		t.Fatalf("generated deployment SQL missing subscriber owner marker: %s", stub.deployedSQL)
+	}
+	if !strings.Contains(stub.deployedSQL, "PROCEDURE Enqueue_Event___ (") {
+		t.Fatalf("generated deployment SQL missing unified enqueue helper: %s", stub.deployedSQL)
+	}
+	if !strings.Contains(stub.deployedSQL, "subscriber_name_    IN VARCHAR2 DEFAULT NULL") {
+		t.Fatalf("generated deployment SQL missing optional subscriber routing parameter: %s", stub.deployedSQL)
+	}
+	if strings.Contains(stub.deployedSQL, "PROCEDURE Enqueue_For_Subscriber(") {
+		t.Fatalf("generated deployment SQL still contains deprecated helper: %s", stub.deployedSQL)
+	}
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_SkipsExistingOwnedProcedure(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+    PROCEDURE TRACE_MESSAGE_CHICKEN(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    )
+    IS
+    BEGIN
+        Enqueue_Event___(
+            process_name_     => process_name_,
+            log_level_        => log_level_,
+            payload           => message_,
+            subscriber_name_  => 'BARNACLE'
+        );
+    END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+
+    PROCEDURE TRACE_MESSAGE_CHICKEN(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    ) IS BEGIN NULL; END TRACE_MESSAGE_CHICKEN;
+END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	if err := pg.EnsureSubscriberProcedure(context.Background(), subscriber); err != nil {
+		t.Fatalf("EnsureSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 0 {
+		t.Fatalf("expected no package deploy when procedure with correct signature exists, got %d", stub.deployFileCallCount)
+	}
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_RejectsProcedureOwnedByAnotherSubscriber(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    )
+    IS
+    BEGIN
+        Enqueue_Event___(
+            process_name_     => process_name_,
+            log_level_        => log_level_,
+            payload           => message_,
+            subscriber_name_  => 'BARNACLE'
+        );
+    END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	err = pg.EnsureSubscriberProcedure(context.Background(), subscriber)
+	if !errors.Is(err, domain.ErrProcedureOwnershipConflict) {
+		t.Fatalf("EnsureSubscriberProcedure() error = %v, want ErrProcedureOwnershipConflict", err)
+	}
+	if stub.deployFileCallCount != 0 {
+		t.Fatalf("expected no deploy for foreign-owned procedure, got %d", stub.deployFileCallCount)
+	}
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_UpgradesOldProcedure(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	// Old signature missing process_name_
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+		PROCEDURE TRACE_MESSAGE_BARNACLE(
+			message_   IN CLOB,
+			log_level_ IN VARCHAR2 DEFAULT 'INFO'
+		);
+		END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+		PROCEDURE TRACE_MESSAGE_BARNACLE(
+			message_   IN CLOB,
+			log_level_ IN VARCHAR2 DEFAULT 'INFO'
+		) IS BEGIN NULL; END TRACE_MESSAGE_BARNACLE;
+		END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	if err := pg.EnsureSubscriberProcedure(context.Background(), subscriber); err != nil {
+		t.Fatalf("EnsureSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 1 {
+		t.Fatalf("expected package deploy for upgrade, got %d", stub.deployFileCallCount)
+	}
+	if !strings.Contains(stub.deployedSQL, "process_name_  IN VARCHAR2 DEFAULT NULL") {
+		t.Fatalf("upgraded SQL missing process_name_: %s", stub.deployedSQL)
+	}
+}
+
+func TestProcedureGenerator_DropSubscriberProcedure_RedeploysPackageWithoutProcedure(t *testing.T) {
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO'
+    );
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+    PROCEDURE Enqueue_Event___ (
+        process_name_       IN VARCHAR2,
+        log_level_          IN VARCHAR2,
+        payload             IN CLOB,
+        additional_props_   IN CLOB DEFAULT NULL )
+    IS
+    BEGIN
+        NULL;
+    END Enqueue_Event___;
+
+    PROCEDURE Enqueue_For_Subscriber(
+        subscriber_name_ IN VARCHAR2,
+        message_         IN CLOB,
+        log_level_       IN VARCHAR2 DEFAULT 'INFO'
+    )
+    IS
+    BEGIN
+        NULL;
+    END Enqueue_For_Subscriber;
+
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO'
+    )
+    IS
+    BEGIN
+        NULL;
+    END TRACE_MESSAGE_BARNACLE;
+END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+
+	if err := pg.DropSubscriberProcedure(context.Background(), "BARNACLE"); err != nil {
+		t.Fatalf("DropSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 1 {
+		t.Fatalf("expected 1 package deploy, got %d", stub.deployFileCallCount)
+	}
+	if len(stub.executedStatements) != 0 {
+		t.Fatalf("expected 0 lock statements (locking removed), got %d", len(stub.executedStatements))
+	}
+	if strings.Contains(stub.deployedSQL, "TRACE_MESSAGE_BARNACLE") {
+		t.Fatalf("package deployment still contains dropped procedure: %s", stub.deployedSQL)
+	}
+}
+
+func TestNewProcedureGenerator_RejectsNilDatabase(t *testing.T) {
+	pg, err := NewProcedureGenerator(nil)
+	if !errors.Is(err, domain.ErrNilDatabase) {
+		t.Fatalf("NewProcedureGenerator(nil) error = %v, want ErrNilDatabase", err)
+	}
+	if pg != nil {
+		t.Fatal("expected nil procedure generator when db is nil")
+	}
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_PropagatesFetchErrors(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	fetchErr := errors.New("fetch failed")
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
+		fetchErr:        fetchErr,
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	err = pg.EnsureSubscriberProcedure(context.Background(), subscriber)
+	if !errors.Is(err, fetchErr) {
+		t.Fatalf("EnsureSubscriberProcedure() error = %v, want wrapped fetch error", err)
+	}
+	if stub.deployFileCallCount != 0 {
+		t.Fatalf("expected no package deploy when fetch fails, got %d", stub.deployFileCallCount)
+	}
+	if len(stub.executedStatements) != 0 {
+		t.Fatalf("expected 0 statements (locking removed), got %d", len(stub.executedStatements))
+	}
+}
+
+func TestProcedureGenerator_EnsureSubscriberProcedure_PropagatesDeployErrors(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
+		deployFileErr:   errors.New("deploy failed"),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+
+	err = pg.EnsureSubscriberProcedure(context.Background(), subscriber)
+	if !errors.Is(err, stub.deployFileErr) {
+		t.Fatalf("EnsureSubscriberProcedure() error = %v, want wrapped deploy error", err)
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_PersistsBeforeProcedureGenerationSucceeds(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	db := &stubDBRepo{deployFileErr: errors.New("deploy failed")}
+	repo := &stubSubscriberRepo{}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+
+	_, err = service.RegisterSubscriber(context.Background())
+	if err == nil {
+		t.Fatal("expected RegisterSubscriber() to fail when package deployment fails")
+	}
+	if len(repo.saved) != 1 {
+		t.Fatalf("expected subscriber to be persisted before procedure generation, got %d saves", len(repo.saved))
+	}
+	heldAlias := repo.saved[0].FunnyName()
+	if heldAlias == "" {
+		t.Fatal("expected persisted subscriber to hold a funny name")
+	}
+	if got, want := domain.DefaultFunnyNameGenerator().AvailableCount(), initialAvailable-1; got != want {
+		t.Fatalf("expected persisted subscriber to retain funny name %q, available count = %d, want %d", heldAlias, got, want)
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenSaveFails(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	db := &stubDBRepo{}
+	repo := &stubSubscriberRepo{saveErr: errors.New("save failed")}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+
+	_, err = service.RegisterSubscriber(context.Background())
+	if err == nil {
+		t.Fatal("expected RegisterSubscriber() to fail when save fails")
+	}
+	if len(db.registeredConsumers) != 0 {
+		t.Fatalf("expected no Oracle subscriber registration on save failure, got %d", len(db.registeredConsumers))
+	}
+	if db.deployFileCallCount != 0 {
+		t.Fatalf("expected no package deployment on save failure, got %d", db.deployFileCallCount)
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
+		t.Fatalf("expected reserved funny name to be released, available count = %d, want %d", got, initialAvailable)
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_ReleasesFunnyNameWhenReserveFails(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	db := &stubDBRepo{
+		procedureExistsErr: errors.New("claim failed"),
+	}
+	repo := &stubSubscriberRepo{}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+
+	_, err = service.RegisterSubscriber(context.Background())
+	if err == nil {
+		t.Fatalf("RegisterSubscriber() expected error, got nil")
+	}
+	if len(repo.saved) != 0 {
+		t.Fatalf("expected no persisted subscriber on reserve failure, got %d saves", len(repo.saved))
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
+		t.Fatalf("expected reserved funny name to be released, available count = %d, want %d", got, initialAvailable)
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_PersistsFunnyNameAndUsesConsumerAlias(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	domain.DefaultFunnyNameGenerator().Reset()
+	gen := domain.DefaultFunnyNameGenerator()
+	name, err := gen.GetRandomName()
+	if err != nil {
+		t.Fatalf("GetRandomName() returned error: %v", err)
+	}
+	if releaseErr := gen.MarkAsAvailable(name); releaseErr != nil {
+		t.Fatalf("MarkAsAvailable() returned error: %v", releaseErr)
+	}
+
+	db := &stubDBRepo{
+		procedureExists: map[string]bool{},
+	}
+	repo := &stubSubscriberRepo{}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+	initialAvailable := domain.DefaultFunnyNameGenerator().AvailableCount()
+	if initialAvailable == 0 {
+		t.Fatal("expected at least one available funny name before registration")
+	}
+	reservedName, consumed, reserveErr := procGen.ReserveFunnyName(context.Background(), mustNewRandomSubscriber(t))
+	if reserveErr != nil {
+		t.Fatalf("ReserveFunnyName() returned error: %v", reserveErr)
+	}
+	if !consumed || reservedName == "" {
+		t.Fatalf("unexpected reserve result: name=%q consumed=%v", reservedName, consumed)
+	}
+	if err := procGen.ReleaseFunnyName(context.Background(), reservedName); err != nil {
+		t.Fatalf("ReleaseFunnyName() returned error: %v", err)
+	}
+
+	subscriber, err := service.RegisterSubscriber(context.Background())
+	if err != nil {
+		t.Fatalf("RegisterSubscriber() returned error: %v", err)
+	}
+	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got >= initialAvailable {
+		t.Fatalf("expected a funny name to be reserved, available count = %d, want less than %d", got, initialAvailable)
+	}
+
+	if subscriber.FunnyName() == "" {
+		t.Fatal("expected subscriber funny name to be assigned")
+	}
+	if len(repo.saved) != 1 {
+		t.Fatalf("expected 1 persisted subscriber, got %d", len(repo.saved))
+	}
+	if repo.saved[0].FunnyName() != subscriber.FunnyName() {
+		t.Fatalf("saved funny name mismatch: got %q want %q", repo.saved[0].FunnyName(), subscriber.FunnyName())
+	}
+	if len(db.registeredConsumers) != 1 {
+		t.Fatalf("expected 1 Oracle subscriber registration, got %d", len(db.registeredConsumers))
+	}
+	if db.registeredConsumers[0] != subscriber.FunnyName() {
+		t.Fatalf("expected Oracle registration to use funny name %q, got %q", subscriber.FunnyName(), db.registeredConsumers[0])
+	}
+	if subscriber.ConsumerName() != subscriber.FunnyName() {
+		t.Fatalf("expected consumer name %q, got %q", subscriber.FunnyName(), subscriber.ConsumerName())
+	}
+	if !strings.Contains(db.deployedSQL, "subscriber_name_  => '"+subscriber.FunnyName()+"'") {
+		t.Fatalf("generated deployment SQL did not target subscriber alias %q", subscriber.FunnyName())
+	}
+}
+
+func TestSubscriberService_RegisterSubscriber_ReassignsPersistedForeignOwnedFunnyName(t *testing.T) {
+	resetDefaultFunnyNameGenerator(t)
+
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName() returned error: %v", err)
+	}
+	db := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    ) IS BEGIN NULL; END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_OTHER
+END OMNI_TRACER_API;`),
+	}
+	repo := &stubSubscriberRepo{list: []domain.Subscriber{*subscriber}}
+	procGen, err := NewProcedureGenerator(db)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+	service := NewSubscriberService(db, repo, procGen)
+
+	registered, err := service.RegisterSubscriber(context.Background())
+	if err != nil {
+		t.Fatalf("RegisterSubscriber() returned error: %v", err)
+	}
+	if registered.FunnyName() == "" || registered.FunnyName() == "BARNACLE" {
+		t.Fatalf("expected reassigned funny name, got %q", registered.FunnyName())
+	}
+	if len(repo.saved) != 1 || repo.saved[0].FunnyName() != registered.FunnyName() {
+		t.Fatalf("expected reassigned funny name to be persisted, saved=%v registered=%q", repo.saved, registered.FunnyName())
+	}
+	if db.deployFileCallCount != 1 {
+		t.Fatalf("expected deployment for reassigned funny name, got %d", db.deployFileCallCount)
+	}
+	if !strings.Contains(db.deployedSQL, subscriberMethodStartMarker(registered.Name())) {
+		t.Fatalf("expected deployment to include owner marker for %q: %s", registered.Name(), db.deployedSQL)
+	}
+}
+
+func mustNewRandomSubscriber(t *testing.T) *domain.Subscriber {
+	t.Helper()
+
+	subscriber, err := domain.NewRandomSubscriber()
+	if err != nil {
+		t.Fatalf("NewRandomSubscriber() returned error: %v", err)
+	}
+	return subscriber
+}
+
+func TestValidateFunnyNameForProcedure(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "Mickey", wantErr: false},
+		{name: "BARNACLE", wantErr: false},
+		{name: "Pickles", wantErr: false},
+		{name: "", wantErr: true},
+		{name: "Invalid123", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		err := validateFunnyNameForProcedure(tc.name)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("validateFunnyNameForProcedure(%q) error = %v, wantErr %v", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func splitLines(input string) []string {
+	lines := strings.Split(input, "\n")
+	for i := range lines {
+		lines[i] += "\n"
+	}
+	return lines
+}

@@ -12,15 +12,15 @@ import (
 func (oa *OracleAdapter) RegisterNewSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
 	exists, err := subscriberExists(ctx, oa, subscriber)
 	if err != nil {
-		return fmt.Errorf("failed to check subscriber existence: %v", err)
+		return fmt.Errorf("failed to check subscriber existence: %w", err)
 	}
 	if !exists {
 		// Subscriber does not exist, register it
 		err := oa.ExecuteWithParams(ctx, "BEGIN OMNI_TRACER_API.Register_Subscriber(:subscriberName); END;", map[string]interface{}{
-			"subscriberName": subscriber.Name(),
+			"subscriberName": subscriber.ConsumerName(),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to register subscriber: %v", err)
+			return fmt.Errorf("failed to register subscriber: %w", err)
 		}
 		return nil
 	}
@@ -36,7 +36,7 @@ func subscriberExists(ctx context.Context, oa *OracleAdapter, subscriber domain.
 			AND OWNER = :queueOwner`
 	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"queueName":      domain.QueueName,
-		"subscriberName": subscriber.Name(),
+		"subscriberName": subscriber.ConsumerName(),
 		"queueOwner":     oa.config.Username(),
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func subscriberExists(ctx context.Context, oa *OracleAdapter, subscriber domain.
 
 	count, err := parseCountResult(results)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse subscriber existence count: %v", err)
+		return false, fmt.Errorf("failed to parse subscriber existence count: %w", err)
 	}
 	return count > 0, nil
 }
@@ -60,7 +60,7 @@ func parseCountResult(results []string) (int, error) {
 	}
 	count, err := strconv.Atoi(results[0])
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse count result: %v", err)
+		return 0, fmt.Errorf("failed to parse count result: %w", err)
 	}
 	return count, nil
 }

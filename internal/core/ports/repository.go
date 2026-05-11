@@ -97,6 +97,9 @@ type DatabaseRepository interface {
 	// PackageExists checks if a package exists
 	PackageExists(ctx context.Context, packageName string) (bool, error)
 
+	// ProcedureExists checks if a procedure exists inside the given package.
+	ProcedureExists(ctx context.Context, packageName string, procedureName string) (bool, error)
+
 	// DeployPackages deploys PL/SQL packages
 	DeployPackages(ctx context.Context, sequences []string, types []string, packageSpec []string, packageBody []string) error
 
@@ -108,6 +111,32 @@ type DatabaseRepository interface {
 
 	// Close closes the database connection
 	Close(ctx context.Context) error
+}
+
+// ==========================================
+// Procedure Generator Interface
+// ==========================================
+
+type ProcedureGeneratorRepository interface {
+	// ReserveFunnyName reserves a funny name for the subscriber.
+	// slotConsumed is true when the generator's list had to be modified
+	// (either a new slot was claimed from AvailableNames, or an existing name was
+	// marked as Used). It is false when no reservation occurred because the call
+	// failed before mutating generator state. Use slotConsumed to decide whether to
+	// ReleaseFunnyName on failure.
+	ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (name string, slotConsumed bool, err error)
+
+	// ReleaseFunnyName releases a previously reserved funny name
+	ReleaseFunnyName(ctx context.Context, funnyName string) error
+
+	// EnsureOwnedFunnyName ensures the subscriber has an unclaimed funny name.
+	EnsureOwnedFunnyName(ctx context.Context, subscriber *domain.Subscriber) (changed bool, err error)
+
+	// EnsureSubscriberProcedure ensures a PL/SQL procedure is owned by and routed to the subscriber.
+	EnsureSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error
+
+	// DropSubscriberProcedure drops the PL/SQL procedure for the subscriber
+	DropSubscriberProcedure(ctx context.Context, funnyName string) error
 }
 
 // ==========================================
@@ -135,4 +164,11 @@ type ConfigRepository interface {
 
 	// DeleteWebhookConfig deletes a webhook configuration
 	DeleteWebhookConfig(id string) error
+
+	// GetTracerPackageVersion retrieves the stored package version hash.
+	// Returns empty string if no hash is stored.
+	GetTracerPackageVersion() (string, error)
+
+	// SetTracerPackageVersion stores the package version hash.
+	SetTracerPackageVersion(version string) error
 }

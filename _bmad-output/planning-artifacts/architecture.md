@@ -33,9 +33,9 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Topic:** Per-subscriber message isolation for OmniView/OmniInspect trace messages over Oracle AQ
 
-**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`)
++**Selected Solution:** Dynamic procedure per subscriber (`TRACE_MESSAGE_<name>('msg')`) with Oracle AQ correlation-based routing
 
-**Key Insight:** Moves subscriber identity to compile-time — the method name IS the routing key.
++**Key Insight:** Subscriber identity is bound at compile-time via method name, and routing is enforced at the Oracle queue level using `message_properties_.correlation` + subscriber rules (`tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`).
 
 ---
 
@@ -52,6 +52,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Auto-redeploy | Already implemented - if package missing, OmniView redeploys |
 | Permissions | Any database user can call generated procedures |
 | Scalability | N subscribers supported, no hard limit |
+| Message routing | Correlation-based subscriber rules at Oracle queue level (DEC-6). `Enqueue_Event___` sets `message_properties_.correlation := subscriber_name_`. `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`. Broadcast messages (NULL correlation) reach all; subscriber-specific messages reach only the matching subscriber |
 
 ---
 
@@ -103,6 +104,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - SQL injection prevention via format validation
 - Package invalidation recovery mechanism (already implemented)
 - Backward compatibility with existing `Trace_Message()` callers
+- Oracle sharded queue limitation: `recipient_list` not supported (ORA-24205) — message routing handled via `message_properties_.correlation` and subscriber rules with `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'` (see DEC-6)
 
 ---
 
@@ -156,8 +158,9 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - Simplifies permissions and deployment
 
 **Implementation Note**:
-- `Enqueue_For_Subscriber()` must be added to base package as part of this development
-- Generated procedures call `Enqueue_For_Subscriber()` internally
+- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that sets `message_properties_.correlation` for routing
+- Generated procedures call `Enqueue_Event___()` internally with `subscriber_name_` set to the assigned funny name
+- Message routing is enforced at the Oracle queue level via correlation-based subscriber rules (see DEC-6)
 
 ---
 
@@ -236,6 +239,74 @@ Guts, Griffith, Casca, Farnese, Serpico
 
 ---
 
+### DEC-6: Message Routing Strategy — Correlation-Based Subscriber Rules
+
+**Status**: DECIDED ✅ (2026-05-09, revised from payload filtering to correlation)
+
+**Problem**: Oracle Sharded Queues (and their successor TxEventQ) do NOT support `recipient_list` on enqueue (`ORA-24205: feature not supported for sharded queues`). The original design assumed `message_properties_.recipient_list` could route messages to specific subscribers at the queue level. This is only supported on classic AQ queues, not sharded/TxEventQ.
+
+**Rejected Alternatives**:
+
+| Alternative | Reason Rejected |
+|-------------|-----------------|
+| **Switch to classic AQ queue** | Would lose sharded queue performance benefits; breaking migration for existing deployments |
+| **Per-subscriber queue** | Requires separate queues per subscriber, C dequeue layer changes, dynamic queue targeting in Go — too much complexity for the value delivered |
+| **Application-level payload filtering** | Works but pushes routing to Go — all subscribers dequeue and deserialize all messages, discarding non-matching ones. Unnecessary when Oracle can filter natively via correlation rules |
+
+**Decision**: Correlation-based routing using Oracle AQ subscriber rules
+
+**How it works**:
+1. **Enqueue**: `Enqueue_Event___()` sets `message_properties_.correlation := subscriber_name_`. When `subscriber_name_` is NULL (broadcast via `Trace_Message()`), correlation is NULL.
+2. **Subscriber Registration**: `Register_Subscriber()` calls `DBMS_AQADM.ADD_SUBSCRIBER` with a rule: `tab.CORRELATION IS NULL OR tab.CORRELATION = '<subscriber_name_>'`
+3. **Dequeue**: Each subscriber dequeues with `consumer_name := '<funny_name>'`. Oracle AQ applies the rule and only delivers messages where correlation matches OR is NULL.
+4. **Result**:
+   - `Trace_Message('hello')` → correlation=NULL → matches `IS NULL` → **all subscribers receive** (broadcast)
+   - `TRACE_MESSAGE_BARNACLE('hello')` → correlation='BARNACLE' → matches only BARNACLE's rule → **only BARNACLE receives** (isolated)
+
+**PL/SQL Changes** (`assets/sql/Omni_Tracer.sql`):
+
+`Enqueue_Event___` — Remove `recipient_list`, add correlation:
+```sql
+-- REMOVED (causes ORA-24205):
+--   IF subscriber_name_ IS NOT NULL THEN
+--       message_properties_.recipient_list(1) := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
+--   END IF;
+
+-- ADDED:
+message_properties_.correlation := subscriber_name_;
+```
+
+`Register_Subscriber` — Add correlation rule:
+```sql
+DBMS_AQADM.ADD_SUBSCRIBER (
+    queue_name => TRACER_QUEUE_NAME,
+    subscriber => sub_,
+    rule       => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''' || subscriber_name_ || ''''
+);
+```
+
+**Go Changes**: NONE. No domain model changes. No service filtering. No C changes. Routing is handled entirely at the Oracle queue level before messages reach Go.
+
+**Subscriber Identity Model**:
+
+| Identifier | Example | Scope | Purpose |
+|------------|---------|-------|---------|
+| UUID Name (`name`) | `SUB_825418F0_B22F_...` | Go / BoltDB | Internal identity — BoltDB storage key, stable across restarts |
+| FunnyName (`funnyName`) | `BARNACLE` | Oracle AQ | Oracle consumer name, correlation value, generated procedure name, subscriber rule |
+
+`ConsumerName()` returns FunnyName when assigned (always after registration), falling back to UUID for legacy subscribers.
+
+Subscriber routing is represented by `message_properties_.correlation`; the JSON payload does not include a `SUBSCRIBER` metadata field.
+
+**Key properties**:
+- Routing handled at Oracle queue level — zero Go/C code changes for routing
+- Broadcast messages (`Trace_Message()`) reach all subscribers via `correlation IS NULL` rule
+- Subscriber-specific messages reach only the matching subscriber via correlation value match
+- No dead messages — Oracle only delivers messages matching each subscriber's rule
+- Clean queue — no messages accumulate for non-matching subscribers
+
+---
+
 ## Implementation Patterns & Consistency Rules
 
 ### Existing Patterns (From AGENTS.md & DESIGN.md)
@@ -270,14 +341,14 @@ func IsValidFunnyName(name string) bool {
 }
 ```
 
-#### Pattern 2: Procedure Generation Method
+#### Pattern 2: Procedure Ownership Method
 
 **File**: `internal/service/subscribers/` (subscriber_service.go)
 
 ```go
-// GenerateSubscriberProcedure generates the TRACE_MESSAGE_<name> procedure
-// inside the OMNI_TRACER_API package.
-func (s *SubscriberService) GenerateSubscriberProcedure(ctx context.Context, subscriberName string) error
+// EnsureSubscriberProcedure ensures the TRACE_MESSAGE_<name> procedure is owned
+// by the current subscriber and deploys it when needed.
+func (s *SubscriberService) EnsureSubscriberProcedure(ctx context.Context, subscriberName string) error
 
 // DropSubscriberProcedure removes the subscriber's procedure from the package.
 func (s *SubscriberService) DropSubscriberProcedure(ctx context.Context, subscriberName string) error
@@ -291,28 +362,31 @@ func (s *SubscriberService) DropAllProcedures(ctx context.Context) error
 **DDL Format** (procedure added to existing package body via ALTER PACKAGE):
 
 ```sql
--- Pattern for generated procedure within package body:
+-- Pattern for owned generated procedure within package body:
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_BARNACLE
 PROCEDURE TRACE_MESSAGE_BARNACLE(
     message_   IN VARCHAR2,
     log_level_ IN VARCHAR2 DEFAULT 'INFO'
 )
 IS
 BEGIN
-    OMNI_TRACER_API.Enqueue_For_Subscriber(
-        subscriber_name_ => 'BARNACLE',
-        message_         => message_,
-        log_level_       => log_level_
+    Enqueue_Event___(
+        log_level_        => log_level_,
+        payload           => message_,
+        subscriber_name_  => 'BARNACLE'
     );
 END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_BARNACLE
 ```
 
-**Required Prerequisite**: `Enqueue_For_Subscriber()` must exist in `OMNI_TRACER_API` package before generated procedures can call it.
+**Required Prerequisite**: `Enqueue_Event___()` must support optional `subscriber_name_` routing before generated procedures can call it.
+**Ownership Rule**: The generated method block must carry the subscriber ownership markers above. If the same funny-name method exists but is owned by a different subscriber, the app must choose another funny name and deploy a new method.
 
 **Validation Rules**:
 - Name MUST be validated against funny name list before DDL generation
 - No user-provided names accepted - only system-assigned funny names
 - Format check: `^[A-Za-z_]+$` before any DDL execution
-- Idempotent: Check procedure exists before creating (skip if already exists)
+- Idempotent: Check the owned procedure block before creating or reusing it
 
 #### Pattern 4: Settings UI Danger Zone
 
@@ -488,7 +562,7 @@ Service Layer
 | Requirement | Files | Changes |
 |-------------|-------|---------|
 | **FR-1, FR-2, FR-6**: Generate `TRACE_MESSAGE_<funny>` procedure | `internal/core/domain/funny_names.go` | **NEW** - Curated name list + validation |
-| | `internal/service/subscribers/subscriber_service.go` | **MODIFY** - Add `GenerateSubscriberProcedure()` |
+| | `internal/service/subscribers/subscriber_service.go` | **MODIFY** - Add `EnsureSubscriberProcedure()` |
 | | `internal/adapter/storage/oracle/oracle_adapter.go` | **MODIFY** - Add DDL execution for procedure creation |
 | **FR-3, FR-4**: Danger zone options | `internal/adapter/ui/database_settings.go` | **MODIFY** - Add "Drop my procedure" + "Drop all procedures" |
 | **FR-5**: Auto-redeploy on startup | `internal/adapter/storage/oracle/oracle_adapter.go` | **VERIFY** - Check existing redeploy logic |
@@ -509,7 +583,7 @@ Service Layer
 ```text
 OMNI_TRACER_API
 ├── Trace_Message(message_, log_level_)      # Original - unchanged
-├── Enqueue_For_Subscriber(...)             # [NEW] Internal helper for generated procedures
+├── Enqueue_Event___(..., subscriber_name_) # Internal helper with optional subscriber routing
 └── TRACE_MESSAGE_<FUNNY_NAME>(...)        # [NEW] Generated per subscriber
 ```
 
@@ -519,7 +593,7 @@ Per-subscriber procedures are generated as runtime DDL and executed via `Execute
 **Data Flow:**
 ```text
 IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
-         → Enqueue_For_Subscriber(subscriber_=<NAME>, ...)
+         → Enqueue_Event___(..., subscriber_name_=<NAME>)
          → AQ Queue
          → OmniView dequeues
          → Only matching subscriber receives
@@ -559,7 +633,7 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 | FR-7: Display method name | ✅ | `main_screen.go` header area |
 
 **Additional Requirements (User-Confirmed):**
-1. `Enqueue_For_Subscriber()` must be implemented as part of this development
+1. `Enqueue_Event___()` must support optional `subscriber_name_` routing as part of this development
 2. All generated procedures must be inside `OMNI_TRACER_API` package — no standalone schema objects
 3. Package invalidation is accepted risk
 
@@ -578,7 +652,7 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 **Critical Gaps:** None remaining after user decisions
 
 **Resolved:**
-- `Enqueue_For_Subscriber()` will be added to base package during implementation
+- `Enqueue_Event___()` will be extended with subscriber routing during implementation
 - All procedures inside package (no standalone procedures)
 - Package invalidation accepted risk
 
@@ -621,15 +695,14 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 **Key Decisions Resolved:**
 - Procedure naming: Funny cartoon character names (auto-assigned)
 - Generation approach: Inside `OMNI_TRACER_API` package via ALTER PACKAGE
-- `Enqueue_For_Subscriber()`: Must be added to base package
+- `Enqueue_Event___()`: Must support optional subscriber routing in the base package
 - Package invalidation: Accepted risk
 
 **First Implementation Priority:**
-`funny_names.go` (domain value object) → `Enqueue_For_Subscriber()` (base package addition) → procedure generation in `subscriber_service.go`
+`funny_names.go` (domain value object) → `Enqueue_Event___()` subscriber routing extension → procedure generation in `subscriber_service.go`
 
 ---
 
 ## Next Step
 
 [C] Continue to complete the architecture workflow
-

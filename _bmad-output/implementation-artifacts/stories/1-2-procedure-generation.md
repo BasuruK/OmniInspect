@@ -31,7 +31,7 @@ So that messages are routed to the correct subscriber and reused safely only by 
 
 **Given** the subscriber's procedure already exists but the ownership markers belong to another subscriber
 **When** OmniView starts
-**Then** a new funny name is selected and a new owned procedure is deployed
+**Then** a new owned procedure is deployed using the persisted funny name
 
 ---
 

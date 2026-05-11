@@ -532,13 +532,7 @@ func removeProcedureBlock(packageSource string, startNeedle string, endNeedle st
 // generated procedure. It validates format (regex + length) and presence in the
 // approved funny name list.
 func validateFunnyNameForProcedure(name string) error {
-	if name == "" {
-		return domain.ErrInvalidFunnyName
-	}
-	if err := domain.ValidateFunnyNameForSQLInjection(name); err != nil {
-		return err
-	}
-	return nil
+	return domain.ValidateFunnyNameForSQLInjection(name)
 }
 
 // buildProcedureName builds the full procedure name from a funny name (uppercases it).

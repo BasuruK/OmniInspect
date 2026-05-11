@@ -185,11 +185,13 @@ So that SQL injection attacks are prevented.
 
 ### Story 1.4: Auto-Deploy Package on Startup
 
-As a system,
-I want to check if OMNI_TRACER_API package exists on startup,
-So that I can redeploy it if missing.
+**Status:** COMPLETE ✅
 
-**Acceptance Criteria:**
+**Implementation:**
+- `tracer_service.go:322-337` — `DeployAndCheck()` checks if OMNI_TRACER_API exists, deploys if missing, initializes
+- `tracer_service.go:347-379` — `deployTracerPackage()` uses SHA256 hash to skip redeployment if content unchanged
+- `subscriber_service.go:102` — `EnsureSubscriberProcedure()` idempotent creation (skip if exists)
+- Tested with 2 subscribers ✅
 
 **Given** OmniView starts
 **When** the system checks for OMNI_TRACER_API package
@@ -205,11 +207,13 @@ So that I can redeploy it if missing.
 
 ### Story 1.5: Correlation-Based Message Routing *(Validation/Integration)*
 
-As a subscriber,
-I want messages sent via my `TRACE_MESSAGE_<FUNNY_NAME>()` procedure to only appear in my OmniView instance,
-So that I only see trace messages intended for me, while still seeing broadcast messages from `Trace_Message()`.
+**Status:** COMPLETE ✅
 
-**Acceptance Criteria:**
+**Implementation:**
+- `Enqueue_Event___()` sets `message_properties_.correlation := subscriber_name_` (or NULL for broadcast)
+- `Register_Subscriber` adds rule `tab.CORRELATION IS NULL OR tab.CORRELATION = '<name>'`
+- Oracle AQ correlation-based subscriber rules handle routing at the queue level
+- **User tested with 2 subscribers — routing confirmed working** ✅
 
 **Given** a message was enqueued via `TRACE_MESSAGE_BARNACLE('msg')`
 **When** subscriber BARNACLE's OmniView instance dequeues the message
@@ -222,20 +226,6 @@ So that I only see trace messages intended for me, while still seeing broadcast 
 **Given** a message was enqueued via `Trace_Message('msg')` (broadcast, NULL correlation)
 **When** any subscriber's OmniView instance dequeues the message
 **Then** the message is displayed in all subscribers' TUIs
-
-**Implementation Status — PL/SQL (COMPLETE):**
-
-All PL/SQL changes are implemented in `assets/sql/Omni_Tracer.sql`:
-
-- `Enqueue_Event___`: `recipient_list` assignment fully removed. Replaced with `message_properties_.correlation := subscriber_name_` — sets correlation to the subscriber's funny name (or NULL for broadcast). **Done.**
-- `Register_Subscriber`: `DBMS_AQADM.ADD_SUBSCRIBER` now includes `rule => 'tab.CORRELATION IS NULL OR tab.CORRELATION = ''<name>'''` — ensures broadcast messages (NULL correlation) reach all subscribers and subscriber-specific messages reach only the matching subscriber. **Done.**
-
-**Remaining work — Validation/Integration only:**
-
-- Deploy the updated `OMNI_TRACER_API` package and run end-to-end tests with two subscribers
-- Verify subscriber-specific routing (correlation match) and broadcast routing (NULL correlation)
-- Run `make build` and `make test` to confirm no regressions
-- No Go or C code changes needed — routing is handled entirely at the Oracle queue level
 
 ---
 

@@ -78,29 +78,17 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 		}
 	}
 
-	reservedFunnyName := ""
-	generatorSlotConsumed := false
+	funnyNameChanged := false
 	if ss.procGen != nil {
-		if subscriber.FunnyName() != "" {
-		} else {
-			reservedFunnyName, generatorSlotConsumed, err = ss.procGen.ReserveFunnyName(ctx, subscriber)
-			if err != nil {
-				return nil, fmt.Errorf("failed to reserve funny name: %w", err)
-			}
-			if subscriber.FunnyName() == "" && reservedFunnyName != "" {
-				if err := subscriber.AssignFunnyName(reservedFunnyName); err != nil {
-					if releaseErr := ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName); releaseErr != nil {
-						return nil, fmt.Errorf("failed to assign funny name: %w; failed to release funny name: %v", err, releaseErr)
-					}
-					return nil, fmt.Errorf("failed to assign funny name: %w", err)
-				}
-			}
+		funnyNameChanged, err = ss.procGen.EnsureOwnedFunnyName(ctx, subscriber)
+		if err != nil {
+			return nil, fmt.Errorf("failed to ensure owned funny name: %w", err)
 		}
 	}
 
 	if err := ss.SetSubscriber(ctx, subscriber); err != nil {
-		if generatorSlotConsumed {
-			_ = ss.procGen.ReleaseFunnyName(ctx, reservedFunnyName)
+		if ss.procGen != nil && funnyNameChanged {
+			_ = ss.procGen.ReleaseFunnyName(ctx, subscriber.FunnyName())
 		}
 		return nil, fmt.Errorf("failed to save subscriber: %w", err)
 	}
@@ -111,7 +99,7 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 	}
 
 	if ss.procGen != nil {
-		if err := ss.procGen.GenerateSubscriberProcedure(ctx, subscriber); err != nil {
+		if err := ss.procGen.EnsureSubscriberProcedure(ctx, subscriber); err != nil {
 			_ = ss.procGen.DropSubscriberProcedure(ctx, subscriber.FunnyName())
 			return nil, fmt.Errorf("failed to generate subscriber procedure: %w", err)
 		}

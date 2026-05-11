@@ -341,14 +341,14 @@ func IsValidFunnyName(name string) bool {
 }
 ```
 
-#### Pattern 2: Procedure Generation Method
+#### Pattern 2: Procedure Ownership Method
 
 **File**: `internal/service/subscribers/` (subscriber_service.go)
 
 ```go
-// GenerateSubscriberProcedure generates the TRACE_MESSAGE_<name> procedure
-// inside the OMNI_TRACER_API package.
-func (s *SubscriberService) GenerateSubscriberProcedure(ctx context.Context, subscriberName string) error
+// EnsureSubscriberProcedure ensures the TRACE_MESSAGE_<name> procedure is owned
+// by the current subscriber and deploys it when needed.
+func (s *SubscriberService) EnsureSubscriberProcedure(ctx context.Context, subscriberName string) error
 
 // DropSubscriberProcedure removes the subscriber's procedure from the package.
 func (s *SubscriberService) DropSubscriberProcedure(ctx context.Context, subscriberName string) error
@@ -362,7 +362,8 @@ func (s *SubscriberService) DropAllProcedures(ctx context.Context) error
 **DDL Format** (procedure added to existing package body via ALTER PACKAGE):
 
 ```sql
--- Pattern for generated procedure within package body:
+-- Pattern for owned generated procedure within package body:
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_BARNACLE
 PROCEDURE TRACE_MESSAGE_BARNACLE(
     message_   IN VARCHAR2,
     log_level_ IN VARCHAR2 DEFAULT 'INFO'
@@ -375,15 +376,17 @@ BEGIN
         subscriber_name_  => 'BARNACLE'
     );
 END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : SUB_BARNACLE
 ```
 
 **Required Prerequisite**: `Enqueue_Event___()` must support optional `subscriber_name_` routing before generated procedures can call it.
+**Ownership Rule**: The generated method block must carry the subscriber ownership markers above. If the same funny-name method exists but is owned by a different subscriber, the app must choose another funny name and deploy a new method.
 
 **Validation Rules**:
 - Name MUST be validated against funny name list before DDL generation
 - No user-provided names accepted - only system-assigned funny names
 - Format check: `^[A-Za-z_]+$` before any DDL execution
-- Idempotent: Check procedure exists before creating (skip if already exists)
+- Idempotent: Check the owned procedure block before creating or reusing it
 
 #### Pattern 4: Settings UI Danger Zone
 
@@ -559,7 +562,7 @@ Service Layer
 | Requirement | Files | Changes |
 |-------------|-------|---------|
 | **FR-1, FR-2, FR-6**: Generate `TRACE_MESSAGE_<funny>` procedure | `internal/core/domain/funny_names.go` | **NEW** - Curated name list + validation |
-| | `internal/service/subscribers/subscriber_service.go` | **MODIFY** - Add `GenerateSubscriberProcedure()` |
+| | `internal/service/subscribers/subscriber_service.go` | **MODIFY** - Add `EnsureSubscriberProcedure()` |
 | | `internal/adapter/storage/oracle/oracle_adapter.go` | **MODIFY** - Add DDL execution for procedure creation |
 | **FR-3, FR-4**: Danger zone options | `internal/adapter/ui/database_settings.go` | **MODIFY** - Add "Drop my procedure" + "Drop all procedures" |
 | **FR-5**: Auto-redeploy on startup | `internal/adapter/storage/oracle/oracle_adapter.go` | **VERIFY** - Check existing redeploy logic |

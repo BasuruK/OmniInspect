@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	procedureNamePrefix = "TRACE_MESSAGE_"
-	packageName         = "OMNI_TRACER_API"
-	baseSQLFile         = "Omni_Tracer.sql"
+	procedureNamePrefix      = "TRACE_MESSAGE_"
+	packageName              = "OMNI_TRACER_API"
+	baseSQLFile              = "Omni_Tracer.sql"
+	generatedMethodMarker    = "-- @SECTION: SUBSCRIBER_GENERATED_METHOD : "
+	generatedMethodEndMarker = "-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : "
 
 	packageSpecStart = "-- @SECTION: PACKAGE_SPECIFICATION"
 	packageSpecEnd   = "-- @END_SECTION: PACKAGE_SPECIFICATION"
@@ -81,14 +83,88 @@ func (pg *ProcedureGenerator) ReleaseFunnyName(ctx context.Context, funnyName st
 	return nil
 }
 
-func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error {
+func (pg *ProcedureGenerator) EnsureOwnedFunnyName(ctx context.Context, subscriber *domain.Subscriber) (bool, error) {
 	if subscriber == nil {
-		return fmt.Errorf("GenerateSubscriberProcedure: %w", domain.ErrNilSubscriber)
+		return false, fmt.Errorf("EnsureOwnedFunnyName: %w", domain.ErrNilSubscriber)
+	}
+	if subscriber.FunnyName() == "" {
+		funnyName, _, err := pg.ReserveFunnyName(ctx, subscriber)
+		if err != nil {
+			return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+		}
+		if err := subscriber.AssignFunnyName(funnyName); err != nil {
+			_ = pg.ReleaseFunnyName(ctx, funnyName)
+			return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+		}
+		return true, nil
+	}
+	if err := validateFunnyNameForProcedure(subscriber.FunnyName()); err != nil {
+		return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+	}
+	ownedByAnother, err := pg.procedureOwnedByAnother(ctx, subscriber)
+	if err != nil {
+		return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+	}
+	if !ownedByAnother {
+		return false, nil
+	}
+
+	if err := pg.ReleaseFunnyName(ctx, subscriber.FunnyName()); err != nil {
+		return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+	}
+	gen := domain.DefaultFunnyNameGenerator()
+	attempts := gen.AvailableCount()
+	for i := 0; i < attempts; i++ {
+		funnyName, err := gen.GetRandomName()
+		if err != nil {
+			return false, fmt.Errorf("EnsureOwnedFunnyName: failed to get funny name: %w", err)
+		}
+		if err := subscriber.AssignFunnyName(funnyName); err != nil {
+			_ = pg.ReleaseFunnyName(ctx, funnyName)
+			return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+		}
+		ownedByAnother, err := pg.procedureOwnedByAnother(ctx, subscriber)
+		if err != nil {
+			_ = pg.ReleaseFunnyName(ctx, funnyName)
+			return false, fmt.Errorf("EnsureOwnedFunnyName: %w", err)
+		}
+		if !ownedByAnother {
+			return true, nil
+		}
+		_ = pg.ReleaseFunnyName(ctx, funnyName)
+	}
+	return false, fmt.Errorf("EnsureOwnedFunnyName: %w", domain.ErrNoAvailableNames)
+}
+
+func (pg *ProcedureGenerator) procedureOwnedByAnother(ctx context.Context, subscriber *domain.Subscriber) (bool, error) {
+	packageSpec, packageBody, err := pg.loadPackageSource(ctx)
+	if err != nil {
+		return false, err
+	}
+	procedureName := buildProcedureName(subscriber.FunnyName())
+	declarationBlock, hasDeclaration, err := extractProcedureDeclaration(packageSpec, procedureName)
+	if err != nil {
+		return false, err
+	}
+	bodyBlock, hasBody, err := extractProcedureBody(packageBody, procedureName)
+	if err != nil {
+		return false, err
+	}
+	if !hasDeclaration && !hasBody {
+		return false, nil
+	}
+	return (hasGeneratedMethodOwner(declarationBlock) && !procedureOwnedBy(declarationBlock, subscriber.Name())) ||
+		(hasGeneratedMethodOwner(bodyBlock) && !procedureOwnedBy(bodyBlock, subscriber.Name())), nil
+}
+
+func (pg *ProcedureGenerator) EnsureSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error {
+	if subscriber == nil {
+		return fmt.Errorf("EnsureSubscriberProcedure: %w", domain.ErrNilSubscriber)
 	}
 
 	funnyName := subscriber.FunnyName()
 	if err := validateFunnyNameForProcedure(funnyName); err != nil {
-		return fmt.Errorf("GenerateSubscriberProcedure: %w", err)
+		return fmt.Errorf("EnsureSubscriberProcedure: %w", err)
 	}
 
 	procedureName := buildProcedureName(funnyName)
@@ -106,8 +182,11 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 		return fmt.Errorf("failed to inspect package body: %w", err)
 	}
 	if hasDeclaration && hasBody {
-		if strings.Contains(strings.ToUpper(declarationBlock), "PROCESS_NAME_") && strings.Contains(strings.ToUpper(bodyBlock), "PROCESS_NAME_") {
+		if procedureOwnedBy(declarationBlock, subscriber.Name()) && procedureOwnedBy(bodyBlock, subscriber.Name()) && hasExpectedGeneratedBody(bodyBlock, funnyName) {
 			return nil
+		}
+		if hasGeneratedMethodOwner(declarationBlock) || hasGeneratedMethodOwner(bodyBlock) {
+			return fmt.Errorf("EnsureSubscriberProcedure: %w", domain.ErrProcedureOwnershipConflict)
 		}
 		packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
 		if err != nil {
@@ -119,17 +198,17 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 		}
 	}
 
-	packageSpec, err = injectProcedureDeclaration(packageSpec, funnyName)
+	packageSpec, err = injectProcedureDeclarationForSubscriber(packageSpec, funnyName, subscriber.Name())
 	if err != nil {
 		return fmt.Errorf("failed to update package spec: %w", err)
 	}
-	packageBody, err = injectProcedureBody(packageBody, funnyName)
+	packageBody, err = injectProcedureBodyForSubscriber(packageBody, funnyName, subscriber.Name())
 	if err != nil {
 		return fmt.Errorf("failed to update package body: %w", err)
 	}
 
 	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {
-		return fmt.Errorf("GenerateSubscriberProcedure: %w", err)
+		return fmt.Errorf("EnsureSubscriberProcedure: %w", err)
 	}
 
 	return nil
@@ -274,7 +353,15 @@ func injectProcedureDeclaration(packageSpec string, funnyName string) (string, e
 	if containsProcedureSignature(packageSpec, procedureName) {
 		return packageSpec, nil
 	}
-	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName))
+	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName, ""))
+}
+
+func injectProcedureDeclarationForSubscriber(packageSpec string, funnyName string, subscriberName string) (string, error) {
+	procedureName := buildProcedureName(funnyName)
+	if containsProcedureSignature(packageSpec, procedureName) {
+		return packageSpec, nil
+	}
+	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName, subscriberName))
 }
 
 // injectProcedureBody adds a new procedure body to the package body if it does not
@@ -284,7 +371,15 @@ func injectProcedureBody(packageBody string, funnyName string) (string, error) {
 	if containsProcedureSignature(packageBody, procedureName) {
 		return packageBody, nil
 	}
-	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName))
+	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName, ""))
+}
+
+func injectProcedureBodyForSubscriber(packageBody string, funnyName string, subscriberName string) (string, error) {
+	procedureName := buildProcedureName(funnyName)
+	if containsProcedureSignature(packageBody, procedureName) {
+		return packageBody, nil
+	}
+	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName, subscriberName))
 }
 
 // containsProcedureSignature checks if the package source contains a procedure declaration
@@ -305,15 +400,46 @@ func removeProcedureBody(packageBody string, procedureName string) (string, erro
 	return removeProcedureBlock(packageBody, fmt.Sprintf("PROCEDURE %s(", procedureName), fmt.Sprintf("END %s;", procedureName))
 }
 
+func subscriberMethodStartMarker(subscriberName string) string {
+	return generatedMethodMarker + strings.ToUpper(subscriberName)
+}
+
+func subscriberMethodEndMarker(subscriberName string) string {
+	return generatedMethodEndMarker + strings.ToUpper(subscriberName)
+}
+
+func wrapSubscriberGeneratedMethod(subscriberName string, block string) string {
+	if subscriberName == "" {
+		return block
+	}
+	return subscriberMethodStartMarker(subscriberName) + "\n" + block + "\n" + subscriberMethodEndMarker(subscriberName)
+}
+
+func procedureOwnedBy(block string, subscriberName string) bool {
+	return strings.Contains(strings.ToUpper(block), subscriberMethodStartMarker(subscriberName)) &&
+		strings.Contains(strings.ToUpper(block), subscriberMethodEndMarker(subscriberName))
+}
+
+func hasGeneratedMethodOwner(block string) bool {
+	return strings.Contains(strings.ToUpper(block), generatedMethodMarker)
+}
+
+func hasExpectedGeneratedBody(block string, funnyName string) bool {
+	normalized := strings.ToUpper(strings.Join(strings.Fields(block), " "))
+	return strings.Contains(normalized, "PROCESS_NAME_") &&
+		strings.Contains(normalized, "ENQUEUE_EVENT___(") &&
+		strings.Contains(normalized, "SUBSCRIBER_NAME_ => '"+strings.ToUpper(funnyName)+"'")
+}
+
 func extractProcedureDeclaration(packageSpec string, procedureName string) (string, bool, error) {
-	return extractProcedureBlock(packageSpec, fmt.Sprintf("PROCEDURE %s(", procedureName), ");")
+	return extractProcedureBlock(packageSpec, fmt.Sprintf("PROCEDURE %s(", procedureName), ");", generatedMethodMarker)
 }
 
 func extractProcedureBody(packageBody string, procedureName string) (string, bool, error) {
-	return extractProcedureBlock(packageBody, fmt.Sprintf("PROCEDURE %s(", procedureName), fmt.Sprintf("END %s;", procedureName))
+	return extractProcedureBlock(packageBody, fmt.Sprintf("PROCEDURE %s(", procedureName), fmt.Sprintf("END %s;", procedureName), generatedMethodMarker)
 }
 
-func extractProcedureBlock(packageSource string, startNeedle string, endNeedle string) (string, bool, error) {
+func extractProcedureBlock(packageSource string, startNeedle string, endNeedle string, ownerMarker string) (string, bool, error) {
 	upperSource := strings.ToUpper(packageSource)
 	startIdx := strings.Index(upperSource, strings.ToUpper(startNeedle))
 	if startIdx == -1 {
@@ -325,6 +451,18 @@ func extractProcedureBlock(packageSource string, startNeedle string, endNeedle s
 		return "", true, fmt.Errorf("extractProcedureBlock: %w", domain.ErrProcedureEndMarkerNotFound)
 	}
 	endIdx := startIdx + endRelIdx + len(endNeedle)
+	markerIdx := strings.LastIndex(upperSource[:startIdx], strings.ToUpper(ownerMarker))
+	if markerIdx != -1 {
+		endMarkerIdx := strings.Index(upperSource[endIdx:], strings.ToUpper(generatedMethodEndMarker))
+		if endMarkerIdx != -1 {
+			endIdx = endIdx + endMarkerIdx + len(generatedMethodEndMarker)
+			lineEndIdx := strings.Index(packageSource[endIdx:], "\n")
+			if lineEndIdx != -1 {
+				endIdx += lineEndIdx
+			}
+			startIdx = markerIdx
+		}
+	}
 	return packageSource[startIdx:endIdx], true, nil
 }
 
@@ -386,22 +524,22 @@ func buildProcedureName(funnyName string) string {
 
 // generateProcedureDeclaration generates the PL/SQL declaration text for a
 // subscriber procedure with message and log_level parameters.
-func generateProcedureDeclaration(funnyName string) string {
+func generateProcedureDeclaration(funnyName string, subscriberName string) string {
 	procedureName := buildProcedureName(funnyName)
-	return fmt.Sprintf(`    PROCEDURE %s(
+	return wrapSubscriberGeneratedMethod(subscriberName, fmt.Sprintf(`    PROCEDURE %s(
         message_   IN CLOB,
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
 		process_name_  IN VARCHAR2 DEFAULT NULL
-    );`, procedureName)
+    );`, procedureName))
 }
 
 // generateProcedureBody generates the PL/SQL body for a subscriber procedure. The
 // procedure delegates to Enqueue_Event___ with the subscriber's funny name hardcoded
 // for targeted message routing.
-func generateProcedureBody(funnyName string) string {
+func generateProcedureBody(funnyName string, subscriberName string) string {
 	procedureName := buildProcedureName(funnyName)
 	upperName := strings.ToUpper(funnyName)
-	return fmt.Sprintf(`    PROCEDURE %s(
+	return wrapSubscriberGeneratedMethod(subscriberName, fmt.Sprintf(`    PROCEDURE %s(
         message_   IN CLOB,
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
 		process_name_  IN VARCHAR2 DEFAULT NULL
@@ -414,5 +552,5 @@ func generateProcedureBody(funnyName string) string {
             payload           => message_,
             subscriber_name_  => '%s'
         );
-    END %s;`, procedureName, upperName, procedureName)
+	END %s;`, procedureName, upperName, procedureName))
 }

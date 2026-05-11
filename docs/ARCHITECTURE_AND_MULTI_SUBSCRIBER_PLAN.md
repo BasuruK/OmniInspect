@@ -645,9 +645,9 @@ END Subscriber_Procedure_Exists;
 Add methods for procedure management:
 
 ```go
-// GenerateSubscriberProcedure creates a unique trace procedure for this subscriber
-func (ss *SubscriberService) GenerateSubscriberProcedure(subscriber domain.Subscriber) error {
-    query := `BEGIN OMNI_TRACER_API.Generate_Subscriber_Procedure(:subscriberName); END;`
+// EnsureSubscriberProcedure creates or reuses the owned trace procedure for this subscriber
+func (ss *SubscriberService) EnsureSubscriberProcedure(subscriber domain.Subscriber) error {
+    query := `BEGIN OMNI_TRACER_API.Ensure_Subscriber_Procedure(:subscriberName); END;`
     return ss.db.ExecuteWithParams(query, map[string]interface{}{
         "subscriberName": subscriber.Name,
     })
@@ -678,9 +678,9 @@ if err != nil {
     log.Fatalf("failed to register subscriber: %v", err)
 }
 
-// Generate unique trace procedure for this client
-if err := subscriberService.GenerateSubscriberProcedure(subscriber); err != nil {
-    log.Fatalf("failed to generate subscriber procedure: %v", err)
+// Ensure the owned trace procedure exists for this client
+if err := subscriberService.EnsureSubscriberProcedure(subscriber); err != nil {
+    log.Fatalf("failed to ensure subscriber procedure: %v", err)
 }
 
 procName := subscriberService.GetTraceProcedureName(subscriber)
@@ -704,7 +704,7 @@ defer func() {
 │  Client A (SUB_AAA)                    Client B (SUB_BBB)                    │
 │       │                                     │                               │
 │       │ 1. RegisterSubscriber()             │ 1. RegisterSubscriber()       │
-│       │ 2. GenerateSubscriberProcedure()    │ 2. GenerateSubscriberProcedure│
+│       │ 2. EnsureSubscriberProcedure()      │ 2. EnsureSubscriberProcedure() │
 │       │                                     │                               │
 │       │ Returns: TRACE_MESSAGE_SUB_AAA      │ Returns: TRACE_MESSAGE_SUB_BBB│
 │       │                                     │                               │

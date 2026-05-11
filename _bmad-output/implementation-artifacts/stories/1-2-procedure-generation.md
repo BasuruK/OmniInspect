@@ -15,8 +15,8 @@ last_updated: "2026-05-03"
 ## Story
 
 As a system,
-I want to generate `TRACE_MESSAGE_<FUNNY_NAME>()` procedures that call the internal enqueue helper with a subscriber routing parameter,
-So that messages are routed to the correct subscriber.
+I want to ensure `TRACE_MESSAGE_<FUNNY_NAME>()` procedures are owned by the current subscriber and call the internal enqueue helper with a subscriber routing parameter,
+So that messages are routed to the correct subscriber and reused safely only by the original owner.
 
 ## Acceptance Criteria
 
@@ -25,9 +25,13 @@ So that messages are routed to the correct subscriber.
 **Then** the procedure `TRACE_MESSAGE_BARNACLE(message_, log_level_, process_name_?)` is created inside OMNI_TRACER_API package
 **And** it calls `Enqueue_Event___(log_level_ => log_level_, payload => message_, subscriber_name_ => 'BARNACLE', process_name_ => process_name_)`
 
-**Given** the subscriber's procedure already exists
+**Given** the subscriber's procedure already exists and carries the current subscriber ownership markers
 **When** OmniView starts
 **Then** no new procedure is created (idempotent)
+
+**Given** the subscriber's procedure already exists but the ownership markers belong to another subscriber
+**When** OmniView starts
+**Then** a new funny name is selected and a new owned procedure is deployed
 
 ---
 
@@ -35,17 +39,17 @@ So that messages are routed to the correct subscriber.
 
 - [x] Create `internal/service/subscribers/procedure_generator.go` with DDL generation logic for TRACE_MESSAGE_<name> procedures
 - [x] Add `ProcedureExists` method to OracleAdapter to check if a procedure already exists in the package
-- [x] Implement `GenerateSubscriberProcedure` method that generates and executes DDL for subscriber procedure
+- [x] Implement `EnsureSubscriberProcedure` method that generates and executes DDL for subscriber procedure ownership
 - [x] Add error type `ErrProcedureGeneration` for procedure generation failures
 - [x] Implement idempotent creation - check procedure exists before creating
-- [x] Call `GenerateSubscriberProcedure` during subscriber registration in `RegisterSubscriber`
+- [x] Call `EnsureSubscriberProcedure` during subscriber registration in `RegisterSubscriber`
 - [x] Write unit tests for procedure generation logic
 - [x] Verify build passes (make build)
 - [x] Verify tests pass (make test)
 
 ### Review Findings
 
-- [x] [Review][Patch] Generated procedure routes messages to an unregistered consumer [internal/service/subscribers/procedure_generator.go:101]
+- [x] [Review][Patch] Generated procedure ownership must match the persisted subscriber alias [internal/service/subscribers/procedure_generator.go:101]
 - [x] [Review][Patch] Funny name is not persisted through BoltDB serialization, breaking restart idempotence [internal/core/domain/subscriber.go:172]
 - [x] [Review][Patch] Dynamic DDL is executed in a form Oracle cannot apply as written [internal/service/subscribers/procedure_generator.go:95]
 - [x] [Review][Patch] Base package enqueue helper did not yet support subscriber-scoped routing, so generated procedures could not safely share one helper path [assets/sql/Omni_Tracer.sql:101]
@@ -59,9 +63,9 @@ So that messages are routed to the correct subscriber.
 
 1. **DDL Generation**: Build updated package specification/body text in Go and deploy it via `DeployFile()`
 2. **Static base package (Omni_Tracer.sql)** provides the unified `Enqueue_Event___()` helper shape and serves as the fallback template
-3. **Per-subscriber procedures** are injected into the current `OMNI_TRACER_API` package source and redeployed as packaged procedures
+3. **Per-subscriber procedures** are injected into the current `OMNI_TRACER_API` package source, wrapped with ownership markers, and redeployed as packaged procedures when the owner matches
 4. **Consumer Routing**: Oracle subscriber registration and dequeue use the assigned funny name as the AQ consumer alias
-5. **Idempotent**: Check `user_procedures` for existing packaged procedures before creating and preserve persisted funny names across restarts
+5. **Idempotent**: Check the owned procedure block before creating or reusing it, and preserve persisted funny names across restarts
 6. **Name validation**: Validate funny names through the existing `FunnyName` domain rules before any package update
 
 ### SQL for Checking Procedure Existence
@@ -100,9 +104,9 @@ END TRACE_MESSAGE_BARNACLE;
 
 ### Key Files
 
-- `internal/service/subscribers/procedure_generator.go` - DDL generation and execution
+- `internal/service/subscribers/procedure_generator.go` - Ownership-aware DDL generation and execution
 - `internal/adapter/storage/oracle/oracle_adapter.go` - Added `ProcedureExists()` method
-- `internal/service/subscribers/subscriber_service.go` - Call procedure generation on registration
+- `internal/service/subscribers/subscriber_service.go` - Call ownership-aware procedure ensure on registration
 - `internal/core/domain/errors.go` - Added procedure-related errors
 - `internal/core/domain/subscriber.go` - Added funny-name persistence and consumer alias handling
 - `internal/adapter/storage/oracle/subscriptions.go` - Register Oracle subscribers with the funny-name consumer alias
@@ -151,8 +155,8 @@ END TRACE_MESSAGE_BARNACLE;
 
 ### Completion Notes
 
-✅ Story 1-2 completed: Procedure Generation with subscriber-routed enqueue implemented with:
-- `ProcedureGenerator` struct with `GenerateSubscriberProcedure()` and `DropSubscriberProcedure()`
+✅ Story 1-2 completed: Procedure Ownership with subscriber-routed enqueue implemented with:
+- `ProcedureGenerator` struct with `EnsureSubscriberProcedure()` and `DropSubscriberProcedure()`
 - `ProcedureExists()` method in OracleAdapter checking `user_procedures` table
 - Packaged procedure generation for `TRACE_MESSAGE_<FUNNY_NAME>` procedures calling the unified internal `Enqueue_Event___()` helper
 - Idempotent creation and restart-safe funny-name persistence

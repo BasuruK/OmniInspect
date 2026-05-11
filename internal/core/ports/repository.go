@@ -129,8 +129,11 @@ type ProcedureGeneratorRepository interface {
 	// ReleaseFunnyName releases a previously reserved funny name
 	ReleaseFunnyName(ctx context.Context, funnyName string) error
 
-	// GenerateSubscriberProcedure generates a PL/SQL procedure for the subscriber
-	GenerateSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error
+	// EnsureOwnedFunnyName ensures the subscriber has an unclaimed funny name.
+	EnsureOwnedFunnyName(ctx context.Context, subscriber *domain.Subscriber) (changed bool, err error)
+
+	// EnsureSubscriberProcedure ensures a PL/SQL procedure is owned by and routed to the subscriber.
+	EnsureSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error
 
 	// DropSubscriberProcedure drops the PL/SQL procedure for the subscriber
 	DropSubscriberProcedure(ctx context.Context, funnyName string) error

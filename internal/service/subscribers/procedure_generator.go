@@ -346,16 +346,7 @@ func renderPackageDeploymentSQL(packageSpec string, packageBody string) string {
 `, packageSpecStart, spec, packageSpecEnd, packageBodyStart, body, packageBodyEnd)
 }
 
-// injectProcedureDeclaration adds a new procedure declaration to the package spec
-// if it does not already exist.
-func injectProcedureDeclaration(packageSpec string, funnyName string) (string, error) {
-	procedureName := buildProcedureName(funnyName)
-	if containsProcedureSignature(packageSpec, procedureName) {
-		return packageSpec, nil
-	}
-	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName, ""))
-}
-
+// injectProcedureDeclarationForSubscriber ensures the package spec contains a procedure declaration for the subscriber, injecting it if missing.
 func injectProcedureDeclarationForSubscriber(packageSpec string, funnyName string, subscriberName string) (string, error) {
 	procedureName := buildProcedureName(funnyName)
 	if containsProcedureSignature(packageSpec, procedureName) {
@@ -364,16 +355,7 @@ func injectProcedureDeclarationForSubscriber(packageSpec string, funnyName strin
 	return insertBeforePackageEnd(packageSpec, generateProcedureDeclaration(funnyName, subscriberName))
 }
 
-// injectProcedureBody adds a new procedure body to the package body if it does not
-// already exist.
-func injectProcedureBody(packageBody string, funnyName string) (string, error) {
-	procedureName := buildProcedureName(funnyName)
-	if containsProcedureSignature(packageBody, procedureName) {
-		return packageBody, nil
-	}
-	return insertBeforePackageEnd(packageBody, generateProcedureBody(funnyName, ""))
-}
-
+// injectProcedureBodyForSubscriber checks if the procedure body already exists (e.g., from a previous deployment) and if not, injects the generated procedure body for the subscriber into the package body source.
 func injectProcedureBodyForSubscriber(packageBody string, funnyName string, subscriberName string) (string, error) {
 	procedureName := buildProcedureName(funnyName)
 	if containsProcedureSignature(packageBody, procedureName) {
@@ -453,14 +435,21 @@ func extractProcedureBlock(packageSource string, startNeedle string, endNeedle s
 	endIdx := startIdx + endRelIdx + len(endNeedle)
 	markerIdx := strings.LastIndex(upperSource[:startIdx], strings.ToUpper(ownerMarker))
 	if markerIdx != -1 {
-		endMarkerIdx := strings.Index(upperSource[endIdx:], strings.ToUpper(generatedMethodEndMarker))
-		if endMarkerIdx != -1 {
-			endIdx = endIdx + endMarkerIdx + len(generatedMethodEndMarker)
-			lineEndIdx := strings.Index(packageSource[endIdx:], "\n")
-			if lineEndIdx != -1 {
-				endIdx += lineEndIdx
+		// Only expand when the ownership marker immediately precedes the procedure (only whitespace between them)
+		markerLineEnd := strings.Index(upperSource[markerIdx:], "\n")
+		if markerLineEnd != -1 {
+			markerLineEndAbs := markerIdx + markerLineEnd + 1
+			if strings.TrimSpace(packageSource[markerLineEndAbs:startIdx]) == "" {
+				endMarkerIdx := strings.Index(upperSource[endIdx:], strings.ToUpper(generatedMethodEndMarker))
+				if endMarkerIdx != -1 {
+					endIdx = endIdx + endMarkerIdx + len(generatedMethodEndMarker)
+					lineEndIdx := strings.Index(packageSource[endIdx:], "\n")
+					if lineEndIdx != -1 {
+						endIdx += lineEndIdx
+					}
+					startIdx = markerIdx
+				}
 			}
-			startIdx = markerIdx
 		}
 	}
 	return packageSource[startIdx:endIdx], true, nil
@@ -480,11 +469,17 @@ func insertBeforePackageEnd(packageSource string, block string) (string, error) 
 
 // removeProcedureBlock removes a procedure block from package source given start and
 // end needle strings. Case-insensitive search. Returns source unchanged if not found.
+// Also strips adjacent ownership-marker lines when they immediately wrap the block.
 func removeProcedureBlock(packageSource string, startNeedle string, endNeedle string) (string, error) {
 	upperSource := strings.ToUpper(packageSource)
 	startIdx := strings.Index(upperSource, strings.ToUpper(startNeedle))
 	if startIdx == -1 {
-		return packageSource, nil
+		// Oracle may format the signature with a space before '(' — retry with that form
+		startNeedleAlt := strings.Replace(startNeedle, "(", " (", 1)
+		startIdx = strings.Index(upperSource, strings.ToUpper(startNeedleAlt))
+		if startIdx == -1 {
+			return packageSource, nil
+		}
 	}
 
 	endRelIdx := strings.Index(upperSource[startIdx:], strings.ToUpper(endNeedle))
@@ -492,6 +487,38 @@ func removeProcedureBlock(packageSource string, startNeedle string, endNeedle st
 		return "", fmt.Errorf("removeProcedureBlock: %w", domain.ErrProcedureEndMarkerNotFound)
 	}
 	endIdx := startIdx + endRelIdx + len(endNeedle)
+
+	// Expand removal range to include adjacent ownership markers when they immediately wrap the block.
+	// Search backwards from the procedure start for a preceding @SECTION marker.
+	markerIdx := strings.LastIndex(upperSource[:startIdx], strings.ToUpper(generatedMethodMarker))
+	if markerIdx != -1 {
+		// Find the end of the marker line so we can measure the gap between it and the procedure.
+		markerLineEnd := strings.Index(upperSource[markerIdx:], "\n")
+		if markerLineEnd != -1 {
+			// Absolute position of the first character after the marker line.
+			markerLineEndAbs := markerIdx + markerLineEnd + 1
+			// Only treat the marker as "immediately preceding" when nothing but
+			// whitespace sits between the end of the marker line and the procedure keyword.
+			if strings.TrimSpace(packageSource[markerLineEndAbs:startIdx]) == "" {
+				// The marker wraps this block — look for the matching @END_SECTION after the procedure.
+				endMarkerIdx := strings.Index(upperSource[endIdx:], strings.ToUpper(generatedMethodEndMarker))
+				if endMarkerIdx != -1 {
+					// Convert the relative offset to an absolute position in the source.
+					endMarkerAbsIdx := endIdx + endMarkerIdx
+					// Advance past the full @END_SECTION line, including its newline.
+					endMarkerLineEnd := strings.Index(upperSource[endMarkerAbsIdx:], "\n")
+					if endMarkerLineEnd != -1 {
+						endIdx = endMarkerAbsIdx + endMarkerLineEnd + 1
+					} else {
+						// No trailing newline — advance past the marker text itself.
+						endIdx = endMarkerAbsIdx + len(generatedMethodEndMarker)
+					}
+					// Pull the removal start back to include the @SECTION line.
+					startIdx = markerIdx
+				}
+			}
+		}
+	}
 
 	prefix := strings.TrimRight(packageSource[:startIdx], "\n")
 	suffix := strings.TrimLeft(packageSource[endIdx:], "\n")
@@ -529,7 +556,7 @@ func generateProcedureDeclaration(funnyName string, subscriberName string) strin
 	return wrapSubscriberGeneratedMethod(subscriberName, fmt.Sprintf(`    PROCEDURE %s(
         message_   IN CLOB,
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
-		process_name_  IN VARCHAR2 DEFAULT NULL
+        process_name_  IN VARCHAR2 DEFAULT NULL
     );`, procedureName))
 }
 
@@ -542,15 +569,15 @@ func generateProcedureBody(funnyName string, subscriberName string) string {
 	return wrapSubscriberGeneratedMethod(subscriberName, fmt.Sprintf(`    PROCEDURE %s(
         message_   IN CLOB,
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
-		process_name_  IN VARCHAR2 DEFAULT NULL
+        process_name_  IN VARCHAR2 DEFAULT NULL
     )
     IS
     BEGIN
         Enqueue_Event___(
-			process_name_     => process_name_,
+            process_name_     => process_name_,
             log_level_        => log_level_,
             payload           => message_,
             subscriber_name_  => '%s'
         );
-	END %s;`, procedureName, upperName, procedureName))
+    END %s;`, procedureName, upperName, procedureName))
 }

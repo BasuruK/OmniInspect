@@ -535,11 +535,8 @@ func validateFunnyNameForProcedure(name string) error {
 	if name == "" {
 		return domain.ErrInvalidFunnyName
 	}
-	if err := domain.ValidateFunnyNameFormat(name); err != nil {
+	if err := domain.ValidateFunnyNameForSQLInjection(name); err != nil {
 		return err
-	}
-	if !domain.IsValidFunnyName(name) {
-		return fmt.Errorf("validateFunnyNameForProcedure: %w", domain.ErrInvalidFunnyName)
 	}
 	return nil
 }

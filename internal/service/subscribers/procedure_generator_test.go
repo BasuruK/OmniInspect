@@ -215,13 +215,33 @@ func TestProcedureGenerator_GenerateSubscriberProcedure_SkipsExistingProcedure(t
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
         process_name_  IN VARCHAR2 DEFAULT NULL
     );
+    PROCEDURE TRACE_MESSAGE_CHICKEN(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
 END OMNI_TRACER_API;`),
 		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     PROCEDURE TRACE_MESSAGE_BARNACLE(
         message_   IN CLOB,
         log_level_ IN VARCHAR2 DEFAULT 'INFO',
         process_name_  IN VARCHAR2 DEFAULT NULL
-    ) IS BEGIN NULL; END TRACE_MESSAGE_BARNACLE;
+    )
+    IS
+    BEGIN
+        Enqueue_Event___(
+            process_name_     => process_name_,
+            log_level_        => log_level_,
+            payload           => message_,
+            subscriber_name_  => 'BARNACLE'
+        );
+    END TRACE_MESSAGE_BARNACLE;
+
+    PROCEDURE TRACE_MESSAGE_CHICKEN(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    ) IS BEGIN NULL; END TRACE_MESSAGE_CHICKEN;
 END OMNI_TRACER_API;`),
 	}
 	pg, err := NewProcedureGenerator(stub)
@@ -422,8 +442,12 @@ func TestSubscriberService_RegisterSubscriber_PersistsBeforeProcedureGenerationS
 	if len(repo.saved) != 1 {
 		t.Fatalf("expected subscriber to be persisted before procedure generation, got %d saves", len(repo.saved))
 	}
-	if got := domain.DefaultFunnyNameGenerator().AvailableCount(); got != initialAvailable {
-		t.Fatalf("expected funny name to remain available for new subscriber, available count = %d, want %d", got, initialAvailable)
+	heldAlias := repo.saved[0].FunnyName()
+	if heldAlias == "" {
+		t.Fatal("expected persisted subscriber to hold a funny name")
+	}
+	if got, want := domain.DefaultFunnyNameGenerator().AvailableCount(), initialAvailable-1; got != want {
+		t.Fatalf("expected persisted subscriber to retain funny name %q, available count = %d, want %d", heldAlias, got, want)
 	}
 }
 

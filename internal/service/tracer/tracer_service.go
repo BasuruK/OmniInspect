@@ -363,7 +363,7 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 		return fmt.Errorf("failed to read stored package version: %w", err)
 	}
 
-	if storedHash == currentHash {
+	if *exists && storedHash == currentHash {
 		log.Printf("[Tracer] Omni_Tracer.sql content unchanged (hash=%s), skipping DeployFile", currentHash[:16])
 		return nil
 	}

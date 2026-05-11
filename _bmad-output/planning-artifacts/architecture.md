@@ -158,7 +158,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - Simplifies permissions and deployment
 
 **Implementation Note**:
-- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that sets `message_properties_.correlation` for routing and embeds a `SUBSCRIBER` field in the JSON payload for informational purposes
+- `Enqueue_Event___()` in the base package supports an optional `subscriber_name_` parameter that sets `message_properties_.correlation` for routing
 - Generated procedures call `Enqueue_Event___()` internally with `subscriber_name_` set to the assigned funny name
 - Message routing is enforced at the Oracle queue level via correlation-based subscriber rules (see DEC-6)
 
@@ -296,7 +296,7 @@ DBMS_AQADM.ADD_SUBSCRIBER (
 
 `ConsumerName()` returns FunnyName when assigned (always after registration), falling back to UUID for legacy subscribers.
 
-**The `SUBSCRIBER` JSON field** in the payload (`message_.PUT('SUBSCRIBER', subscriber_name_)`) remains as informational metadata. It is NOT used for routing — correlation handles that. It may be used for UI display purposes in a future story.
+Subscriber routing is represented by `message_properties_.correlation`; the JSON payload does not include a `SUBSCRIBER` metadata field.
 
 **Key properties**:
 - Routing handled at Oracle queue level — zero Go/C code changes for routing

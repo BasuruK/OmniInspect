@@ -97,28 +97,25 @@ func (pg *ProcedureGenerator) GenerateSubscriberProcedure(ctx context.Context, s
 		return fmt.Errorf("failed to load package source: %w", err)
 	}
 
-	// ALWAYS check both spec and body for the correct signature/content.
-	// injectProcedureDeclaration and injectProcedureBody skip if the signature matches.
-	// However, to ensure existing installations with old bodies (missing process_name_)
-	// are updated, we must first remove the old version if it exists but differs.
-	if containsProcedureSignature(packageSpec, procedureName) {
-		// If it's already using the new signature with process_name_, we can trust
-		// the body is likely correct or will be handled by body injection check.
-		// But the requirement asks for a content/version check.
-		// Since we don't have a version marker, we use the signature as a proxy for the 'version'.
-		if !strings.Contains(strings.ToUpper(packageSpec), "PROCESS_NAME_") {
-			// Old version found - strip it so we can re-inject new version
-			packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
-			if err != nil {
-				return fmt.Errorf("failed to strip old package spec: %w", err)
-			}
-			packageBody, err = removeProcedureBody(packageBody, procedureName)
-			if err != nil {
-				return fmt.Errorf("failed to strip old package body: %w", err)
-			}
-		} else {
-			// Current version exists
+	declarationBlock, hasDeclaration, err := extractProcedureDeclaration(packageSpec, procedureName)
+	if err != nil {
+		return fmt.Errorf("failed to inspect package spec: %w", err)
+	}
+	bodyBlock, hasBody, err := extractProcedureBody(packageBody, procedureName)
+	if err != nil {
+		return fmt.Errorf("failed to inspect package body: %w", err)
+	}
+	if hasDeclaration && hasBody {
+		if strings.Contains(strings.ToUpper(declarationBlock), "PROCESS_NAME_") && strings.Contains(strings.ToUpper(bodyBlock), "PROCESS_NAME_") {
 			return nil
+		}
+		packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
+		if err != nil {
+			return fmt.Errorf("failed to strip old package spec: %w", err)
+		}
+		packageBody, err = removeProcedureBody(packageBody, procedureName)
+		if err != nil {
+			return fmt.Errorf("failed to strip old package body: %w", err)
 		}
 	}
 
@@ -149,9 +146,6 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: failed to check procedure existence: %w", err)
 	}
 	if !exists {
-		if err := pg.ReleaseFunnyName(ctx, funnyName); err != nil {
-			return fmt.Errorf("DropSubscriberProcedure: %w", err)
-		}
 		return nil
 	}
 
@@ -173,9 +167,6 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
 
-	if err := pg.ReleaseFunnyName(ctx, funnyName); err != nil {
-		return fmt.Errorf("DropSubscriberProcedure: %w", err)
-	}
 	return nil
 }
 
@@ -312,6 +303,29 @@ func removeProcedureDeclaration(packageSpec string, procedureName string) (strin
 // removeProcedureBody removes a procedure body from the package body.
 func removeProcedureBody(packageBody string, procedureName string) (string, error) {
 	return removeProcedureBlock(packageBody, fmt.Sprintf("PROCEDURE %s(", procedureName), fmt.Sprintf("END %s;", procedureName))
+}
+
+func extractProcedureDeclaration(packageSpec string, procedureName string) (string, bool, error) {
+	return extractProcedureBlock(packageSpec, fmt.Sprintf("PROCEDURE %s(", procedureName), ");")
+}
+
+func extractProcedureBody(packageBody string, procedureName string) (string, bool, error) {
+	return extractProcedureBlock(packageBody, fmt.Sprintf("PROCEDURE %s(", procedureName), fmt.Sprintf("END %s;", procedureName))
+}
+
+func extractProcedureBlock(packageSource string, startNeedle string, endNeedle string) (string, bool, error) {
+	upperSource := strings.ToUpper(packageSource)
+	startIdx := strings.Index(upperSource, strings.ToUpper(startNeedle))
+	if startIdx == -1 {
+		return "", false, nil
+	}
+
+	endRelIdx := strings.Index(upperSource[startIdx:], strings.ToUpper(endNeedle))
+	if endRelIdx == -1 {
+		return "", true, fmt.Errorf("extractProcedureBlock: %w", domain.ErrProcedureEndMarkerNotFound)
+	}
+	endIdx := startIdx + endRelIdx + len(endNeedle)
+	return packageSource[startIdx:endIdx], true, nil
 }
 
 // insertBeforePackageEnd inserts a block of text before the package END marker.

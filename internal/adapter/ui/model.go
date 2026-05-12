@@ -447,6 +447,8 @@ func (m *Model) View() tea.View {
 					content = renderCenteredOverlay(content, m.dbSettings.addForm.Modal(), m.width, m.height)
 				} else if m.dbSettings.showDeleteConfirm {
 					content = renderCenteredOverlay(content, m.viewDeleteConfirmModal(), m.width, m.height)
+				} else if m.dbSettings.showDropProcedureConfirm {
+					content = renderCenteredOverlay(content, m.viewDropProcedureConfirmModal(), m.width, m.height)
 				}
 			} else if m.webhookSettings.visible {
 				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)

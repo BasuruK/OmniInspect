@@ -107,3 +107,14 @@ func (ss *SubscriberService) RegisterSubscriber(ctx context.Context) (*domain.Su
 
 	return subscriber, nil
 }
+
+// DropSubscriberProcedure removes the generated procedure for the subscriber.
+func (ss *SubscriberService) DropSubscriberProcedure(ctx context.Context, funnyName string) error {
+	if ss.procGen == nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", domain.ErrProcedureGeneration)
+	}
+	if err := ss.procGen.DropSubscriberProcedure(ctx, funnyName); err != nil {
+		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
+	return nil
+}

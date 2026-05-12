@@ -74,12 +74,12 @@ development_status:
 
   # Epic 3 Stories
   3-1-drop-subscriber-procedure:
-    status: "ready-for-dev"
+    status: "done"
     title: "Drop Subscriber Procedure (Danger Zone)"
     epic: "Epic 3: Danger Zone Implementation"
     owner: "dev-agent"
-    last_updated: "2026-04-28"
-    notes: "Add danger zone option to delete subscriber-specific procedure"
+    last_updated: "2026-05-12"
+    notes: "DangerZoneStyle, danger zone UI, D key handler, confirmation modal, async command wiring. make test and make build passing."
 
   3-2-drop-entire-package:
     status: "ready-for-dev"
@@ -102,11 +102,11 @@ development_status:
 # ==========================================
 metrics:
   total_stories: 9
-  completed: 5
+  completed: 6
   in_progress: 0
-  ready_for_dev: 4
+  ready_for_dev: 3
   blocked: 0
-  completion_percentage: 56
+  completion_percentage: 67
 
 # ==========================================
 # EPIC SUMMARY
@@ -129,9 +129,9 @@ epic_summary:
   epic-3:
     title: "Epic 3: Danger Zone Implementation"
     stories_total: 3
-    stories_completed: 0
+    stories_completed: 1
     stories_in_progress: 0
-    status: "pending"
+    status: "in-progress"
 
 # ==========================================
 # NEXT ACTIONS

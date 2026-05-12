@@ -420,6 +420,89 @@ END OMNI_TRACER_API;`),
 	}
 }
 
+func TestProcedureGenerator_DropSubscriberProcedure_DropsFromSourceEvenWhenProcedureExistsQueryReturnsFalse(t *testing.T) {
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): false},
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    );
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+    PROCEDURE Enqueue_Event___ (
+        process_name_       IN VARCHAR2,
+        log_level_          IN VARCHAR2,
+        payload             IN CLOB,
+        additional_props_   IN CLOB DEFAULT NULL,
+        subscriber_name_    IN VARCHAR2 DEFAULT NULL )
+    IS
+    BEGIN
+        NULL;
+    END Enqueue_Event___;
+
+-- @SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+    PROCEDURE TRACE_MESSAGE_BARNACLE(
+        message_   IN CLOB,
+        log_level_ IN VARCHAR2 DEFAULT 'INFO',
+        process_name_  IN VARCHAR2 DEFAULT NULL
+    )
+    IS
+    BEGIN
+        Enqueue_Event___(
+            process_name_     => process_name_,
+            log_level_        => log_level_,
+            payload           => message_,
+            subscriber_name_  => 'BARNACLE'
+        );
+    END TRACE_MESSAGE_BARNACLE;
+-- @END_SECTION: SUBSCRIBER_GENERATED_METHOD : TEST_SUB
+END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+
+	if err := pg.DropSubscriberProcedure(context.Background(), "BARNACLE"); err != nil {
+		t.Fatalf("DropSubscriberProcedure() returned error: %v", err)
+	}
+
+	if stub.deployFileCallCount != 1 {
+		t.Fatalf("expected 1 package deploy, got %d", stub.deployFileCallCount)
+	}
+	if strings.Contains(stub.deployedSQL, "TRACE_MESSAGE_BARNACLE") {
+		t.Fatalf("package deployment still contains dropped procedure: %s", stub.deployedSQL)
+	}
+	if !strings.Contains(stub.deployedSQL, "PROCEDURE Enqueue_Event___ (") {
+		t.Fatalf("package deployment should preserve shared helpers: %s", stub.deployedSQL)
+	}
+}
+
+func TestProcedureGenerator_DropSubscriberProcedure_ReturnsNotFoundWhenProcedureMissingFromSource(t *testing.T) {
+	stub := &stubDBRepo{
+		packageSpecSource: splitLines(`CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
+END OMNI_TRACER_API;`),
+		packageBodySource: splitLines(`CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
+END OMNI_TRACER_API;`),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+
+	err = pg.DropSubscriberProcedure(context.Background(), "BARNACLE")
+	if !errors.Is(err, domain.ErrProcedureNotFound) {
+		t.Fatalf("DropSubscriberProcedure() error = %v, want ErrProcedureNotFound", err)
+	}
+	if stub.deployFileCallCount != 0 {
+		t.Fatalf("expected no package deploy, got %d", stub.deployFileCallCount)
+	}
+}
+
 func TestNewProcedureGenerator_RejectsNilDatabase(t *testing.T) {
 	pg, err := NewProcedureGenerator(nil)
 	if !errors.Is(err, domain.ErrNilDatabase) {

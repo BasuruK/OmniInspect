@@ -220,18 +220,12 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	}
 
 	procedureName := buildProcedureName(funnyName)
-	exists, err := pg.db.ProcedureExists(ctx, domain.OmniTracerPackage, procedureName)
-	if err != nil {
-		return fmt.Errorf("DropSubscriberProcedure: failed to check procedure existence: %w", err)
-	}
-	if !exists {
-		return nil
-	}
-
 	packageSpec, packageBody, err := pg.fetchCurrentPackageSource(ctx)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
+	originalSpec := packageSpec
+	originalBody := packageBody
 
 	packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
 	if err != nil {
@@ -240,6 +234,9 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	packageBody, err = removeProcedureBody(packageBody, procedureName)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
+	if packageSpec == originalSpec && packageBody == originalBody {
+		return fmt.Errorf("DropSubscriberProcedure: %w", domain.ErrProcedureNotFound)
 	}
 
 	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {

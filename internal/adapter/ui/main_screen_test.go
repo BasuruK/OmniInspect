@@ -21,6 +21,7 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	t.Parallel()
 
 	m := newTestMainModel(t, 120, 36)
+	m.appConfig = mustNewTestDatabaseSettings(t, "QA_DB")
 	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
 
 	layout := m.computeMainLayout()
@@ -30,6 +31,9 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	}
 	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
+	}
+	if !headerLineContainsAll(layout.header, "QA_DB", "OMNI_TRACER_API.TRACE_MESSAGE_BARNACLE('msg')") {
+		t.Fatalf("header should place procedure call next to database name, got: %s", layout.header)
 	}
 }
 
@@ -531,6 +535,34 @@ func mustNewTestSubscriberWithFunnyName(t *testing.T, name, funnyName string) *d
 	}
 
 	return subscriber
+}
+
+func mustNewTestDatabaseSettings(t *testing.T, databaseID string) *domain.DatabaseSettings {
+	t.Helper()
+
+	db, err := domain.NewDatabaseSettings(databaseID, "APPDB", "localhost", domain.DefaultOraclePort, "app", "secret")
+	if err != nil {
+		t.Fatalf("failed to create database settings: %v", err)
+	}
+
+	return db
+}
+
+func headerLineContainsAll(header string, parts ...string) bool {
+	for _, line := range strings.Split(header, "\n") {
+		containsAll := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				containsAll = false
+				break
+			}
+		}
+		if containsAll {
+			return true
+		}
+	}
+
+	return false
 }
 
 func newTestQueueMessage(t *testing.T) *domain.QueueMessage {

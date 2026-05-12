@@ -58,14 +58,27 @@ func renderCenteredOverlay(base, overlay string, width, height int) string {
 	return strings.Join(baseLines, "\n")
 }
 
-// renderScreenHeader: renders a header with title, supporting detail lines on the left and meta info on the right.
+// renderScreenHeader: renders a header with title, supporting detail next to the subtitle, and meta info on the right.
 func renderScreenHeader(width int, title, subtitle, detail, meta string) string {
 	leftParts := []string{styles.HeaderTitleStyle.Render(title)}
+	subtitleLine := ""
 	if strings.TrimSpace(subtitle) != "" {
-		leftParts = append(leftParts, styles.HeaderSubtitleStyle.Render(subtitle))
+		subtitleLine = styles.HeaderSubtitleStyle.Render(subtitle)
 	}
 	if strings.TrimSpace(detail) != "" {
-		leftParts = append(leftParts, detail)
+		if subtitleLine != "" {
+			subtitleLine = lipgloss.JoinHorizontal(
+				lipgloss.Center,
+				subtitleLine,
+				styles.HeaderSubtitleStyle.Render("  •  "),
+				detail,
+			)
+		} else {
+			subtitleLine = detail
+		}
+	}
+	if strings.TrimSpace(subtitleLine) != "" {
+		leftParts = append(leftParts, subtitleLine)
 	}
 
 	left := lipgloss.JoinVertical(lipgloss.Left, leftParts...)

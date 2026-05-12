@@ -152,7 +152,7 @@ var (
 			Bold(true)
 
 	ProcedureCallStyle = lipgloss.NewStyle().
-				Foreground(PrimaryColor).
+				Foreground(ApiCallerColor).
 				Bold(true)
 )
 

@@ -14,7 +14,52 @@ import (
 )
 
 // ==========================================
-// wrapText Tests
+// Procedure Call Display Tests
+// ==========================================
+
+func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
+
+	layout := m.computeMainLayout()
+
+	if !strings.Contains(layout.header, "OMNI_TRACER_API.TRACE_MESSAGE_BARNACLE('msg')") {
+		t.Fatalf("header should contain procedure call, got: %s", layout.header)
+	}
+	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
+		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
+	}
+}
+
+func TestComputeMainLayout_WithoutFunnyNameOmitsProcedureCall(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.subscriber = mustNewTestSubscriber(t, "SUB_TEST")
+
+	layout := m.computeMainLayout()
+
+	if strings.Contains(layout.header, "TRACE_MESSAGE_") {
+		t.Fatalf("header should not contain procedure call when no funny name, got: %s", layout.header)
+	}
+}
+
+func TestMainViewWithProcedureCallStaysWithinTerminalAtNarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 40, 24)
+	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
+	m.initViewport()
+
+	rendered := m.viewMain()
+
+	assertRenderedWithinTerminal(t, rendered, m.width, m.height)
+}
+
+// ==========================================
+// Helper Functions
 // ==========================================
 
 func TestWrapTextBasic(t *testing.T) {
@@ -464,6 +509,28 @@ func newTestMainModel(t *testing.T, width, height int) *Model {
 			autoScroll: true,
 		},
 	}
+}
+
+func mustNewTestSubscriber(t *testing.T, name string) *domain.Subscriber {
+	t.Helper()
+
+	subscriber, err := domain.NewSubscriberWithDefaults(name)
+	if err != nil {
+		t.Fatalf("failed to create subscriber: %v", err)
+	}
+
+	return subscriber
+}
+
+func mustNewTestSubscriberWithFunnyName(t *testing.T, name, funnyName string) *domain.Subscriber {
+	t.Helper()
+
+	subscriber, err := domain.NewSubscriberWithFunnyName(name, funnyName, domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("failed to create subscriber with funny name: %v", err)
+	}
+
+	return subscriber
 }
 
 func newTestQueueMessage(t *testing.T) *domain.QueueMessage {

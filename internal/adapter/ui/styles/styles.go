@@ -150,6 +150,10 @@ var (
 	LogLevelStyle = lipgloss.NewStyle().
 			Foreground(TextColor).
 			Bold(true)
+
+	ProcedureCallStyle = lipgloss.NewStyle().
+				Foreground(PrimaryColor).
+				Bold(true)
 )
 
 // ==========================================

@@ -1,11 +1,11 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -181,7 +181,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			databases, err := m.dbSettingsRepo.GetAll(m.ctx)
 			if err != nil {
-				log.Printf("[UI] Failed to load database settings: %v", err)
+				logger.Error("failed to load database settings", "error", err)
 				databases = []domain.DatabaseSettings{}
 			}
 			m.initDatabaseSettings(databases, activeID)
@@ -193,7 +193,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				if errors.Is(err, domain.ErrWebhookConfigNotFound) {
 					webhookConfig = nil
 				} else {
-					log.Printf("[UI] Failed to load webhook config: %v", err)
+					logger.Error("failed to load webhook config", "error", err)
 					webhookConfig = nil
 				}
 			}

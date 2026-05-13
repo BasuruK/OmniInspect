@@ -1,10 +1,10 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/ui/styles"
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -35,7 +35,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 	case updateCheckResultMsg:
 		if msg.err != nil {
 			// Update check failed — non-fatal, log warning and proceed
-			log.Printf("[updater] Update check failed: %v\n", msg.err)
+			logger.Warn("update check failed", "error", msg.err)
 			m.update.checking = false
 			return m, m.continueStartupAfterUpdateGate()
 		}
@@ -125,7 +125,7 @@ func (m *Model) updateLoading(msg tea.Msg) (*Model, tea.Cmd) {
 
 		databases, err := m.dbSettingsRepo.GetAll(m.ctx)
 		if err != nil {
-			log.Printf("[UI] Failed to load database settings: %v", err)
+			logger.Error("failed to load database settings", "error", err)
 			databases = nil
 		}
 

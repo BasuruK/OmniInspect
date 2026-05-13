@@ -37,6 +37,7 @@ Version note: dependency versions below are intentionally documented at major.mi
 - Optional webhook forwarding for messages flagged by `OMNI_TRACER_API.Trace_Message_To_Webhook`.
 - Local BoltDB persistence for configuration, permissions, and related runtime state.
 - Self-update support and release/platform-specific build packaging.
+- Structured logging via `internal/adapter/logger` backed by Go `log/slog` — captures diagnostic events (dequeue errors, webhook failures, batch processing) to `omniview.log` with source location.
 
 ## Architecture Highlights
 

@@ -306,7 +306,7 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 			logger.Warn("event channel full, dropping message")
 		}
 	} else {
-		logger.Info("event channel unavailable, printing to stdout", "msg", msg.Format())
+		logger.Info("event channel unavailable, emitting via structured logger", "msg", msg.Format())
 	}
 
 	// Dispatch to webhook if configured

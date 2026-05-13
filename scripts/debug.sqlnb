@@ -24,7 +24,7 @@ cells:
                       WHEN 2 THEN v_level := 'ERROR';
                       WHEN 3 THEN v_level := 'DEBUG';
                   END CASE;
-                  OMNI_TRACER_API.TRACE_MESSAGE_PEBBLES('HI Trace Message No ' || i, v_level);
+                  OMNI_TRACER_API.TRACE_MESSAGE('HI Trace Message No ' || i, v_level);
               END;
           END LOOP;
           --COMMIT;  -- Important!

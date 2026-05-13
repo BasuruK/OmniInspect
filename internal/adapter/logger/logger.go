@@ -34,17 +34,18 @@ import (
 // ─────────────────────────
 
 // handle holds the active slog.Handler.
-// atomic.Pointer keeps swaps safe when Init() is called on the main
-// goroutine while other goroutines may already be logging.
-var handle atomic.Pointer[slog.Handler]
+// atomic.Value allows storage of the interface type directly (vs atomic.Pointer
+// which would require *slog.Handler). Swaps are safe when Init() is called on the
+// main goroutine while other goroutines may already be logging.
+var handle atomic.Value
 
 func init() {
 	// Bootstrap fallback: stderr until Init() configures the real file.
-	h := slog.Handler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelDebug,
-	}))
-	handle.Store(&h)
+	})
+	handle.Store(h)
 }
 
 // ─────────────────────────
@@ -57,16 +58,16 @@ func init() {
 //
 // Call once — only from cmd/omniview/main.go (composition root).
 func Init(logPath string) (func(), error) {
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("logger.Init: open %q: %w", logPath, err)
 	}
 
-	h := slog.Handler(slog.NewTextHandler(f, &slog.HandlerOptions{
+	h := slog.NewTextHandler(f, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelDebug,
-	}))
-	handle.Store(&h)
+	})
+	handle.Store(h)
 
 	return func() { _ = f.Close() }, nil
 }
@@ -80,12 +81,13 @@ func Init(logPath string) (func(), error) {
 // log entry reflects the package that called Debug/Info/Warn/Error.
 //
 // Stack depth for runtime.Callers:
-//   0 = runtime.Callers itself
-//   1 = emit
-//   2 = Debug / Info / Warn / Error (exported wrapper)
-//   3 = actual call site  ← we want this
+//
+//	0 = runtime.Callers itself
+//	1 = emit
+//	2 = Debug / Info / Warn / Error (exported wrapper)
+//	3 = actual call site  ← we want this
 func emit(level slog.Level, msg string, args ...any) {
-	h := *handle.Load()
+	h := handle.Load().(slog.Handler)
 	ctx := context.Background()
 	if !h.Enabled(ctx, level) {
 		return
@@ -121,5 +123,5 @@ func Error(msg string, args ...any) { emit(slog.LevelError, msg, args...) }
 //	log := logger.With("subscriber", name)
 //	log.Info("dequeue started")
 func With(args ...any) *slog.Logger {
-	return slog.New(*handle.Load()).With(args...)
+	return slog.New(handle.Load().(slog.Handler)).With(args...)
 }

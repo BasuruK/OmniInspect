@@ -1,12 +1,12 @@
 package boltdb
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
@@ -211,7 +211,7 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 			var settings domain.DatabaseSettings
 			if err := json.Unmarshal(v, &settings); err != nil {
 				// Log warning but continue iteration to return valid entries
-				log.Printf("warning: failed to unmarshal database settings for key %q: %v", key, err)
+				logger.Warn("failed to unmarshal database settings", "key", key, "error", err)
 				return nil
 			}
 			settings.SetPersistedKey(key)

@@ -1,12 +1,12 @@
 package boltdb
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -129,7 +129,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 		for _, entry := range toMigrate {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping legacy database setting: failed to unmarshal JSON: %v", err)
+				logger.Warn("skipping legacy database setting: failed to unmarshal JSON", "error", err)
 				continue
 			}
 
@@ -143,7 +143,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
-				log.Printf("migrateLegacyDatabaseSettings: skipping legacy database setting: failed to re-marshal JSON: %v", err)
+				logger.Warn("skipping legacy database setting: failed to re-marshal JSON", "error", err)
 				continue
 			}
 

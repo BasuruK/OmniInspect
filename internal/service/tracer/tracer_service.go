@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"OmniView/assets"
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/webhook"
@@ -9,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -56,7 +56,7 @@ func (d *webhookDispatcher) worker() {
 	defer d.wg.Done()
 	for job := range d.queue {
 		if err := d.service.SendToWebhook(job.payload, job.url, job.meta); err != nil {
-			log.Printf("[Tracer] Failed to send webhook: %v", err)
+			logger.Error("webhook send failed", "error", err)
 		}
 	}
 }
@@ -66,7 +66,7 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	if d.stopped {
-		log.Printf("[Tracer] Webhook dispatcher stopped, dropping message")
+		logger.Warn("webhook dispatcher stopped, dropping message")
 		return
 	}
 
@@ -75,7 +75,7 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 		// Job queued successfully
 	default:
 		// Queue full - drop the message
-		log.Printf("[Tracer] Webhook queue full, dropping message")
+		logger.Warn("webhook queue full, dropping message")
 	}
 }
 
@@ -184,7 +184,7 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	go func() {
 		defer ts.listenerWg.Done()
 		if err := ts.processBatch(ts.listenerCtx, subscriber); err != nil {
-			log.Printf("initial batch processing failed for subscriber %s: %v", subscriber.Name(), err)
+			logger.Error("initial batch processing failed", "subscriber", subscriber.Name(), "error", err)
 		}
 	}()
 
@@ -226,7 +226,7 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 		// Blocking wait — Oracle holds this call until messages arrive or wait time expires
 		err := ts.processBatch(ctx, subscriber)
 		if err != nil {
-			log.Printf("failed to dequeue messages for subscriber %s: %v", subscriber.Name(), err)
+			logger.Error("batch processing failed", "subscriber", subscriber.Name(), "error", err)
 			select {
 			case <-time.After(errorDelay):
 				continue
@@ -265,7 +265,7 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 		for i := 0; i < count; i++ {
 			msg := &domain.QueueMessage{}
 			if err := json.Unmarshal([]byte(messages[i]), msg); err != nil {
-				log.Printf("failed to unmarshal message ID %s: %v", msgIDs[i], err)
+				logger.Error("failed to unmarshal message", "msgID", msgIDs[i], "error", err)
 				continue
 			}
 			// Deliver while holding lock to preserve ordering
@@ -292,7 +292,7 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 		case <-ctx.Done():
 			return false
 		default:
-			log.Printf("[Tracer] event channel full, dropping message")
+			logger.Warn("event channel full, dropping message")
 		}
 	} else {
 		fmt.Println(msg.Format())
@@ -306,7 +306,7 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("failed to marshal message for webhook: %v", err)
+		logger.Error("failed to marshal message for webhook", "error", err)
 		return true
 	}
 
@@ -364,7 +364,7 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 	}
 
 	if *exists && storedHash == currentHash {
-		log.Printf("[Tracer] Omni_Tracer.sql content unchanged (hash=%s), skipping DeployFile", currentHash[:16])
+		logger.Debug("Omni_Tracer.sql content unchanged", "hash", currentHash[:16])
 		return nil
 	}
 
@@ -373,7 +373,7 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 	}
 
 	if err := ts.bolt.SetTracerPackageVersion(currentHash); err != nil {
-		log.Printf("[Tracer] warning: failed to store updated package hash: %v", err)
+		logger.Warn("failed to store updated package hash", "error", err)
 	}
 
 	return nil

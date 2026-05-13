@@ -23,6 +23,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - UI components: charm.land/bubbles/v2 v2.0.0
 - Local persistence: go.etcd.io/bbolt v1.4.3
 - Database integration: Oracle AQ via ODPI-C and CGO
+- Structured logging: `internal/adapter/logger` backed by Go `log/slog` (Go 1.21+), output to `omniview.log` with source location
 - Supporting languages: PL/SQL for queue package, C for dequeue bindings
 - Build workflow: Makefile-driven; use `make build`, `make run`, `make test`, `make fmt`, `make lint`
 - Version constraint: use Bubble Tea v2 / Lip Gloss v2 APIs only; do not mix old charmbracelet module paths
@@ -94,6 +95,15 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Preserve shutdown and cancellation behavior for tracer listeners and the global webhook dispatcher; connection-scoped listener shutdown is intentionally separate from process-wide webhook shutdown.
 - Be careful with storage key formats and migrations. Database config keys already support legacy prefixes and escaped storage keys, so new persistence changes must not assume only one historical format exists.
 - When touching user-controlled log rendering or webhook payload handling, preserve existing sanitization and validation boundaries rather than weakening them for convenience.
+
+### Logging Rules
+
+- Use `internal/adapter/logger` for all diagnostic logging — never use `log.Printf` in application code.
+- Call `logger.Init(logPath)` once from `cmd/omniview/main.go` (composition root) and defer the returned cleanup func.
+- Use structured key-value pairs: `logger.Error("batch processing failed", "subscriber", name, "error", err)` — not `log.Printf("failed: %v", err)`.
+- Log levels: `logger.Debug` for hash matches and skipped operations, `logger.Info` for startup, `logger.Warn` for non-fatal issues (queue full, dispatcher stopped), `logger.Error` for failures that need attention.
+- Source file/line is auto-captured via `runtime.Callers(3, ...)` — log calls show the caller's location, not the logger internals.
+- Before `Init()` is called, logs fall back to stderr — early startup errors are never lost.
 
 ---
 

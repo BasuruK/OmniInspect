@@ -1,6 +1,7 @@
 package main
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui"
@@ -16,38 +17,46 @@ import (
 )
 
 func main() {
+	omniApp := app.New()
+	if err := run(omniApp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(omniApp *app.App) error {
 	// ==========================================
 	// Phase 1: Application Initialization - Pre-TUI setup
 	// ==========================================
-	omniApp := app.New()
 
-	// Self-update cleanup (remove .old binary leftovers from previous update)
+	// ── Logger ───────────────────────────────
+	closeLog, err := logger.Init("omniview.log")
+	if err != nil {
+		return fmt.Errorf("failed to initialise logger: %w", err)
+	}
+	defer closeLog()
+	logger.Info("OmniInspect starting", "version", omniApp.GetVersion())
+
 	updater.CleanupOldBinary()
 
-	// Initialize BoltDB (fast, no UI needed)
+	// Initialize BoltDB
 	boltAdapter, err := boltdb.NewBoltAdapter("omniview.bolt")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create BoltDB adapter: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create BoltDB adapter: %w", err)
 	}
 	if err := boltAdapter.Initialize(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize BoltDB: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to initialize BoltDB: %w", err)
 	}
 	defer boltAdapter.Close()
 
 	// ==========================================
-	// Phase 2: Initialize Services (deferred until TUI config is ready)
+	// Phase 2: Initialize Services
 	// ==========================================
 
-	// Event channel: tracer service → TUI
 	eventCh := make(chan *domain.QueueMessage, 100)
-
-	// Updater service for update checking within TUI
 	updaterService := updaterSvc.NewUpdaterService(omniApp.GetVersion())
 
 	// ── Phase 3: Start TUI ───────────────────────
-	// BoltDB is already initialized; TUI handles config loading via onboarding screen
 
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
@@ -66,17 +75,12 @@ func main() {
 		UpdaterService: updaterService,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create UI model: %w", err)
 	}
 
-	// Request terminal resize to minimum working dimensions (36x130) before TUI starts.
-	// The ANSI sequence CSI 8 ; rows ; cols t is honoured by xterm, Windows Terminal,
-	// macOS Terminal, and most modern emulators.
 	const minRows = 36
 	const minCols = 130
 	if fi, err := os.Stdout.Stat(); err == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
-		// Windows CMD/legacy often has no TERM; still emit CSI resize for ConPTY / WT / console.
 		term := os.Getenv("TERM")
 		emit := runtime.GOOS == "windows" ||
 			(term != "" && term != "dumb") ||
@@ -89,11 +93,9 @@ func main() {
 	p := ui.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		tracer.StopWebhookDispatcher()
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("TUI error: %w", err)
 	}
 
-	// Ensure all tracer goroutines are stopped before exiting
 	tracer.StopWebhookDispatcher()
-
+	return nil
 }

@@ -1,11 +1,11 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"unicode"
@@ -514,7 +514,7 @@ func (m *Model) viewDropProcedureConfirmModal() string {
 // ==========================================
 
 func (m *Model) showDatabaseSwitchError(err error) (*Model, tea.Cmd) {
-	log.Printf("[UI] Database switch failed: %v", err)
+	logger.Error("database switch failed", "error", err)
 	m.loading.err = err
 	m.dbSettings.visible = true
 	m.dbSettings.dialogMsg = err.Error()
@@ -571,7 +571,7 @@ func (m *Model) syncDatabaseSettingsDefaults(selectedDb domain.DatabaseSettings)
 	for index := range m.dbSettings.databases {
 		updated, err := databaseSettingsWithDefaultState(m.dbSettings.databases[index], m.dbSettings.databases[index].ID() == selectedDb.ID())
 		if err != nil {
-			log.Printf("[UI] Failed to sync database default state for %s: %v", m.dbSettings.databases[index].DatabaseID(), err)
+			logger.Warn("failed to sync database default state", "databaseID", m.dbSettings.databases[index].DatabaseID(), "error", err)
 			continue
 		}
 		m.dbSettings.databases[index] = updated
@@ -617,7 +617,7 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		return m.showDatabaseSwitchError(fmt.Errorf("failed to connect to database %q: %w", selectedDb.DatabaseID(), err))
 	}
 	if err := newAdapter.Close(m.ctx); err != nil {
-		log.Printf("[UI] Failed to close validated database adapter for %s: %v", selectedDb.DatabaseID(), err)
+		logger.Warn("failed to close validated database adapter", "databaseID", selectedDb.DatabaseID(), "error", err)
 	}
 
 	previousConfig := m.appConfig
@@ -635,7 +635,11 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	}
 	if m.dbAdapter != nil {
 		if err := m.dbAdapter.Close(m.ctx); err != nil {
-			log.Printf("[UI] Failed to close current database adapter: %v", err)
+			dbID := ""
+			if m.appConfig != nil {
+				dbID = m.appConfig.DatabaseID()
+			}
+			logger.Warn("failed to close current database adapter", "databaseID", dbID, "error", err)
 		}
 	}
 
@@ -667,7 +671,7 @@ func (m *Model) reloadDatabaseList() {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
 	databases, err := settingsRepo.GetAll(m.ctx)
 	if err != nil {
-		log.Printf("[UI] Failed to reload database settings: %v", err)
+		logger.Error("failed to reload database settings", "error", err)
 		m.dbSettings.databases = nil
 	} else {
 		m.dbSettings.databases = databases

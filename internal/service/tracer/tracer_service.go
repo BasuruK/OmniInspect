@@ -66,7 +66,13 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	if d.stopped {
-		logger.Warn("webhook dispatcher stopped, dropping message")
+		logger.Warn("webhook dispatcher stopped, dropping message",
+			"url", url,
+			"logLevel", meta.LogLevel,
+			"timestamp", meta.Timestamp,
+			"queue_len", len(d.queue),
+			"queue_cap", cap(d.queue),
+			"dispatcherStopped", d.stopped)
 		return
 	}
 
@@ -75,7 +81,12 @@ func (d *webhookDispatcher) Enqueue(payload []byte, url string, meta webhook.Web
 		// Job queued successfully
 	default:
 		// Queue full - drop the message
-		logger.Warn("webhook queue full, dropping message")
+		logger.Warn("webhook queue full, dropping message",
+			"url", url,
+			"logLevel", meta.LogLevel,
+			"timestamp", meta.Timestamp,
+			"queue_len", len(d.queue),
+			"queue_cap", cap(d.queue))
 	}
 }
 
@@ -217,7 +228,7 @@ func (ts *TracerService) blockingConsumerLoop(ctx context.Context, subscriber *d
 		// Check if context is cancelled before blocking
 		select {
 		case <-ctx.Done():
-			fmt.Println("Event Listener stopping for subscriber:", subscriber.Name())
+			logger.Info("event listener stopping", "subscriber", subscriber.Name())
 			return
 		default:
 			// Continue to blocking wait
@@ -295,7 +306,7 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 			logger.Warn("event channel full, dropping message")
 		}
 	} else {
-		fmt.Println(msg.Format())
+		logger.Info("event channel unavailable, printing to stdout", "msg", msg.Format())
 	}
 
 	// Dispatch to webhook if configured
@@ -364,7 +375,7 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 	}
 
 	if *exists && storedHash == currentHash {
-		logger.Debug("Omni_Tracer.sql content unchanged", "hash", currentHash[:16])
+		logger.Info("Omni_Tracer.sql content unchanged", "hash", currentHash[:16])
 		return nil
 	}
 
@@ -373,7 +384,7 @@ func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) e
 	}
 
 	if err := ts.bolt.SetTracerPackageVersion(currentHash); err != nil {
-		logger.Warn("failed to store updated package hash", "error", err)
+		logger.Warn("failed to store updated package hash", "currentHash", currentHash, "error", err)
 	}
 
 	return nil

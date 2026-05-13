@@ -110,7 +110,7 @@ func emit(level slog.Level, msg string, args ...any) {
 ```
 
 **Log format (text, human-readable):**
-```
+```text
 time=2026-05-13T14:00:00Z level=INFO source=oracle_adapter.go:112 msg="dequeue started" subscriber=OMNI_SUB
 ```
 

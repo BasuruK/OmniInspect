@@ -129,7 +129,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 		for _, entry := range toMigrate {
 			var rawMap map[string]interface{}
 			if err := json.Unmarshal(entry.rawJSON, &rawMap); err != nil {
-				logger.Warn("skipping legacy database setting: failed to unmarshal JSON", "error", err)
+				logger.Warn("skipping legacy database setting: failed to unmarshal JSON", "key", entry.oldKey, "error", err)
 				continue
 			}
 
@@ -143,7 +143,7 @@ func (ba *BoltAdapter) migrateLegacyDatabaseSettings() error {
 
 			newJSON, err := json.Marshal(rawMap)
 			if err != nil {
-				logger.Warn("skipping legacy database setting: failed to re-marshal JSON", "error", err)
+				logger.Warn("skipping legacy database setting: failed to re-marshal JSON", "key", entry.oldKey, "error", err)
 				continue
 			}
 

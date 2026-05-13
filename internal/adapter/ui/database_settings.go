@@ -493,7 +493,11 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	}
 	if m.dbAdapter != nil {
 		if err := m.dbAdapter.Close(m.ctx); err != nil {
-			logger.Warn("failed to close current database adapter", "error", err)
+			dbID := ""
+			if m.appConfig != nil {
+				dbID = m.appConfig.DatabaseID()
+			}
+			logger.Warn("failed to close current database adapter", "databaseID", dbID, "error", err)
 		}
 	}
 

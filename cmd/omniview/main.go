@@ -1,6 +1,7 @@
 package main
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui"
@@ -20,6 +21,17 @@ func main() {
 	// Phase 1: Application Initialization - Pre-TUI setup
 	// ==========================================
 	omniApp := app.New()
+
+	// ── Logger ───────────────────────────────
+	// Must be the first real initialisation step so every subsequent phase
+	// can emit structured log lines to omniview.log.
+	closeLog, err := logger.Init("omniview.log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialise logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer closeLog()
+	logger.Info("OmniInspect starting", "version", omniApp.GetVersion())
 
 	// Self-update cleanup (remove .old binary leftovers from previous update)
 	updater.CleanupOldBinary()

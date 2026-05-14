@@ -107,7 +107,9 @@ type deleteConfirmedMsg struct {
 }
 
 // dropSubscriberProcedureMsg requests dropping the current subscriber's procedure.
-type dropSubscriberProcedureMsg struct{}
+type dropSubscriberProcedureMsg struct {
+	funnyName string
+}
 
 // dropSubscriberProcedureResultMsg returns the result of a drop procedure attempt.
 type dropSubscriberProcedureResultMsg struct {

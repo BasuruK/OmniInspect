@@ -35,6 +35,7 @@ type databaseSettingsState struct {
 	// Danger zone fields
 	showDropProcedureConfirm bool
 	dropProcedureConfirmMsg  string
+	dropProcedureTarget      string
 }
 
 // ==========================================
@@ -130,6 +131,7 @@ func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.editingOriginalStorageKey = ""
 	m.dbSettings.showDropProcedureConfirm = false
 	m.dbSettings.dropProcedureConfirmMsg = ""
+	m.dbSettings.dropProcedureTarget = ""
 }
 
 // ==========================================
@@ -206,19 +208,20 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
 				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{}
+					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
 				}
 			}
 			if isConfirmKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
 				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{}
+					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
 				}
 			}
 			if isCancelKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
+				m.dbSettings.dropProcedureTarget = ""
 			}
 			return m, nil
 		}
@@ -255,9 +258,10 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDeleteConfirm = true
 			}
 			return m, nil
-		case "d":
+		case "ctrl+d":
 			if m.subscriber != nil && m.subscriber.FunnyName() != "" {
-				m.dbSettings.dropProcedureConfirmMsg = fmt.Sprintf("This will delete your procedure TRACE_MESSAGE_%s. You can regenerate it by restarting OmniView.", m.subscriber.FunnyName())
+				m.dbSettings.dropProcedureTarget = m.subscriber.FunnyName()
+				m.dbSettings.dropProcedureConfirmMsg = fmt.Sprintf("This will delete your procedure TRACE_MESSAGE_%s. You can regenerate it by restarting OmniView.", m.dbSettings.dropProcedureTarget)
 				m.dbSettings.showDropProcedureConfirm = true
 			}
 			return m, nil
@@ -341,10 +345,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		return m, nil
 
 	case dropSubscriberProcedureMsg:
-		funnyName := ""
-		if m.subscriber != nil {
-			funnyName = m.subscriber.FunnyName()
-		}
+		funnyName := msg.funnyName
 		if funnyName == "" {
 			m.dbSettings.dialogMsg = "No subscriber procedure to delete."
 			m.dbSettings.dialogIsError = true
@@ -407,7 +408,7 @@ func (m *Model) viewDatabaseSettings() string {
 			Label:       "Current Connection",
 			Value:       activeSummary,
 			Width:       innerWidth,
-			BorderColor: "#F0C802",
+			BorderColor: styles.ConnectionBorderColor,
 		}),
 		"",
 		styles.SectionTitleStyle.Render("Stored Connections"),
@@ -431,17 +432,22 @@ func (m *Model) viewDatabaseSettings() string {
 
 	// Danger Zone for subscriber procedure deletion
 	if m.subscriber != nil && m.subscriber.FunnyName() != "" {
+		dangerContent := styles.SubtitleStyle.Render("Press Ctrl+D to delete your subscriber procedure.")
 		parts = append(parts,
 			"",
-			styles.DangerZoneStyle.Render("Danger Zone"),
-			styles.SubtitleStyle.Width(innerWidth).Render("Press D to delete your subscriber procedure."),
+			renderEmbeddedField(embeddedFieldOptions{
+				Label:       "Danger Zone",
+				Value:       dangerContent,
+				Width:       innerWidth,
+				BorderColor: styles.ErrorColor,
+			}),
 		)
 	}
 
 	parts = append(
 		parts,
 		"",
-		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  A Add  •  E Edit  •  X Delete  •  D Nuke Procedure  •  Esc Back"),
+		styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Select  •  Enter Connect  •  A Add  •  E Edit  •  X Delete  •  Esc Back"),
 	)
 
 	panel := renderFramedPanel("Connections", panelWidth, panelTypeInfo, lipgloss.JoinVertical(lipgloss.Left, parts...))
@@ -483,10 +489,7 @@ func (m *Model) viewDeleteConfirmModal() string {
 
 // viewDropProcedureConfirmModal: renders a standalone warning dialog for confirming procedure deletion.
 func (m *Model) viewDropProcedureConfirmModal() string {
-	funnyName := ""
-	if m.subscriber != nil {
-		funnyName = m.subscriber.FunnyName()
-	}
+	funnyName := m.dbSettings.dropProcedureTarget
 
 	modalWidth := max(min(m.width-20, 60), 44)
 	innerWidth := max(modalWidth-4, 24)

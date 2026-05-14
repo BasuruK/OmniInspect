@@ -252,7 +252,7 @@ func (m *Model) viewWebhookSettings() string {
 			Label:       "Current Webhook",
 			Value:       currentWebhook,
 			Width:       innerWidth,
-			BorderColor: "#F0C802",
+			BorderColor: styles.ConnectionBorderColor,
 		}))
 	}
 

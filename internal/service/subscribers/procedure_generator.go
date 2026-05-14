@@ -236,7 +236,8 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
 	if packageSpec == originalSpec && packageBody == originalBody {
-		return fmt.Errorf("DropSubscriberProcedure: %w", domain.ErrProcedureNotFound)
+		// if the procedure was not found, we can skip deployment which would be a no-op
+		return nil
 	}
 
 	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {

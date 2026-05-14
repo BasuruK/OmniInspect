@@ -293,6 +293,7 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_UppercaseYExecutesDropAndSh
 		t.Fatalf("NewSubscriberWithFunnyName: %v", err)
 	}
 	m.subscriber = subscriber
+	m.dbSettings.dropProcedureTarget = "BARNACLE"
 
 	updated, cmd := m.updateDatabaseSettings(makeCharPress("Y"))
 	if cmd == nil {
@@ -308,7 +309,7 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_UppercaseYExecutesDropAndSh
 		t.Fatal("expected async drop command")
 	}
 
-	msg = cmd()
+	msg = cmd() // msg is dropSubscriberProcedureResultMsg
 	updated, _ = updated.updateDatabaseSettings(msg)
 
 	if procGen.dropCalledWith != "BARNACLE" {
@@ -335,12 +336,13 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_ShowsErrorWhenProcedureDrop
 	}
 	m.subscriber = subscriber
 
-	updated, cmd := m.updateDatabaseSettings(dropSubscriberProcedureMsg{})
+	// Manually trigger dropSubscriberProcedureMsg with a valid funnyName
+	updated, cmd := m.updateDatabaseSettings(dropSubscriberProcedureMsg{funnyName: "BARNACLE"})
 	if cmd == nil {
 		t.Fatal("expected async drop command")
 	}
 
-	msg := cmd()
+	msg := cmd() // This returns dropSubscriberProcedureResultMsg with an error because m.subscriberService is nil
 	updated, _ = updated.updateDatabaseSettings(msg)
 
 	if !updated.dbSettings.showDialog {

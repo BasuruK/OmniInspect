@@ -224,8 +224,6 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
-	originalSpec := packageSpec
-	originalBody := packageBody
 
 	originalSpec, originalBody := packageSpec, packageBody
 
@@ -236,10 +234,6 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	packageBody, err = removeProcedureBody(packageBody, procedureName)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
-	}
-	if packageSpec == originalSpec && packageBody == originalBody {
-		// if the procedure was not found, we can skip deployment which would be a no-op
-		return nil
 	}
 
 	if packageSpec == originalSpec && packageBody == originalBody {

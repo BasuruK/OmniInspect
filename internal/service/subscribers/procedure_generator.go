@@ -233,6 +233,8 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
 	}
 
+	originalSpec, originalBody := packageSpec, packageBody
+
 	packageSpec, err = removeProcedureDeclaration(packageSpec, procedureName)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
@@ -240,6 +242,10 @@ func (pg *ProcedureGenerator) DropSubscriberProcedure(ctx context.Context, funny
 	packageBody, err = removeProcedureBody(packageBody, procedureName)
 	if err != nil {
 		return fmt.Errorf("DropSubscriberProcedure: %w", err)
+	}
+
+	if packageSpec == originalSpec && packageBody == originalBody {
+		return fmt.Errorf("DropSubscriberProcedure: %w", domain.ErrProcedureNotFound)
 	}
 
 	if err := pg.db.DeployFile(ctx, renderPackageDeploymentSQL(packageSpec, packageBody)); err != nil {

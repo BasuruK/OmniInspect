@@ -720,3 +720,20 @@ func splitLines(input string) []string {
 	}
 	return lines
 }
+
+func TestProcedureGenerator_DropSubscriberProcedure_ReturnsErrNotFound(t *testing.T) {
+	stub := &stubDBRepo{
+		procedureExists: map[string]bool{buildProcedureName("BARNACLE"): true},
+		packageSpecSource: splitLines("CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS\nEND OMNI_TRACER_API;"),
+		packageBodySource: splitLines("CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS\nEND OMNI_TRACER_API;"),
+	}
+	pg, err := NewProcedureGenerator(stub)
+	if err != nil {
+		t.Fatalf("NewProcedureGenerator() returned error: %v", err)
+	}
+
+	err = pg.DropSubscriberProcedure(context.Background(), "BARNACLE")
+	if !errors.Is(err, domain.ErrProcedureNotFound) {
+		t.Errorf("expected ErrProcedureNotFound, got %v", err)
+	}
+}

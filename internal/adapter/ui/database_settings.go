@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -36,6 +37,8 @@ type databaseSettingsState struct {
 	showDropProcedureConfirm bool
 	dropProcedureConfirmMsg  string
 	dropProcedureTarget      string
+	dropProcedureDeleting    bool
+	spinner                  spinner.Model
 }
 
 // ==========================================
@@ -98,6 +101,7 @@ func (m *Model) initDatabaseSettings(databases []domain.DatabaseSettings, active
 		databases:    databases,
 		activeID:     activeID,
 		visible:      true,
+		spinner:      spinner.New(spinner.WithSpinner(spinner.Dot)),
 	}
 }
 
@@ -132,6 +136,7 @@ func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.showDropProcedureConfirm = false
 	m.dbSettings.dropProcedureConfirmMsg = ""
 	m.dbSettings.dropProcedureTarget = ""
+	m.dbSettings.dropProcedureDeleting = false
 }
 
 // ==========================================
@@ -207,6 +212,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			case "y":
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
+				m.dbSettings.dropProcedureDeleting = true
 				return m, func() tea.Msg {
 					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
 				}
@@ -214,6 +220,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			if isConfirmKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
+				m.dbSettings.dropProcedureDeleting = true
 				return m, func() tea.Msg {
 					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
 				}
@@ -258,7 +265,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDeleteConfirm = true
 			}
 			return m, nil
-		case "ctrl+d":
+		case "p":
 			if m.subscriber != nil && m.subscriber.FunnyName() != "" {
 				m.dbSettings.dropProcedureTarget = m.subscriber.FunnyName()
 				m.dbSettings.dropProcedureConfirmMsg = fmt.Sprintf("This will delete your procedure TRACE_MESSAGE_%s. You can regenerate it by restarting OmniView.", m.dbSettings.dropProcedureTarget)
@@ -350,9 +357,11 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.dialogMsg = "No subscriber procedure to delete."
 			m.dbSettings.dialogIsError = true
 			m.dbSettings.showDialog = true
+			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}
-		return m, func() tea.Msg {
+		m.dbSettings.dropProcedureDeleting = true
+		return m, tea.Batch(m.dbSettings.spinner.Tick, func() tea.Msg {
 			var dropErr error
 			if m.subscriberService == nil {
 				dropErr = fmt.Errorf("drop subscriber procedure: %w", domain.ErrProcedureGeneration)
@@ -360,9 +369,16 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				dropErr = m.subscriberService.DropSubscriberProcedure(m.ctx, funnyName)
 			}
 			return dropSubscriberProcedureResultMsg{err: dropErr}
+		})
+	case spinner.TickMsg:
+		if m.dbSettings.dropProcedureDeleting {
+			var cmd tea.Cmd
+			m.dbSettings.spinner, cmd = m.dbSettings.spinner.Update(msg)
+			return m, cmd
 		}
 
 	case dropSubscriberProcedureResultMsg:
+		m.dbSettings.dropProcedureDeleting = false
 		if msg.err != nil {
 			m.dbSettings.dialogMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
 			m.dbSettings.dialogIsError = true
@@ -411,8 +427,6 @@ func (m *Model) viewDatabaseSettings() string {
 			BorderColor: styles.ConnectionBorderColor,
 		}),
 		"",
-		styles.SectionTitleStyle.Render("Stored Connections"),
-		styles.SubtitleStyle.Render("Use Enter to switch to the selected database connection."),
 		"",
 		m.dbSettings.databaseList.Render(),
 	}
@@ -432,7 +446,17 @@ func (m *Model) viewDatabaseSettings() string {
 
 	// Danger Zone for subscriber procedure deletion
 	if m.subscriber != nil && m.subscriber.FunnyName() != "" {
-		dangerContent := styles.SubtitleStyle.Render("Press Ctrl+D to delete your subscriber procedure.")
+		var dangerContent string
+		if m.dbSettings.dropProcedureDeleting {
+			dangerContent = lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				m.dbSettings.spinner.View(),
+				"  ",
+				styles.SubtitleStyle.Render("Deleting procedure, please wait a moment..."),
+			)
+		} else {
+			dangerContent = styles.SubtitleStyle.Render("Press P to delete your subscriber procedure.")
+		}
 		parts = append(parts,
 			"",
 			renderEmbeddedField(embeddedFieldOptions{

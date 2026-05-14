@@ -106,6 +106,16 @@ type deleteConfirmedMsg struct {
 	id string
 }
 
+// dropSubscriberProcedureMsg requests dropping the current subscriber's procedure.
+type dropSubscriberProcedureMsg struct {
+	funnyName string
+}
+
+// dropSubscriberProcedureResultMsg returns the result of a drop procedure attempt.
+type dropSubscriberProcedureResultMsg struct {
+	err error
+}
+
 // webhookConfigSavedMsg is returned after attempting to save or clear the webhook configuration.
 type webhookConfigSavedMsg struct {
 	config  *domain.WebhookConfig

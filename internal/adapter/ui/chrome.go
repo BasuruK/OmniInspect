@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/adapter/ui/styles"
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -213,7 +214,7 @@ type embeddedFieldOptions struct {
 	Width       int
 	Focused     bool
 	Required    bool
-	BorderColor string
+	BorderColor color.Color
 	FooterText  string
 }
 
@@ -236,8 +237,8 @@ func renderEmbeddedField(opts embeddedFieldOptions) string {
 		borderStyle = styles.FieldFocusedBorderStyle
 		labelStyle = styles.OnboardingActiveLabelStyle
 	}
-	if opts.BorderColor != "" {
-		borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(opts.BorderColor))
+	if opts.BorderColor != nil {
+		borderStyle = lipgloss.NewStyle().Foreground(opts.BorderColor)
 	}
 
 	label := labelStyle.Render(opts.Label)

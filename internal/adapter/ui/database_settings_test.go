@@ -4,6 +4,7 @@ import (
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
+	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
 
 	"context"
@@ -26,6 +27,32 @@ type MockDatabaseRepository struct {
 
 	connectError error
 	closeError   error
+}
+
+type stubProcedureGeneratorRepo struct {
+	dropCalledWith string
+	dropErr        error
+}
+
+func (s *stubProcedureGeneratorRepo) ReserveFunnyName(ctx context.Context, subscriber *domain.Subscriber) (string, bool, error) {
+	return "", false, nil
+}
+
+func (s *stubProcedureGeneratorRepo) ReleaseFunnyName(ctx context.Context, funnyName string) error {
+	return nil
+}
+
+func (s *stubProcedureGeneratorRepo) EnsureOwnedFunnyName(ctx context.Context, subscriber *domain.Subscriber) (bool, error) {
+	return false, nil
+}
+
+func (s *stubProcedureGeneratorRepo) EnsureSubscriberProcedure(ctx context.Context, subscriber *domain.Subscriber) error {
+	return nil
+}
+
+func (s *stubProcedureGeneratorRepo) DropSubscriberProcedure(ctx context.Context, funnyName string) error {
+	s.dropCalledWith = funnyName
+	return s.dropErr
 }
 
 // NewMockDatabaseRepository creates a MockDatabaseRepository with configurable behavior.
@@ -250,6 +277,82 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	// Assert command is returned
 	if cmd == nil {
 		t.Error("expected non-nil command to be returned")
+	}
+}
+
+func TestUpdateDatabaseSettings_DropProcedureConfirm_UppercaseYExecutesDropAndShowsSuccess(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	procGen := &stubProcedureGeneratorRepo{}
+	m.subscriberService = subscribers.NewSubscriberService(NewMockDatabaseRepository(), nil, procGen)
+	m.dbSettings.showDropProcedureConfirm = true
+
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName: %v", err)
+	}
+	m.subscriber = subscriber
+	m.dbSettings.dropProcedureTarget = "BARNACLE"
+
+	updated, cmd := m.updateDatabaseSettings(makeCharPress("Y"))
+	if cmd == nil {
+		t.Fatal("expected confirm command for uppercase Y")
+	}
+	if updated.dbSettings.showDropProcedureConfirm {
+		t.Fatal("expected drop confirmation modal to close after confirmation")
+	}
+
+	msg := cmd()
+	updated, cmd = updated.updateDatabaseSettings(msg)
+	if cmd == nil {
+		t.Fatal("expected async drop command")
+	}
+
+	msg = cmd() // msg is dropSubscriberProcedureResultMsg
+	updated, _ = updated.updateDatabaseSettings(msg)
+
+	if procGen.dropCalledWith != "BARNACLE" {
+		t.Fatalf("expected drop to target BARNACLE, got %q", procGen.dropCalledWith)
+	}
+	if !updated.dbSettings.showDialog {
+		t.Fatal("expected success dialog to be shown")
+	}
+	if updated.dbSettings.dialogIsError {
+		t.Fatal("expected success dialog, got error dialog")
+	}
+	if updated.dbSettings.dialogMsg == "" {
+		t.Fatal("expected success dialog message to be set")
+	}
+}
+
+func TestUpdateDatabaseSettings_DropProcedureConfirm_ShowsErrorWhenProcedureDropUnavailable(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModelForSettings(t)
+	subscriber, err := domain.NewSubscriberWithFunnyName("TEST_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName: %v", err)
+	}
+	m.subscriber = subscriber
+
+	// Manually trigger dropSubscriberProcedureMsg with a valid funnyName
+	updated, cmd := m.updateDatabaseSettings(dropSubscriberProcedureMsg{funnyName: "BARNACLE"})
+	if cmd == nil {
+		t.Fatal("expected async drop command")
+	}
+
+	msg := cmd() // This returns dropSubscriberProcedureResultMsg with an error because m.subscriberService is nil
+	updated, _ = updated.updateDatabaseSettings(msg)
+
+	if !updated.dbSettings.showDialog {
+		t.Fatal("expected error dialog to be shown")
+	}
+	if !updated.dbSettings.dialogIsError {
+		t.Fatal("expected error dialog styling")
+	}
+	if updated.dbSettings.dialogMsg == "" {
+		t.Fatal("expected error dialog message to be set")
 	}
 }
 

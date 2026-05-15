@@ -38,6 +38,8 @@ type databaseSettingsState struct {
 	dropProcedureConfirmMsg  string
 	dropProcedureTarget      string
 	dropProcedureDeleting    bool
+	dropProcedureResultMsg   string
+	dropProcedureResultIsErr bool
 	spinner                  spinner.Model
 }
 
@@ -137,6 +139,8 @@ func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.dropProcedureConfirmMsg = ""
 	m.dbSettings.dropProcedureTarget = ""
 	m.dbSettings.dropProcedureDeleting = false
+	m.dbSettings.dropProcedureResultMsg = ""
+	m.dbSettings.dropProcedureResultIsErr = false
 }
 
 // ==========================================
@@ -240,6 +244,11 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		case "q", "esc":
 			if m.dbSettings.showDialog {
 				m.dbSettings.showDialog = false
+				return m, nil
+			}
+			if m.dbSettings.dropProcedureResultMsg != "" {
+				m.dbSettings.dropProcedureResultMsg = ""
+				m.dbSettings.dropProcedureResultIsErr = false
 				return m, nil
 			}
 			m.closeDatabaseSettings()
@@ -380,14 +389,12 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureResultMsg:
 		m.dbSettings.dropProcedureDeleting = false
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dropProcedureResultMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
+			m.dbSettings.dropProcedureResultIsErr = true
 			return m, nil
 		}
-		m.dbSettings.dialogMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
-		m.dbSettings.dialogIsError = false
-		m.dbSettings.showDialog = true
+		m.dbSettings.dropProcedureResultMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
+		m.dbSettings.dropProcedureResultIsErr = false
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -453,6 +460,17 @@ func (m *Model) viewDatabaseSettings() string {
 				m.dbSettings.spinner.View(),
 				"  ",
 				styles.SubtitleStyle.Render("Deleting procedure, please wait a moment..."),
+			)
+		} else if m.dbSettings.dropProcedureResultMsg != "" {
+			resultStyle := styles.OnboardingSavedStyle
+			if m.dbSettings.dropProcedureResultIsErr {
+				resultStyle = styles.OnboardingErrorStyle
+			}
+			dangerContent = lipgloss.JoinVertical(
+				lipgloss.Left,
+				resultStyle.Render(m.dbSettings.dropProcedureResultMsg),
+				"",
+				styles.SubtitleStyle.Render("Press Esc to dismiss."),
 			)
 		} else {
 			dangerContent = styles.SubtitleStyle.Render("Press P to delete your subscriber procedure.")

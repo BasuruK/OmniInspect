@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -101,7 +102,7 @@ func sanitizeLogString(s string) string {
 func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case dbValidationResultMsg, dbSwitchResultMsg, deleteConfirmedMsg, editDatabaseMsg,
-		dropSubscriberProcedureMsg, dropSubscriberProcedureResultMsg:
+		dropSubscriberProcedureMsg, dropSubscriberProcedureResultMsg, spinner.TickMsg:
 		if m.dbSettings.visible {
 			return m.updateDatabaseSettings(msg)
 		}

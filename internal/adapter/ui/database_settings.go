@@ -216,13 +216,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			case "ctrl+c":
 				m.cancel()
 				return m, tea.Quit
-			case "y":
-				m.dbSettings.showDropProcedureConfirm = false
-				m.dbSettings.dropProcedureConfirmMsg = ""
-				m.dbSettings.dropProcedureDeleting = true
-				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
-				}
 			}
 			if isConfirmKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
@@ -245,6 +238,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case "q", "esc":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			if m.dbSettings.showDialog {
 				m.dbSettings.showDialog = false
 				return m, nil
@@ -257,10 +253,16 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.closeDatabaseSettings()
 			return m, nil
 		case "a":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
 			m.dbSettings.showAddForm = true
 			return m, nil
 		case "e":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -270,6 +272,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "x":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -278,6 +283,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "p":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			if m.subscriber != nil && m.subscriber.FunnyName() != "" {
 				m.dbSettings.dropProcedureTarget = m.subscriber.FunnyName()
 				m.dbSettings.dropProcedureConfirmMsg = fmt.Sprintf("This will delete your procedure TRACE_MESSAGE_%s. You can regenerate it by restarting OmniView.", m.dbSettings.dropProcedureTarget)
@@ -285,6 +293,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -294,6 +305,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		default:
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.dbSettings.databaseList, cmd = m.dbSettings.databaseList.Update(msg)
 			return m, cmd

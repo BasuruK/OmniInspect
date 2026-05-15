@@ -386,7 +386,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}
-		return m, tea.Batch(m.dbSettings.spinner.Tick, func() tea.Msg {
+		return m, func() tea.Msg {
 			var dropErr error
 			if m.subscriberService == nil {
 				dropErr = fmt.Errorf("drop subscriber procedure: %w", domain.ErrProcedureGeneration)
@@ -394,7 +394,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				dropErr = m.subscriberService.DropSubscriberProcedure(m.ctx, funnyName)
 			}
 			return dropSubscriberProcedureResultMsg{err: dropErr}
-		})
+		}
 	case spinner.TickMsg:
 		if m.dbSettings.dropProcedureDeleting {
 			var cmd tea.Cmd
@@ -405,12 +405,14 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureResultMsg:
 		m.dbSettings.dropProcedureDeleting = false
 		if msg.err != nil {
-			m.dbSettings.dropProcedureResultMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
-			m.dbSettings.dropProcedureResultIsErr = true
+			m.dbSettings.dialogMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
+			m.dbSettings.dialogIsError = true
+			m.dbSettings.showDialog = true
 			return m, nil
 		}
-		m.dbSettings.dropProcedureResultMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
-		m.dbSettings.dropProcedureResultIsErr = false
+		m.dbSettings.dialogMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
+		m.dbSettings.dialogIsError = false
+		m.dbSettings.showDialog = true
 		return m, nil
 
 	case tea.WindowSizeMsg:

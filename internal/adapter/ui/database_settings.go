@@ -103,7 +103,10 @@ func (m *Model) initDatabaseSettings(databases []domain.DatabaseSettings, active
 		databases:    databases,
 		activeID:     activeID,
 		visible:      true,
-		spinner:      spinner.New(spinner.WithSpinner(spinner.Dot)),
+		spinner: spinner.New(
+			spinner.WithSpinner(spinner.Dot),
+			spinner.WithStyle(lipgloss.NewStyle().Foreground(styles.WarningColor)),
+		),
 	}
 }
 
@@ -369,7 +372,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}
-		m.dbSettings.dropProcedureDeleting = true
 		return m, tea.Batch(m.dbSettings.spinner.Tick, func() tea.Msg {
 			var dropErr error
 			if m.subscriberService == nil {

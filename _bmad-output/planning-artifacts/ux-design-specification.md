@@ -26,7 +26,7 @@ Two UX issues identified by the user in Story 3.1 (Delete Subscriber Procedure):
 ### Issue 1: Keyboard Shortcut Mismatch
 **What:** Currently `Ctrl+D` is assigned to delete a procedure.
 **Problem:** `Ctrl+D` is a commonly used shortcut (EOF/detach in terminals). Using it for delete is dangerous and unexpected.
-**Fix:** Change to `Ctrl+P` (mnemonic: **P** for **P**rocedure delete).
+**Fix:** Change to plain `P` (mnemonic: **P** for **P**rocedure delete).
 
 ### Issue 2: Silent Delay on Delete
 **What:** User confirms deletion, then nothing appears until the success dialog shows (after the async operation completes).
@@ -41,8 +41,8 @@ Two UX issues identified by the user in Story 3.1 (Delete Subscriber Procedure):
 
 | Location | Before | After |
 |----------|--------|-------|
-| `database_settings.go:261` | `case "ctrl+d":` | `case "ctrl+p":` |
-| `database_settings.go:435` | `"Press Ctrl+D to delete..."` | `"Press Ctrl+P to delete..."` |
+| `database_settings.go:261` | `case "ctrl+d":` | `case "p":` |
+| `database_settings.go:435` | `"Press Ctrl+D to delete..."` | `"Press P to delete..."` |
 | Help bar hint | `D Delete` | (unchanged — doesn't mention procedure delete) |
 
 ### Change 2: Deletion Loading State
@@ -54,7 +54,7 @@ dropProcedureDeleting bool
 
 **Behavior:**
 
-1. User presses `Ctrl+P` → confirmation modal appears
+1. User presses `P` → confirmation modal appears
 2. User presses `Y` → `dropProcedureDeleting = true` + async delete starts
 3. During deletion:
    - Danger Zone section shows: **spinner + "Deleting procedure, please wait a moment..."**
@@ -106,7 +106,7 @@ dropProcedureDeleting bool
 
 ## Acceptance Criteria
 
-1. Pressing `Ctrl+P` (not `Ctrl+D`) opens the delete confirmation
+1. Pressing `P` (not `Ctrl+D`) opens the delete confirmation
 2. Pressing `Ctrl+D` while on Database Settings does nothing
 3. After confirming delete, the Danger Zone shows spinner + wait message
 4. Success/error dialog appears after spinner completes

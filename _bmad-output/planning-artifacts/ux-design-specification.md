@@ -24,11 +24,13 @@ date: '2026-05-14'
 Two UX issues identified by the user in Story 3.1 (Delete Subscriber Procedure):
 
 ### Issue 1: Keyboard Shortcut Mismatch
+
 **What:** Currently `Ctrl+D` is assigned to delete a procedure.
 **Problem:** `Ctrl+D` is a commonly used shortcut (EOF/detach in terminals). Using it for delete is dangerous and unexpected.
 **Fix:** Change to plain `P` (mnemonic: **P** for **P**rocedure delete).
 
 ### Issue 2: Silent Delay on Delete
+
 **What:** User confirms deletion, then nothing appears until the success dialog shows (after the async operation completes).
 **Problem:** The silence creates anxiety — "Did I break something? Is it still working?"
 **Fix:** Show a spinner inside the Danger Zone section with a "Deleting procedure, please wait a moment..." message immediately after confirmation, replacing the hint text.
@@ -48,6 +50,7 @@ Two UX issues identified by the user in Story 3.1 (Delete Subscriber Procedure):
 ### Change 2: Deletion Loading State
 
 **State field to add:**
+
 ```go
 dropProcedureDeleting bool
 ```
@@ -63,6 +66,7 @@ dropProcedureDeleting bool
 5. On failure: `dropProcedureDeleting = false` → Danger Zone shows: **"Failed to delete procedure: <error>"** (error styled)
 
 **Visual rendering during deletion:**
+
 ```text
 ╭─ Danger Zone ────────────────────────────────────╮
 │                                                  │
@@ -76,6 +80,7 @@ dropProcedureDeleting bool
 ## Component Inventory
 
 ### Danger Zone (states)
+
 - **Idle**: Show shortcut hint (`Press P to delete...`)
 - **Confirming**: Panel remains as-is, modal overlay shown.
 - **Deleting**: Show spinner + "Deleting procedure..."

@@ -257,7 +257,7 @@ func TestSaveWebhookSettingsCmd_InvalidURLShowsError(t *testing.T) {
 	if !updated.webhookSettings.visible {
 		t.Fatal("expected webhook settings overlay to remain visible after invalid input")
 	}
-	if !updated.webhookSettings.showDialog {
+	if !updated.webhookSettings.dialog.visible {
 		t.Fatal("expected invalid webhook input to show an error dialog")
 	}
 }

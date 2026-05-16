@@ -30,9 +30,7 @@ type databaseSettingsState struct {
 	deleteConfirmID           string
 	showDeleteConfirm         bool
 	addForm                   AddDatabaseForm
-	dialogMsg                 string
-	dialogIsError             bool
-	showDialog                bool
+	dialog                    settingsDialog
 	// Danger zone fields
 	showDropProcedureConfirm bool
 	dropProcedureConfirmMsg  string
@@ -132,9 +130,7 @@ func (m *Model) resizeDatabaseSettings(width, height int) {
 func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.visible = false
 	m.dbSettings.showAddForm = false
-	m.dbSettings.showDialog = false
-	m.dbSettings.dialogMsg = ""
-	m.dbSettings.dialogIsError = false
+	m.dbSettings.dialog.clear()
 	m.dbSettings.editingID = ""
 	m.dbSettings.addForm.editingDB = nil
 	m.dbSettings.editingOriginalStorageKey = ""
@@ -149,6 +145,11 @@ func (m *Model) closeDatabaseSettings() {
 // ==========================================
 // Update
 // ==========================================
+
+// clearDatabaseSettingsDialog dismisses the error/info dialog in the database settings panel.
+func (m *Model) clearDatabaseSettingsDialog() {
+	m.dbSettings.dialog.clear()
+}
 
 // updateDatabaseSettings: handles messages for the database settings panel including navigation, selection, and add form overlay.
 func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
@@ -241,8 +242,8 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			if m.dbSettings.dropProcedureDeleting {
 				return m, nil
 			}
-			if m.dbSettings.showDialog {
-				m.dbSettings.showDialog = false
+			if m.dbSettings.dialog.visible {
+				m.dbSettings.dialog.clear()
 				return m, nil
 			}
 			if m.dbSettings.dropProcedureResultMsg != "" {
@@ -335,9 +336,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case dbValidationResultMsg:
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = msg.err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(msg.err.Error(), true)
 			return m, nil
 		}
 		m.reloadDatabaseList()
@@ -345,9 +344,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case dbSwitchResultMsg:
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = msg.err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(msg.err.Error(), true)
 			return m, nil
 		}
 		return m, nil
@@ -355,9 +352,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case deleteConfirmedMsg:
 		// Prevent deletion of active connection
 		if msg.id == m.dbSettings.activeID {
-			m.dbSettings.dialogMsg = "Cannot delete the currently active database connection."
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set("Cannot delete the currently active database connection.", true)
 			m.dbSettings.showDeleteConfirm = false
 			m.dbSettings.deleteConfirmID = ""
 			return m, nil
@@ -367,9 +362,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		if err := settingsRepo.Delete(m.ctx, msg.id); err != nil {
 			m.dbSettings.showDeleteConfirm = false
 			m.dbSettings.deleteConfirmID = ""
-			m.dbSettings.dialogMsg = err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(err.Error(), true)
 			return m, nil
 		}
 		m.dbSettings.showDeleteConfirm = false
@@ -380,8 +373,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureMsg:
 		funnyName := msg.funnyName
 		if funnyName == "" {
-			m.dbSettings.dropProcedureResultMsg = "No subscriber procedure to delete."
-			m.dbSettings.dropProcedureResultIsErr = true
+			m.dbSettings.dialog.set("No subscriber procedure to delete.", true)
 			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}
@@ -452,18 +444,7 @@ func (m *Model) viewDatabaseSettings() string {
 		m.dbSettings.databaseList.Render(),
 	}
 
-	if m.dbSettings.showDialog && m.dbSettings.dialogMsg != "" {
-		dialogLine := styles.OnboardingSavedStyle.Render(m.dbSettings.dialogMsg)
-		if m.dbSettings.dialogIsError {
-			dialogLine = styles.OnboardingErrorStyle.Render("Error: " + m.dbSettings.dialogMsg)
-		}
-		parts = append(
-			parts,
-			"",
-			dialogLine,
-			styles.SubtitleStyle.Width(innerWidth).Render("Press Esc to dismiss the message and stay on this screen."),
-		)
-	}
+	parts = append(parts, renderSettingsDialogLines(m.dbSettings.dialog, innerWidth)...)
 
 	// Danger Zone for subscriber procedure deletion
 	if m.subscriber != nil && m.subscriber.FunnyName() != "" {
@@ -576,9 +557,7 @@ func (m *Model) showDatabaseSwitchError(err error) (*Model, tea.Cmd) {
 	logger.Error("database switch failed", "error", err)
 	m.loading.err = err
 	m.dbSettings.visible = true
-	m.dbSettings.dialogMsg = err.Error()
-	m.dbSettings.dialogIsError = true
-	m.dbSettings.showDialog = true
+	m.dbSettings.dialog.set(err.Error(), true)
 	return m, nil
 }
 

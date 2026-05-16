@@ -360,7 +360,7 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_ShowsErrorWhenProcedureDrop
 	if !updated.dbSettings.dropProcedureResultIsErr {
 		t.Fatal("expected error result styling")
 	}
-	if updated.dbSettings.showDialog {
+	if updated.dbSettings.dialog.visible {
 		t.Fatal("expected no modal dialog for error result")
 	}
 }
@@ -553,10 +553,10 @@ func TestHandleSettingsSetAsMain_FactoryError(t *testing.T) {
 	}
 
 	// Assert dialog is shown
-	if !updated.dbSettings.showDialog {
+	if !updated.dbSettings.dialog.visible {
 		t.Error("expected dbSettings.showDialog to be true on error")
 	}
-	if updated.dbSettings.dialogMsg == "" {
+	if updated.dbSettings.dialog.msg == "" {
 		t.Error("expected dbSettings.dialogMsg to be set on error")
 	}
 
@@ -602,14 +602,14 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	updated, _ := m.handleSettingsSetAsMain(*selected)
 
 	// Verify error message is descriptive
-	if updated.dbSettings.dialogMsg == "" {
+	if updated.dbSettings.dialog.msg == "" {
 		t.Error("expected dialog message to be set")
 	}
 	if !errors.Is(updated.loading.err, factoryErr) {
 		t.Errorf("expected loading.err to wrap factory error, got %v", updated.loading.err)
 	}
 	// Verify original error is wrapped
-	if updated.dbSettings.dialogMsg == factoryErr.Error() {
+	if updated.dbSettings.dialog.msg == factoryErr.Error() {
 		t.Error("expected dialog message to contain wrapped error, not just raw error")
 	}
 }
@@ -651,7 +651,7 @@ func TestHandleSettingsSetAsMain_ConnectionValidationError_KeepsExistingSession(
 	if len(newMockDB.CloseCalls) != 1 {
 		t.Errorf("expected replacement adapter.Close to be called once after failed validation, got %d calls", len(newMockDB.CloseCalls))
 	}
-	if !updated.dbSettings.showDialog {
+	if !updated.dbSettings.dialog.visible {
 		t.Fatal("expected settings dialog to remain visible on validation failure")
 	}
 	if updated.loading.err == nil {

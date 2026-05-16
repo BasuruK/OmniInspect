@@ -193,10 +193,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			case "ctrl+c":
 				m.cancel()
 				return m, tea.Quit
-			case "y":
-				return m, func() tea.Msg {
-					return deleteConfirmedMsg{id: m.dbSettings.deleteConfirmID}
-				}
 			}
 			if isConfirmKey(msg) {
 				return m, func() tea.Msg {
@@ -221,9 +217,12 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
 				m.dbSettings.dropProcedureDeleting = true
-				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
-				}
+				return m, tea.Batch(
+					m.dbSettings.spinner.Tick,
+					func() tea.Msg {
+						return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
+					},
+				)
 			}
 			if isCancelKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
@@ -405,16 +404,13 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureResultMsg:
 		m.dbSettings.dropProcedureDeleting = false
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dropProcedureResultMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
+			m.dbSettings.dropProcedureResultIsErr = true
 			return m, nil
 		}
-		m.dbSettings.dialogMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
-		m.dbSettings.dialogIsError = false
-		m.dbSettings.showDialog = true
+		m.dbSettings.dropProcedureResultMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
+		m.dbSettings.dropProcedureResultIsErr = false
 		return m, nil
-
 	case tea.WindowSizeMsg:
 		m.resizeDatabaseSettings(msg.Width, msg.Height)
 		return m, nil

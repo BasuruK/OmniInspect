@@ -217,10 +217,11 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
 				m.dbSettings.dropProcedureDeleting = true
+				target := m.dbSettings.dropProcedureTarget
 				return m, tea.Batch(
 					m.dbSettings.spinner.Tick,
 					func() tea.Msg {
-						return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
+						return dropSubscriberProcedureMsg{funnyName: target}
 					},
 				)
 			}
@@ -379,9 +380,8 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureMsg:
 		funnyName := msg.funnyName
 		if funnyName == "" {
-			m.dbSettings.dialogMsg = "No subscriber procedure to delete."
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dropProcedureResultMsg = "No subscriber procedure to delete."
+			m.dbSettings.dropProcedureResultIsErr = true
 			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}

@@ -48,7 +48,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Creation | Idempotent - check if exists, only create if missing |
 | SQL injection | Strict format validation before DDL generation |
 | Package invalidation | Accepted risk - app redeploys on restart |
-| Danger zone options | Per-subscriber method deletion OR drop entire OMNI_TRACER_API package |
+| Danger zone options | Per-subscriber method deletion only (FR-4 / Story 3-2 PARKED — package drop removed from scope) |
 | Auto-redeploy | Already implemented - if package missing, OmniView redeploys |
 | Permissions | Any database user can call generated procedures |
 | Scalability | N subscribers supported, no hard limit |

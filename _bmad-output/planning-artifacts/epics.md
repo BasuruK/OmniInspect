@@ -62,8 +62,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 **UX-DR2:** Add danger zone section in Settings screen with:
 - Clear visual distinction (red/warning styling)
 - Confirmation required before destructive actions
-- Option to drop subscriber-specific procedure
-- Option to drop entire OMNI_TRACER_API package
+- Option to drop subscriber-specific procedure (package-drop option removed — FR-4 / Story 3-2 PARKED)
 
 **UX-DR3:** Settings screen keyboard shortcut (S key) already implemented - verify danger zone integration works correctly
 

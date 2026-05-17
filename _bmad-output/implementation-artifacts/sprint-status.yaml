@@ -102,10 +102,10 @@ development_status:
 # ==========================================
 metrics:
   total_stories: 9
-  completed: 6
-  ready_for_dev: 2
+  completed: 7
+  ready_for_dev: 1
   cancelled: 1
-  completion_percentage: 67
+  completion_percentage: 78
 
 # ==========================================
 # EPIC SUMMARY
@@ -121,9 +121,9 @@ epic_summary:
   epic-2:
     title: "Epic 2: TUI Procedure Name Display"
     stories_total: 1
-    stories_completed: 0
+    stories_completed: 1
     stories_in_progress: 0
-    status: "pending"
+    status: "done"
 
   epic-3:
     title: "Epic 3: Danger Zone Implementation"

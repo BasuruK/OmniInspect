@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -29,13 +30,15 @@ type databaseSettingsState struct {
 	deleteConfirmID           string
 	showDeleteConfirm         bool
 	addForm                   AddDatabaseForm
-	dialogMsg                 string
-	dialogIsError             bool
-	showDialog                bool
+	dialog                    settingsDialog
 	// Danger zone fields
 	showDropProcedureConfirm bool
 	dropProcedureConfirmMsg  string
 	dropProcedureTarget      string
+	dropProcedureDeleting    bool
+	dropProcedureResultMsg   string
+	dropProcedureResultIsErr bool
+	spinner                  spinner.Model
 }
 
 // ==========================================
@@ -98,6 +101,10 @@ func (m *Model) initDatabaseSettings(databases []domain.DatabaseSettings, active
 		databases:    databases,
 		activeID:     activeID,
 		visible:      true,
+		spinner: spinner.New(
+			spinner.WithSpinner(spinner.Dot),
+			spinner.WithStyle(lipgloss.NewStyle().Foreground(styles.WarningColor)),
+		),
 	}
 }
 
@@ -123,20 +130,26 @@ func (m *Model) resizeDatabaseSettings(width, height int) {
 func (m *Model) closeDatabaseSettings() {
 	m.dbSettings.visible = false
 	m.dbSettings.showAddForm = false
-	m.dbSettings.showDialog = false
-	m.dbSettings.dialogMsg = ""
-	m.dbSettings.dialogIsError = false
+	m.dbSettings.dialog.clear()
 	m.dbSettings.editingID = ""
 	m.dbSettings.addForm.editingDB = nil
 	m.dbSettings.editingOriginalStorageKey = ""
 	m.dbSettings.showDropProcedureConfirm = false
 	m.dbSettings.dropProcedureConfirmMsg = ""
 	m.dbSettings.dropProcedureTarget = ""
+	m.dbSettings.dropProcedureDeleting = false
+	m.dbSettings.dropProcedureResultMsg = ""
+	m.dbSettings.dropProcedureResultIsErr = false
 }
 
 // ==========================================
 // Update
 // ==========================================
+
+// clearDatabaseSettingsDialog dismisses the error/info dialog in the database settings panel.
+func (m *Model) clearDatabaseSettingsDialog() {
+	m.dbSettings.dialog.clear()
+}
 
 // updateDatabaseSettings: handles messages for the database settings panel including navigation, selection, and add form overlay.
 func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
@@ -181,10 +194,6 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			case "ctrl+c":
 				m.cancel()
 				return m, tea.Quit
-			case "y":
-				return m, func() tea.Msg {
-					return deleteConfirmedMsg{id: m.dbSettings.deleteConfirmID}
-				}
 			}
 			if isConfirmKey(msg) {
 				return m, func() tea.Msg {
@@ -204,19 +213,18 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			case "ctrl+c":
 				m.cancel()
 				return m, tea.Quit
-			case "y":
-				m.dbSettings.showDropProcedureConfirm = false
-				m.dbSettings.dropProcedureConfirmMsg = ""
-				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
-				}
 			}
 			if isConfirmKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
 				m.dbSettings.dropProcedureConfirmMsg = ""
-				return m, func() tea.Msg {
-					return dropSubscriberProcedureMsg{funnyName: m.dbSettings.dropProcedureTarget}
-				}
+				m.dbSettings.dropProcedureDeleting = true
+				target := m.dbSettings.dropProcedureTarget
+				return m, tea.Batch(
+					m.dbSettings.spinner.Tick,
+					func() tea.Msg {
+						return dropSubscriberProcedureMsg{funnyName: target}
+					},
+				)
 			}
 			if isCancelKey(msg) {
 				m.dbSettings.showDropProcedureConfirm = false
@@ -231,17 +239,31 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			m.cancel()
 			return m, tea.Quit
 		case "q", "esc":
-			if m.dbSettings.showDialog {
-				m.dbSettings.showDialog = false
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
+			if m.dbSettings.dialog.visible {
+				m.dbSettings.dialog.clear()
+				return m, nil
+			}
+			if m.dbSettings.dropProcedureResultMsg != "" {
+				m.dbSettings.dropProcedureResultMsg = ""
+				m.dbSettings.dropProcedureResultIsErr = false
 				return m, nil
 			}
 			m.closeDatabaseSettings()
 			return m, nil
 		case "a":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			m.dbSettings.addForm = NewAddDatabaseForm(m.width, m.height)
 			m.dbSettings.showAddForm = true
 			return m, nil
 		case "e":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -251,6 +273,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "x":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -258,7 +283,10 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.dbSettings.showDeleteConfirm = true
 			}
 			return m, nil
-		case "ctrl+d":
+		case "p":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			if m.subscriber != nil && m.subscriber.FunnyName() != "" {
 				m.dbSettings.dropProcedureTarget = m.subscriber.FunnyName()
 				m.dbSettings.dropProcedureConfirmMsg = fmt.Sprintf("This will delete your procedure TRACE_MESSAGE_%s. You can regenerate it by restarting OmniView.", m.dbSettings.dropProcedureTarget)
@@ -266,6 +294,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			cursor := m.dbSettings.databaseList.Cursor()
 			if cursor >= 0 && cursor < len(m.dbSettings.databases) {
 				selected := m.dbSettings.databases[cursor]
@@ -275,6 +306,9 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		default:
+			if m.dbSettings.dropProcedureDeleting {
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.dbSettings.databaseList, cmd = m.dbSettings.databaseList.Update(msg)
 			return m, cmd
@@ -302,9 +336,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case dbValidationResultMsg:
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = msg.err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(msg.err.Error(), true)
 			return m, nil
 		}
 		m.reloadDatabaseList()
@@ -312,9 +344,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case dbSwitchResultMsg:
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = msg.err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(msg.err.Error(), true)
 			return m, nil
 		}
 		return m, nil
@@ -322,9 +352,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case deleteConfirmedMsg:
 		// Prevent deletion of active connection
 		if msg.id == m.dbSettings.activeID {
-			m.dbSettings.dialogMsg = "Cannot delete the currently active database connection."
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set("Cannot delete the currently active database connection.", true)
 			m.dbSettings.showDeleteConfirm = false
 			m.dbSettings.deleteConfirmID = ""
 			return m, nil
@@ -334,9 +362,7 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 		if err := settingsRepo.Delete(m.ctx, msg.id); err != nil {
 			m.dbSettings.showDeleteConfirm = false
 			m.dbSettings.deleteConfirmID = ""
-			m.dbSettings.dialogMsg = err.Error()
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set(err.Error(), true)
 			return m, nil
 		}
 		m.dbSettings.showDeleteConfirm = false
@@ -347,9 +373,8 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 	case dropSubscriberProcedureMsg:
 		funnyName := msg.funnyName
 		if funnyName == "" {
-			m.dbSettings.dialogMsg = "No subscriber procedure to delete."
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dialog.set("No subscriber procedure to delete.", true)
+			m.dbSettings.dropProcedureDeleting = false
 			return m, nil
 		}
 		return m, func() tea.Msg {
@@ -361,19 +386,23 @@ func (m *Model) updateDatabaseSettings(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return dropSubscriberProcedureResultMsg{err: dropErr}
 		}
+	case spinner.TickMsg:
+		if m.dbSettings.dropProcedureDeleting {
+			var cmd tea.Cmd
+			m.dbSettings.spinner, cmd = m.dbSettings.spinner.Update(msg)
+			return m, cmd
+		}
 
 	case dropSubscriberProcedureResultMsg:
+		m.dbSettings.dropProcedureDeleting = false
 		if msg.err != nil {
-			m.dbSettings.dialogMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
-			m.dbSettings.dialogIsError = true
-			m.dbSettings.showDialog = true
+			m.dbSettings.dropProcedureResultMsg = fmt.Sprintf("Failed to delete procedure: %v", msg.err)
+			m.dbSettings.dropProcedureResultIsErr = true
 			return m, nil
 		}
-		m.dbSettings.dialogMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
-		m.dbSettings.dialogIsError = false
-		m.dbSettings.showDialog = true
+		m.dbSettings.dropProcedureResultMsg = "Procedure deleted successfully. Restart OmniView to regenerate."
+		m.dbSettings.dropProcedureResultIsErr = false
 		return m, nil
-
 	case tea.WindowSizeMsg:
 		m.resizeDatabaseSettings(msg.Width, msg.Height)
 		return m, nil
@@ -411,28 +440,36 @@ func (m *Model) viewDatabaseSettings() string {
 			BorderColor: styles.ConnectionBorderColor,
 		}),
 		"",
-		styles.SectionTitleStyle.Render("Stored Connections"),
-		styles.SubtitleStyle.Render("Use Enter to switch to the selected database connection."),
 		"",
 		m.dbSettings.databaseList.Render(),
 	}
 
-	if m.dbSettings.showDialog && m.dbSettings.dialogMsg != "" {
-		dialogLine := styles.OnboardingSavedStyle.Render(m.dbSettings.dialogMsg)
-		if m.dbSettings.dialogIsError {
-			dialogLine = styles.OnboardingErrorStyle.Render("Error: " + m.dbSettings.dialogMsg)
-		}
-		parts = append(
-			parts,
-			"",
-			dialogLine,
-			styles.SubtitleStyle.Width(innerWidth).Render("Press Esc to dismiss the message and stay on this screen."),
-		)
-	}
+	parts = append(parts, renderSettingsDialogLines(m.dbSettings.dialog, innerWidth)...)
 
 	// Danger Zone for subscriber procedure deletion
 	if m.subscriber != nil && m.subscriber.FunnyName() != "" {
-		dangerContent := styles.SubtitleStyle.Render("Press Ctrl+D to delete your subscriber procedure.")
+		var dangerContent string
+		if m.dbSettings.dropProcedureDeleting {
+			dangerContent = lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				m.dbSettings.spinner.View(),
+				"  ",
+				styles.SubtitleStyle.Render("Deleting procedure, please wait a moment..."),
+			)
+		} else if m.dbSettings.dropProcedureResultMsg != "" {
+			resultStyle := styles.OnboardingSavedStyle
+			if m.dbSettings.dropProcedureResultIsErr {
+				resultStyle = styles.OnboardingErrorStyle
+			}
+			dangerContent = lipgloss.JoinVertical(
+				lipgloss.Left,
+				resultStyle.Render(m.dbSettings.dropProcedureResultMsg),
+				"",
+				styles.SubtitleStyle.Render("Press Esc to dismiss."),
+			)
+		} else {
+			dangerContent = styles.SubtitleStyle.Render("Press P to delete your subscriber procedure.")
+		}
 		parts = append(parts,
 			"",
 			renderEmbeddedField(embeddedFieldOptions{
@@ -520,9 +557,7 @@ func (m *Model) showDatabaseSwitchError(err error) (*Model, tea.Cmd) {
 	logger.Error("database switch failed", "error", err)
 	m.loading.err = err
 	m.dbSettings.visible = true
-	m.dbSettings.dialogMsg = err.Error()
-	m.dbSettings.dialogIsError = true
-	m.dbSettings.showDialog = true
+	m.dbSettings.dialog.set(err.Error(), true)
 	return m, nil
 }
 

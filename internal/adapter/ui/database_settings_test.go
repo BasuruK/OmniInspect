@@ -2,10 +2,14 @@ package ui
 
 import (
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/subscribers"
 	"OmniView/internal/service/tracer"
+
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/lipgloss/v2"
 
 	"context"
 	"errors"
@@ -198,6 +202,10 @@ func newTestModelForSettings(t *testing.T) *Model {
 		},
 		dbSettings: databaseSettingsState{
 			visible: true,
+			spinner: spinner.New(
+				spinner.WithSpinner(spinner.Dot),
+				spinner.WithStyle(lipgloss.NewStyle().Foreground(styles.WarningColor)),
+			),
 		},
 	}
 }
@@ -295,6 +303,7 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_UppercaseYExecutesDropAndSh
 	m.subscriber = subscriber
 	m.dbSettings.dropProcedureTarget = "BARNACLE"
 
+	// Step 1: Press Y to confirm the drop - closes modal and sets up async operation
 	updated, cmd := m.updateDatabaseSettings(makeCharPress("Y"))
 	if cmd == nil {
 		t.Fatal("expected confirm command for uppercase Y")
@@ -303,26 +312,26 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_UppercaseYExecutesDropAndSh
 		t.Fatal("expected drop confirmation modal to close after confirmation")
 	}
 
-	msg := cmd()
-	updated, cmd = updated.updateDatabaseSettings(msg)
-	if cmd == nil {
-		t.Fatal("expected async drop command")
+	// Step 2: Directly send dropSubscriberProcedureMsg (bypassing tea.Batch complexity)
+	// In real Bubble Tea, this comes from the batch, but in tests we can send it directly
+	updated, dropCmd := updated.updateDatabaseSettings(dropSubscriberProcedureMsg{funnyName: "BARNACLE"})
+	if dropCmd == nil {
+		t.Fatal("expected async cmd to execute drop")
 	}
 
-	msg = cmd() // msg is dropSubscriberProcedureResultMsg
-	updated, _ = updated.updateDatabaseSettings(msg)
+	// Step 3: Execute the drop command to get the result message
+	resultMsg := dropCmd()
+	updated, _ = updated.updateDatabaseSettings(resultMsg)
 
+	// Step 4: Verify drop was called and result was set
 	if procGen.dropCalledWith != "BARNACLE" {
 		t.Fatalf("expected drop to target BARNACLE, got %q", procGen.dropCalledWith)
 	}
-	if !updated.dbSettings.showDialog {
-		t.Fatal("expected success dialog to be shown")
+	if updated.dbSettings.dropProcedureResultMsg == "" {
+		t.Fatal("expected result message to be set")
 	}
-	if updated.dbSettings.dialogIsError {
-		t.Fatal("expected success dialog, got error dialog")
-	}
-	if updated.dbSettings.dialogMsg == "" {
-		t.Fatal("expected success dialog message to be set")
+	if updated.dbSettings.dropProcedureResultIsErr {
+		t.Fatal("expected success result, got error result")
 	}
 }
 
@@ -345,14 +354,14 @@ func TestUpdateDatabaseSettings_DropProcedureConfirm_ShowsErrorWhenProcedureDrop
 	msg := cmd() // This returns dropSubscriberProcedureResultMsg with an error because m.subscriberService is nil
 	updated, _ = updated.updateDatabaseSettings(msg)
 
-	if !updated.dbSettings.showDialog {
-		t.Fatal("expected error dialog to be shown")
+	if updated.dbSettings.dropProcedureResultMsg == "" {
+		t.Fatal("expected result message to be set")
 	}
-	if !updated.dbSettings.dialogIsError {
-		t.Fatal("expected error dialog styling")
+	if !updated.dbSettings.dropProcedureResultIsErr {
+		t.Fatal("expected error result styling")
 	}
-	if updated.dbSettings.dialogMsg == "" {
-		t.Fatal("expected error dialog message to be set")
+	if updated.dbSettings.dialog.visible {
+		t.Fatal("expected no modal dialog for error result")
 	}
 }
 
@@ -544,10 +553,10 @@ func TestHandleSettingsSetAsMain_FactoryError(t *testing.T) {
 	}
 
 	// Assert dialog is shown
-	if !updated.dbSettings.showDialog {
+	if !updated.dbSettings.dialog.visible {
 		t.Error("expected dbSettings.showDialog to be true on error")
 	}
-	if updated.dbSettings.dialogMsg == "" {
+	if updated.dbSettings.dialog.msg == "" {
 		t.Error("expected dbSettings.dialogMsg to be set on error")
 	}
 
@@ -593,14 +602,14 @@ func TestHandleSettingsSetAsMain_FactoryErrorDescriptiveMessage(t *testing.T) {
 	updated, _ := m.handleSettingsSetAsMain(*selected)
 
 	// Verify error message is descriptive
-	if updated.dbSettings.dialogMsg == "" {
+	if updated.dbSettings.dialog.msg == "" {
 		t.Error("expected dialog message to be set")
 	}
 	if !errors.Is(updated.loading.err, factoryErr) {
 		t.Errorf("expected loading.err to wrap factory error, got %v", updated.loading.err)
 	}
 	// Verify original error is wrapped
-	if updated.dbSettings.dialogMsg == factoryErr.Error() {
+	if updated.dbSettings.dialog.msg == factoryErr.Error() {
 		t.Error("expected dialog message to contain wrapped error, not just raw error")
 	}
 }
@@ -642,7 +651,7 @@ func TestHandleSettingsSetAsMain_ConnectionValidationError_KeepsExistingSession(
 	if len(newMockDB.CloseCalls) != 1 {
 		t.Errorf("expected replacement adapter.Close to be called once after failed validation, got %d calls", len(newMockDB.CloseCalls))
 	}
-	if !updated.dbSettings.showDialog {
+	if !updated.dbSettings.dialog.visible {
 		t.Fatal("expected settings dialog to remain visible on validation failure")
 	}
 	if updated.loading.err == nil {

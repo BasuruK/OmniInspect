@@ -23,13 +23,12 @@ const (
 )
 
 type webhookSettingsState struct {
-	config     *domain.WebhookConfig
-	visible    bool
-	cursor     int
-	input      string
-	dialogMsg  string
-	showDialog bool
-	layout     webhookSettingsLayout
+	config  *domain.WebhookConfig
+	visible bool
+	cursor  int
+	input   string
+	dialog  settingsDialog
+	layout  webhookSettingsLayout
 }
 
 type webhookSettingsLayout struct {
@@ -88,8 +87,7 @@ func (m *Model) closeWebhookSettings() {
 
 // clearWebhookSettingsDialog dismisses the error/info dialog in the webhook settings panel.
 func (m *Model) clearWebhookSettingsDialog() {
-	m.webhookSettings.showDialog = false
-	m.webhookSettings.dialogMsg = ""
+	m.webhookSettings.dialog.clear()
 }
 
 // ==========================================
@@ -118,7 +116,7 @@ func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 				m.clearWebhookSettingsDialog()
 				return m, nil
 			}
-			if m.webhookSettings.showDialog {
+			if m.webhookSettings.dialog.visible {
 				m.clearWebhookSettingsDialog()
 				return m, nil
 			}
@@ -180,8 +178,7 @@ func (m *Model) updateWebhookSettings(msg tea.Msg) (*Model, tea.Cmd) {
 
 	case webhookConfigSavedMsg:
 		if msg.err != nil {
-			m.webhookSettings.dialogMsg = msg.err.Error()
-			m.webhookSettings.showDialog = true
+			m.webhookSettings.dialog.set(msg.err.Error(), true)
 			return m, nil
 		}
 
@@ -274,17 +271,9 @@ func (m *Model) viewWebhookSettings() string {
 		m.webhookSettings.cursor == webhookBtnCancel,
 	))
 
-	if m.webhookSettings.showDialog && m.webhookSettings.dialogMsg != "" {
-		parts = append(
-			parts,
-			styles.OnboardingErrorStyle.Render("Error: "+m.webhookSettings.dialogMsg),
-		)
-		if layout.showHint {
-			parts = append(parts, styles.SubtitleStyle.Width(innerWidth).Render("Press Esc to dismiss the message and stay on this screen."))
-		}
-	}
+	parts = append(parts, renderSettingsDialogLines(m.webhookSettings.dialog, innerWidth)...)
 
-	if !m.webhookSettings.showDialog && layout.showHint {
+	if !m.webhookSettings.dialog.visible && layout.showHint {
 		appendSpacer()
 		parts = append(parts, styles.OnboardingHintStyle.Width(innerWidth).Render("↑/↓ Navigate  •  Enter Confirm  •  Ctrl+U Clear  •  Esc Back"))
 	}

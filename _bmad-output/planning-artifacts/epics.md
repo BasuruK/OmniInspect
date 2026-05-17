@@ -29,8 +29,6 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 **FR-3:** Modify Settings UI - Add danger zone option to drop subscriber-specific procedure
 
-**FR-4:** Modify Settings UI - Add danger zone option to drop entire OMNI_TRACER_API package
-
 **FR-5:** Auto-redeploy package on startup if missing
 
 **FR-6:** Strict name format validation (`^[A-Za-z_]+$`) to prevent SQL injection
@@ -76,7 +74,6 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 | FR-1 | Generate TRACE_MESSAGE_<FUNNY_NAME>() procedure per subscriber | Epic 1 |
 | FR-2 | Idempotent creation | Epic 1 |
 | FR-3 | Drop subscriber-specific procedure | Epic 3 |
-| FR-4 | Drop entire OMNI_TRACER_API package | Epic 3 |
 | FR-5 | Auto-redeploy on startup | Epic 1 |
 | FR-6 | Strict name format validation | Epic 1 |
 | FR-7 | Display procedure name in TUI | Epic 2 |
@@ -99,9 +96,9 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 
 ### Epic 3: Danger Zone Implementation
 
-**User Outcome:** Subscribers can clean up their procedures or the entire package when needed, and the application safely unregisters from Oracle AQ on shutdown.
+**User Outcome:** Subscribers can clean up their own procedures and safely unregister from Oracle AQ on shutdown.
 
-**FRs Covered:** FR-3, FR-4, FR-9
+**FRs Covered:** FR-3, FR-9
 
 **FR-9:** Safe subscriber unregistration from Oracle AQ on application shutdown
 
@@ -260,26 +257,6 @@ So that I can clean up when I no longer need tracing.
 **Given** the procedure is deleted
 **When** OmniView restarts
 **Then** if the subscriber is still registered, the procedure is regenerated
-
----
-
-### Story 3.2: Drop Entire Package (Danger Zone)
-
-As a subscriber,
-I want to drop the entire OMNI_TRACER_API package,
-So that I can remove all generated procedures at once.
-
-**Acceptance Criteria:**
-
-**Given** the subscriber is on the Settings screen
-**When** they select "Drop All Procedures"
-**Then** a confirmation dialog appears with strong warning
-**And** if confirmed, the entire OMNI_TRACER_API package is dropped from the database
-
-**Given** the package is dropped
-**When** OmniView restarts
-**Then** it redeploys the base package with subscriber-routed `Enqueue_Event___()` support
-**And** it regenerates all subscriber procedures
 
 ---
 

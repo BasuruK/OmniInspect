@@ -82,12 +82,12 @@ development_status:
     notes: "DangerZoneStyle, danger zone UI, D key handler, confirmation modal, async command wiring. make test and make build passing."
 
   3-2-drop-entire-package:
-    status: "ready-for-dev"
-    title: "Drop Entire Package (Danger Zone)"
+    status: "cancelled"
+    title: "Drop Entire Package (Danger Zone) — PARKED"
     epic: "Epic 3: Danger Zone Implementation"
     owner: "dev-agent"
-    last_updated: "2026-04-28"
-    notes: "Add danger zone option to drop entire OMNI_TRACER_API package"
+    last_updated: "2026-05-17"
+    notes: "PARKED: Security risk — package drop affects all subscribers, not just the requestor. FR-4 removed from plan. Feature may be revisited as admin-only operation with proper access controls."
 
   3-3-safe-subscriber-unregistration:
     status: "ready-for-dev"
@@ -102,11 +102,10 @@ development_status:
 # ==========================================
 metrics:
   total_stories: 9
-  completed: 6
-  in_progress: 0
-  ready_for_dev: 3
-  blocked: 0
-  completion_percentage: 67
+  completed: 7
+  ready_for_dev: 1
+  cancelled: 1
+  completion_percentage: 78
 
 # ==========================================
 # EPIC SUMMARY
@@ -122,15 +121,16 @@ epic_summary:
   epic-2:
     title: "Epic 2: TUI Procedure Name Display"
     stories_total: 1
-    stories_completed: 0
+    stories_completed: 1
     stories_in_progress: 0
-    status: "pending"
+    status: "done"
 
   epic-3:
     title: "Epic 3: Danger Zone Implementation"
     stories_total: 3
     stories_completed: 1
     stories_in_progress: 0
+    stories_cancelled: 1
     status: "in-progress"
 
 # ==========================================

@@ -48,7 +48,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Creation | Idempotent - check if exists, only create if missing |
 | SQL injection | Strict format validation before DDL generation |
 | Package invalidation | Accepted risk - app redeploys on restart |
-| Danger zone options | Per-subscriber method deletion OR drop entire OMNI_TRACER_API package |
+| Danger zone options | Per-subscriber method deletion only (FR-4 / Story 3-2 PARKED — package drop removed from scope) |
 | Auto-redeploy | Already implemented - if package missing, OmniView redeploys |
 | Permissions | Any database user can call generated procedures |
 | Scalability | N subscribers supported, no hard limit |
@@ -76,7 +76,7 @@ IFS Cloud executes trace calls under IFS app user identity, NOT the debugging Om
 - FR-1: Generate unique `TRACE_MESSAGE_<subscriber_id>()` procedure per subscriber on registration
 - FR-2: Idempotent creation - check if procedure exists before creating
 - FR-3: **Modify Settings UI** - Add danger zone option to drop subscriber-specific procedure
-- FR-4: **Modify Settings UI** - Add danger zone option to drop entire OMNI_TRACER_API package
+- (FR-4 REMOVED: Package-drop poses unacceptable risk — accidental deletion affects all subscribers)
 - FR-5: Auto-redeploy package on startup if missing
 - FR-6: Strict name format validation (`^[A-Za-z_]+$`) to prevent SQL injection
 - FR-7: Display the subscriber's method name in TUI - Show the user the exact procedure they must call in their PL/SQL code to receive subscriber-isolated messages (e.g., `OMNI_TRACER_API.TRACE_MESSAGE_SUB_0CC283A4...`)
@@ -395,7 +395,10 @@ END TRACE_MESSAGE_BARNACLE;
 Danger zone section in Settings screen:
 - Visual distinction (red/warning styling)
 - Confirmation required before destructive actions
-- Two options: Drop subscriber procedure OR Drop entire package
+- ONE option: Drop subscriber-specific procedure only
+
+NOTE: Drop entire OMNI_TRACER_API package (FR-4) has been PARKED due to risk concerns.
+If needed in the future, it should be implemented as an admin-only operation with separate access controls.
 
 ### Enforcement Guidelines
 
@@ -564,7 +567,7 @@ Service Layer
 | **FR-1, FR-2, FR-6**: Generate `TRACE_MESSAGE_<funny>` procedure | `internal/core/domain/funny_names.go` | **NEW** - Curated name list + validation |
 | | `internal/service/subscribers/subscriber_service.go` | **MODIFY** - Add `EnsureSubscriberProcedure()` |
 | | `internal/adapter/storage/oracle/oracle_adapter.go` | **MODIFY** - Add DDL execution for procedure creation |
-| **FR-3, FR-4**: Danger zone options | `internal/adapter/ui/database_settings.go` | **MODIFY** - Add "Drop my procedure" + "Drop all procedures" |
+| **FR-3**: Danger zone options | `internal/adapter/ui/database_settings.go` | **MODIFY** - Add "Drop my procedure" |
 | **FR-5**: Auto-redeploy on startup | `internal/adapter/storage/oracle/oracle_adapter.go` | **VERIFY** - Check existing redeploy logic |
 | **FR-7**: Display method name in TUI | `internal/adapter/ui/main_screen.go` | **MODIFY** - Show `OMNI_TRACER_API.TRACE_MESSAGE_<NAME>()` in header |
 
@@ -628,7 +631,7 @@ IFS Cloud → OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg')
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | FR-1, FR-2, FR-6: Generate procedure | ✅ | `ExecuteStatement()` at runtime DDL |
-| FR-3, FR-4: Danger zone options | ✅ | `database_settings.go` modification |
+| FR-3: Danger zone options (FR-4 PARKED) | ✅ | `database_settings.go` modification |
 | FR-5: Auto-redeploy | ✅ | Existing `DeployAndCheck()` |
 | FR-7: Display method name | ✅ | `main_screen.go` header area |
 

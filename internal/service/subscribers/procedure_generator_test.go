@@ -45,6 +45,10 @@ func (s *stubDBRepo) RegisterNewSubscriber(ctx context.Context, subscriber domai
 	return s.registerErr
 }
 
+func (s *stubDBRepo) UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	return nil
+}
+
 func (s *stubDBRepo) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
 	return nil, nil, 0, nil
 }

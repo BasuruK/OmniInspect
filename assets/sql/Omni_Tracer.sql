@@ -113,7 +113,7 @@ CREATE OR REPLACE PACKAGE OMNI_TRACER_API AS
     
     -- Subscriber Management
     PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2);
-    --PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
+    PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);
 
 END OMNI_TRACER_API;
 /
@@ -204,6 +204,32 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             RAISE;
         END IF;
     END Register_Subscriber;
+
+
+    PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2)
+    IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
+        sub_ SYS.AQ$_AGENT;
+    BEGIN
+        IF subscriber_name_ IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Subscriber name cannot be NULL or empty');
+        END IF;
+
+        sub_ := SYS.AQ$_AGENT(subscriber_name_, NULL, NULL);
+        DBMS_AQADM.REMOVE_SUBSCRIBER (
+            queue_name => TRACER_QUEUE_NAME,
+            subscriber => sub_
+        );
+        COMMIT;
+    EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE = -24036 THEN -- Subscriber does not exist (ORA-24036)
+            COMMIT; -- Must commit autonomous transaction even on expected exception
+        ELSE
+            ROLLBACK;
+            RAISE;
+        END IF;
+    END Unregister_Subscriber;
 
 
     PROCEDURE Enqueue_Event___ (

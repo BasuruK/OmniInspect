@@ -130,13 +130,14 @@ func StopAll(tracerService *TracerService) {
 // Service: Manages package deployments
 // Injects a DatabaseRepository and ConfigRepository to interact with the database
 type TracerService struct {
-	db             ports.DatabaseRepository
-	bolt           ports.ConfigRepository
-	processMu      sync.Mutex
-	eventChannel   chan *domain.QueueMessage
-	listenerCtx    context.Context
-	listenerCancel context.CancelFunc
-	listenerWg     sync.WaitGroup
+	db               ports.DatabaseRepository
+	bolt             ports.ConfigRepository
+	processMu        sync.Mutex
+	eventChannel     chan *domain.QueueMessage
+	listenerCtx      context.Context
+	listenerCancel   context.CancelFunc
+	listenerWg       sync.WaitGroup
+	activeSubscriber *domain.Subscriber
 }
 
 // Constructor: NewTracerService Constructor for TracerService
@@ -166,6 +167,8 @@ func (ts *TracerService) StopConnectionListener() {
 }
 
 // CancelConnectionListener stops the current connection-scoped listener and waits for its goroutines to exit.
+// If a subscriber is active, it is unregistered from Oracle AQ with a 5-second timeout.
+// Unregistration errors are logged but never block shutdown.
 func (ts *TracerService) CancelConnectionListener() {
 	if ts == nil {
 		return
@@ -177,6 +180,16 @@ func (ts *TracerService) CancelConnectionListener() {
 		ts.listenerCtx = nil
 	}
 	ts.drainEventChannel()
+
+	if ts.db != nil && ts.activeSubscriber != nil {
+		sub := *ts.activeSubscriber
+		ts.activeSubscriber = nil // nil before call to prevent TOCTOU race
+		unregCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := ts.db.UnregisterSubscriber(unregCtx, sub); err != nil {
+			logger.Warn("failed to unregister subscriber from Oracle AQ", "consumer", sub.ConsumerName(), "error", err)
+		}
+	}
 }
 
 // StartEventListener starts goroutines that listen for new tracer messages for the given subscriber and processes them
@@ -185,6 +198,9 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 		return fmt.Errorf("subscriber cannot be nil")
 	}
 	ts.StopConnectionListener()
+
+	subCopy := *subscriber
+	ts.activeSubscriber = &subCopy
 
 	// Create a cancellable context for event listeners
 	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)

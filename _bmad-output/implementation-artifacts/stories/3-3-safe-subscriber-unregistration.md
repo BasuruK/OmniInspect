@@ -65,11 +65,11 @@ Story 3-3 adds a graceful unregistration path: when the event listener is stoppe
 **Implementation approach**:
 - Uncomment `--PROCEDURE Unregister_Subscriber(subscriber_name_ IN VARCHAR2);` in package spec (line 116)
 - Add body implementation after `Register_Subscriber` body — calls `DBMS_AQADM.REMOVE_SUBSCRIBER`
-- Idempotent: handle ORA-24036 (subscriber does not exist) gracefully — return success
+- Idempotent: handle ORA-24035 (subscriber does not exist) gracefully — return success
 
 - [x] Uncomment Unregister_Subscriber declaration in package spec
 - [x] Add Unregister_Subscriber body after Register_Subscriber body
-- [x] Handle ORA-24036 (subscriber not found) as no-op success
+- [x] Handle ORA-24035 (subscriber not found) as no-op success
 
 ### Task 2: Add UnregisterSubscriber to DatabaseRepository interface and OracleAdapter
 
@@ -185,7 +185,7 @@ END Register_Subscriber;
 ```
 
 **Unregister_Subscriber to implement** (mirror of Register, using REMOVE_SUBSCRIBER):
-- Oracle error for subscriber not found: ORA-24036 (SQLCODE = -24036)
+- Oracle error for subscriber not found: ORA-24035 (SQLCODE = -24035)
 - Must be `PRAGMA AUTONOMOUS_TRANSACTION` (same as Register)
 
 **5-second timeout pattern**:
@@ -243,7 +243,7 @@ internal/
 **Approach**: Added `Unregister_Subscriber` SQL procedure, wired `UnregisterSubscriber` through the port/oracle adapter, stored `activeSubscriber` in `TracerService`, and called `UnregisterSubscriber` with a 5-second timeout in `CancelConnectionListener`.
 
 **Files Modified**:
-- `assets/sql/Omni_Tracer.sql` — uncommented spec declaration + added `Unregister_Subscriber` body with ORA-24036 idempotent handling
+- `assets/sql/Omni_Tracer.sql` — uncommented spec declaration + added `Unregister_Subscriber` body with ORA-24035 idempotent handling
 - `internal/core/ports/repository.go` — added `UnregisterSubscriber` to `DatabaseRepository` interface
 - `internal/adapter/storage/oracle/subscriptions.go` — implemented `UnregisterSubscriber`
 - `internal/service/tracer/tracer_service.go` — added `activeSubscriber` field, set in `StartEventListener`, called in `CancelConnectionListener` with 5s timeout

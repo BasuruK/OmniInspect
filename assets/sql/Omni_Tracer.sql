@@ -227,7 +227,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         COMMIT;
     EXCEPTION
     WHEN OTHERS THEN
-        IF SQLCODE = -24036 THEN -- Subscriber does not exist (ORA-24036)
+        IF SQLCODE = -24035 THEN -- Subscriber does not exist (ORA-24035)
             COMMIT; -- Must commit autonomous transaction even on expected exception
         ELSE
             ROLLBACK;

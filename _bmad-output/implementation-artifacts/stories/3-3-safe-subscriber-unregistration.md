@@ -9,7 +9,9 @@ last_updated: "2026-05-18"
 ---
 
 ==========================================
+
 # STORY DEFINITION
+
 ==========================================
 
 ## Story
@@ -157,6 +159,7 @@ The TracerService cleanup (`CancelConnectionListener` → `UnregisterSubscriber`
 - `ts.db` is `ports.DatabaseRepository` — call `UnregisterSubscriber` here
 
 **Register_Subscriber pattern** (reference for Unregister body):
+
 ```sql
 PROCEDURE Register_Subscriber(subscriber_name_ IN VARCHAR2)
 IS
@@ -186,6 +189,7 @@ END Register_Subscriber;
 - Must be `PRAGMA AUTONOMOUS_TRANSACTION` (same as Register)
 
 **5-second timeout pattern**:
+
 ```go
 unregCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()

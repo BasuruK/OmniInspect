@@ -8,9 +8,9 @@ created_date: "2026-05-18"
 last_updated: "2026-05-18"
 ---
 
-# ==========================================
+==========================================
 # STORY DEFINITION
-# ==========================================
+==========================================
 
 ## Story
 
@@ -138,12 +138,12 @@ The TracerService cleanup (`CancelConnectionListener` → `UnregisterSubscriber`
 
 ### Review Findings
 
-- [x] [Review][Patch] Unregistration unreachable on app quit — added `StopConnectionListener()` before `tea.Quit` in model.go quit handler [internal/adapter/ui/model.go:365-375]
-- [x] [Review][Patch] TOCTOU race on `activeSubscriber` — nil field before call, store local copy [internal/service/tracer/tracer_service.go:183-191]
-- [x] [Review][Patch] Stored pointer to caller-owned subscriber — store defensive copy in StartEventListener [internal/service/tracer/tracer_service.go:201-202]
-- [x] [Review][Defer] No test for 5s timeout boundary — pre-existing pattern, stdlib context.WithTimeout is trusted
-- [x] [Review][Defer] PL/SQL whitespace-only name passes NULL check — pre-existing gap in Register_Subscriber too
-- [x] [Review][Defer] Error message in subscriptions.go missing subscriber name — cosmetic, pre-existing pattern
+- [x] Review/Patch Unregistration unreachable on app quit — added `StopConnectionListener()` before `tea.Quit` in model.go quit handler [internal/adapter/ui/model.go:365-375]
+- [x] Review/Patch TOCTOU race on `activeSubscriber` — nil field before call, store local copy [internal/service/tracer/tracer_service.go:183-191]
+- [x] Review/Patch Stored pointer to caller-owned subscriber — store defensive copy in StartEventListener [internal/service/tracer/tracer_service.go:201-202]
+- [x] Review/Defer No test for 5s timeout boundary — pre-existing pattern, stdlib context.WithTimeout is trusted
+- [x] Review/Defer PL/SQL whitespace-only name passes NULL check — pre-existing gap in Register_Subscriber too
+- [x] Review/Defer Error message in subscriptions.go missing subscriber name — cosmetic, pre-existing pattern
 
 ---
 
@@ -208,7 +208,7 @@ if err := ts.db.UnregisterSubscriber(unregCtx, *ts.activeSubscriber); err != nil
 
 ### File Structure
 
-```
+```text
 assets/
 └── sql/
     └── Omni_Tracer.sql                   # [MODIFY] Uncomment spec + add body

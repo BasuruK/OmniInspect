@@ -133,6 +133,7 @@ type TracerService struct {
 	db               ports.DatabaseRepository
 	bolt             ports.ConfigRepository
 	processMu        sync.Mutex
+	subscriberMu     sync.Mutex
 	eventChannel     chan *domain.QueueMessage
 	listenerCtx      context.Context
 	listenerCancel   context.CancelFunc
@@ -181,12 +182,19 @@ func (ts *TracerService) CancelConnectionListener() {
 	}
 	ts.drainEventChannel()
 
-	if ts.db != nil && ts.activeSubscriber != nil {
-		sub := *ts.activeSubscriber
-		ts.activeSubscriber = nil // nil before call to prevent TOCTOU race
+	ts.subscriberMu.Lock()
+	var sub *domain.Subscriber
+	if ts.activeSubscriber != nil {
+		copy := *ts.activeSubscriber
+		sub = &copy
+		ts.activeSubscriber = nil
+	}
+	ts.subscriberMu.Unlock()
+
+	if ts.db != nil && sub != nil {
 		unregCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := ts.db.UnregisterSubscriber(unregCtx, sub); err != nil {
+		if err := ts.db.UnregisterSubscriber(unregCtx, *sub); err != nil {
 			logger.Warn("failed to unregister subscriber from Oracle AQ", "consumer", sub.ConsumerName(), "error", err)
 		}
 	}
@@ -199,8 +207,10 @@ func (ts *TracerService) StartEventListener(ctx context.Context, subscriber *dom
 	}
 	ts.StopConnectionListener()
 
-	subCopy := *subscriber
-	ts.activeSubscriber = &subCopy
+	ts.subscriberMu.Lock()
+	ts.activeSubscriber = new(domain.Subscriber)
+	*ts.activeSubscriber = *subscriber
+	ts.subscriberMu.Unlock()
 
 	// Create a cancellable context for event listeners
 	ts.listenerCtx, ts.listenerCancel = context.WithCancel(ctx)

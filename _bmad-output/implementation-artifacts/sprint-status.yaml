@@ -90,22 +90,22 @@ development_status:
     notes: "PARKED: Security risk — package drop affects all subscribers, not just the requestor. FR-4 removed from plan. Feature may be revisited as admin-only operation with proper access controls."
 
   3-3-safe-subscriber-unregistration:
-    status: "ready-for-dev"
+    status: "done"
     title: "Safe Subscriber Unregistration on Shutdown"
     epic: "Epic 3: Danger Zone Implementation"
     owner: "dev-agent"
-    last_updated: "2026-05-09"
-    notes: "Unregister subscriber from Oracle AQ on graceful shutdown via DBMS_AQADM.REMOVE_SUBSCRIBER. Uncomment and implement Unregister_Subscriber in OMNI_TRACER_API. Handle timeout for unreachable Oracle."
+    last_updated: "2026-05-18"
+    notes: "Unregister_Subscriber PL/SQL procedure added to OMNI_TRACER_API. UnregisterSubscriber port + Oracle adapter implemented. activeSubscriber stored in TracerService, called in CancelConnectionListener with 5s timeout. 3 new unit tests. make test and make build passing."
 
 # ==========================================
 # SPRINT METRICS
 # ==========================================
 metrics:
   total_stories: 9
-  completed: 7
-  ready_for_dev: 1
+  completed: 8
+  ready_for_dev: 0
   cancelled: 1
-  completion_percentage: 78
+  completion_percentage: 89
 
 # ==========================================
 # EPIC SUMMARY
@@ -128,10 +128,10 @@ epic_summary:
   epic-3:
     title: "Epic 3: Danger Zone Implementation"
     stories_total: 3
-    stories_completed: 1
+    stories_completed: 2
     stories_in_progress: 0
     stories_cancelled: 1
-    status: "in-progress"
+    status: "done"
 
 # ==========================================
 # NEXT ACTIONS

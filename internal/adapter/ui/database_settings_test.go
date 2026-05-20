@@ -102,6 +102,11 @@ func (m *MockDatabaseRepository) RegisterNewSubscriber(ctx context.Context, subs
 	return nil
 }
 
+// UnregisterSubscriber implements ports.DatabaseRepository (no-op for mock).
+func (m *MockDatabaseRepository) UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	return nil
+}
+
 // BulkDequeueTracerMessages implements ports.DatabaseRepository (no-op for mock).
 func (m *MockDatabaseRepository) BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error) {
 	return nil, nil, 0, nil

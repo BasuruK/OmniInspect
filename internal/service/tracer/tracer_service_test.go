@@ -29,6 +29,9 @@ func (stubDatabaseRepository) Close(context.Context) error   { return nil }
 func (stubDatabaseRepository) RegisterNewSubscriber(context.Context, domain.Subscriber) error {
 	return nil
 }
+func (stubDatabaseRepository) UnregisterSubscriber(context.Context, domain.Subscriber) error {
+	return nil
+}
 func (stubDatabaseRepository) BulkDequeueTracerMessages(context.Context, domain.Subscriber) ([]string, [][]byte, int, error) {
 	return nil, nil, 0, nil
 }
@@ -138,4 +141,100 @@ func TestWebhookDispatcherStop_IsIdempotent(t *testing.T) {
 	dispatcher := newWebhookDispatcher()
 	dispatcher.Stop()
 	dispatcher.Stop()
+}
+
+// spyDatabaseRepository is a controllable stub that tracks UnregisterSubscriber calls.
+type spyDatabaseRepository struct {
+	stubDatabaseRepository
+	mu                    sync.Mutex
+	unregisterCalled      bool
+	unregisterCalledWith  domain.Subscriber
+	unregisterErr         error
+}
+
+func (s *spyDatabaseRepository) UnregisterSubscriber(_ context.Context, sub domain.Subscriber) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unregisterCalled = true
+	s.unregisterCalledWith = sub
+	return s.unregisterErr
+}
+
+func newTestSubscriber(t *testing.T) *domain.Subscriber {
+	t.Helper()
+	sub, err := domain.NewSubscriber("TESTNAME", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("failed to create test subscriber: %v", err)
+	}
+	return sub
+}
+
+func TestCancelConnectionListener_UnregistersActiveSubscriber(t *testing.T) {
+	t.Parallel()
+	spy := &spyDatabaseRepository{}
+	sub := newTestSubscriber(t)
+
+	ts := &TracerService{
+		db:               spy,
+		eventChannel:     make(chan *domain.QueueMessage, 1),
+		activeSubscriber: sub,
+	}
+
+	ts.CancelConnectionListener()
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if !spy.unregisterCalled {
+		t.Fatal("expected UnregisterSubscriber to be called when an active subscriber is present")
+	}
+	if spy.unregisterCalledWith.ConsumerName() != sub.ConsumerName() {
+		t.Fatalf("expected UnregisterSubscriber called with %q, got %q",
+			sub.ConsumerName(), spy.unregisterCalledWith.ConsumerName())
+	}
+	if ts.activeSubscriber != nil {
+		t.Fatal("expected activeSubscriber to be cleared after unregistration")
+	}
+}
+
+func TestCancelConnectionListener_SkipsUnregistrationWhenNoSubscriber(t *testing.T) {
+	t.Parallel()
+	spy := &spyDatabaseRepository{}
+
+	ts := &TracerService{
+		db:           spy,
+		eventChannel: make(chan *domain.QueueMessage, 1),
+		// activeSubscriber intentionally nil
+	}
+
+	ts.CancelConnectionListener()
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if spy.unregisterCalled {
+		t.Fatal("expected UnregisterSubscriber NOT to be called when no active subscriber")
+	}
+}
+
+func TestCancelConnectionListener_ContinuesOnUnregisterError(t *testing.T) {
+	t.Parallel()
+	spy := &spyDatabaseRepository{unregisterErr: errors.New("oracle unreachable")}
+	sub := newTestSubscriber(t)
+
+	ts := &TracerService{
+		db:               spy,
+		eventChannel:     make(chan *domain.QueueMessage, 1),
+		activeSubscriber: sub,
+	}
+
+	// Must not panic or block — error is only logged
+	ts.CancelConnectionListener()
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if !spy.unregisterCalled {
+		t.Fatal("expected UnregisterSubscriber to be called even when an error is expected")
+	}
+	if ts.activeSubscriber != nil {
+		t.Fatal("expected activeSubscriber to be cleared even after unregistration error")
+	}
 }

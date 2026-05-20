@@ -76,6 +76,10 @@ type DatabaseRepository interface {
 	// RegisterNewSubscriber registers a new subscriber in the database
 	RegisterNewSubscriber(ctx context.Context, subscriber domain.Subscriber) error
 
+	// UnregisterSubscriber removes a subscriber from Oracle AQ.
+	// Returns nil if the subscriber does not exist (idempotent).
+	UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error
+
 	// BulkDequeueTracerMessages dequeues multiple messages for a subscriber
 	BulkDequeueTracerMessages(ctx context.Context, subscriber domain.Subscriber) ([]string, [][]byte, int, error)
 

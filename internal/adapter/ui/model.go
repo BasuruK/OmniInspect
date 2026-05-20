@@ -363,11 +363,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			if m.tracerService != nil {
+				m.tracerService.StopConnectionListener()
+			}
 			m.cancel() // Cancel all background operations
 			return m, tea.Quit
 		case "q":
 			// Only quit from screens that don't need 'q' for navigation
 			if (m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible) {
+				if m.tracerService != nil {
+					m.tracerService.StopConnectionListener()
+				}
 				m.cancel()
 				return m, tea.Quit
 			}

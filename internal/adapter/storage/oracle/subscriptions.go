@@ -64,3 +64,15 @@ func parseCountResult(results []string) (int, error) {
 	}
 	return count, nil
 }
+
+// UnregisterSubscriber removes a subscriber from Oracle AQ.
+// If the subscriber does not exist, it returns nil (idempotent).
+func (oa *OracleAdapter) UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	err := oa.ExecuteWithParams(ctx, "BEGIN OMNI_TRACER_API.Unregister_Subscriber(:subscriberName); END;", map[string]interface{}{
+		"subscriberName": subscriber.ConsumerName(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to unregister subscriber: %w", err)
+	}
+	return nil
+}

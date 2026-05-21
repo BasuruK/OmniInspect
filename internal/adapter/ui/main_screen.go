@@ -168,6 +168,14 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				m.main.viewport.GotoBottom()
 			}
 			return m, nil
+		case "b":
+			// Cycle broadcast mode
+			if err := m.cycleBroadcastMode(); err != nil {
+				logger.Error("failed to cycle broadcast mode", "error", err)
+			}
+			// Rebuild rendered content to reflect new filter
+			m.rebuildRenderedContent(m.main.viewport.Width())
+			return m, nil
 		case "c":
 			// Clear all messages
 			m.main.messages = nil
@@ -604,7 +612,7 @@ func (m *Model) rebuildRenderedContent(viewportWidth int) {
 	layout := m.traceColumnLayout(viewportWidth)
 
 	m.main.renderedContent.Reset()
-	for _, queuedMsg := range m.main.messages {
+	for _, queuedMsg := range m.filterMessages(m.main.messages) {
 		if useColumns {
 			m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(queuedMsg), layout))
 		} else {
@@ -713,7 +721,7 @@ func (m *Model) mainConnectionMeta() string {
 	return ""
 }
 
-// mainStatusText: returns the status bar text showing subscriber name, auto-scroll state, and message count.
+// mainStatusText: returns the status bar text showing subscriber name, auto-scroll state, message count, and broadcast mode.
 func (m *Model) mainStatusText() string {
 	autoScroll := styles.WarningColor
 	autoScrollText := "manual"
@@ -727,13 +735,26 @@ func (m *Model) mainStatusText() string {
 		subscriberName = m.subscriber.Name()
 	}
 
+	broadcastModeText := m.broadcastMode.String()
+	broadcastModeStyle := styles.WarningColor
+	switch m.broadcastMode {
+	case domain.BroadcastModeGlobal:
+		broadcastModeStyle = styles.SuccessColor
+	case domain.BroadcastModeSubscriber:
+		broadcastModeStyle = styles.AccentColor
+	case domain.BroadcastModeBroadcast:
+		broadcastModeStyle = styles.WarningColor
+	}
+
 	return lipgloss.JoinHorizontal(
 		lipgloss.Center,
 		styles.BodyTextStyle.Render("Sub "+subscriberName),
 		styles.SubtitleStyle.Render("  •  "),
+		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
+		styles.SubtitleStyle.Render("  •  "),
 		lipgloss.NewStyle().Foreground(autoScroll).Bold(true).Render("Auto Scroll ["+autoScrollText+"]"),
 		styles.SubtitleStyle.Render("  •  "),
-		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
+		lipgloss.NewStyle().Foreground(broadcastModeStyle).Bold(true).Render("["+broadcastModeText+"]"),
 	)
 }
 
@@ -754,7 +775,7 @@ func (m *Model) mainProcedureCall() string {
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
-	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  C Clear  •  D Database Settings  •  S Settings  •  Q Quit"
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  B Mode [Global/Subscriber/Broadcast] •  C Clear  •  D Database Settings  •  S Settings  •  Q Quit"
 }
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.
@@ -763,6 +784,12 @@ func (m *Model) mainFooterText() string {
 // common case where column widths are unchanged.
 // Precondition: msg must already be the last element of m.main.messages.
 func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int) {
+	// Skip if message does not match current broadcast filter
+	filteredMsgs := m.filterMessages([]*domain.QueueMessage{msg})
+	if len(filteredMsgs) == 0 {
+		return
+	}
+
 	useColumns := viewportWidth >= colMinWidth
 
 	if useColumns {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
@@ -156,6 +157,9 @@ type Model struct {
 
 	// Internal message channel for update-related events
 	updateEventChannel chan tea.Msg
+
+	// Broadcast mode for message filtering
+	broadcastMode domain.BroadcastMode
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -261,8 +265,54 @@ func (m *Model) resetStartupUpdateState() {
 	m.update = updateState{checking: true}
 }
 
+func (m *Model) cycleBroadcastMode() error {
+	nextMode := m.broadcastMode.Next()
+	if m.boltAdapter != nil {
+		if err := m.boltAdapter.SetBroadcastMode(nextMode); err != nil {
+			return err
+		}
+	}
+	m.broadcastMode = nextMode
+	return nil
+}
+
+func (m *Model) loadBroadcastMode() error {
+	if m.boltAdapter == nil {
+		return nil
+	}
+	mode, err := m.boltAdapter.GetBroadcastMode()
+	if err != nil {
+		return err
+	}
+	m.broadcastMode = mode
+	return nil
+}
+
+func (m *Model) filterMessages(msgs []*domain.QueueMessage) []*domain.QueueMessage {
+	if m.broadcastMode == domain.BroadcastModeGlobal {
+		return msgs
+	}
+	filtered := make([]*domain.QueueMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		switch m.broadcastMode {
+		case domain.BroadcastModeSubscriber:
+			if !msg.IsGlobalMessage() {
+				filtered = append(filtered, msg)
+			}
+		case domain.BroadcastModeBroadcast:
+			if msg.IsGlobalMessage() {
+				filtered = append(filtered, msg)
+			}
+		}
+	}
+	return filtered
+}
+
 func (m *Model) enterMainScreen() tea.Cmd {
 	m.screen = screenMain
+	if err := m.loadBroadcastMode(); err != nil {
+		logger.Warn("failed to load broadcast mode", "error", err)
+	}
 	m.initViewport()
 	return waitForEventCmd(m.eventStreamCtx, m.eventChannel)
 }

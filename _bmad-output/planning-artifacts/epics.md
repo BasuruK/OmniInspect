@@ -334,8 +334,8 @@ So that I can reduce noise and focus on the messages relevant to my current debu
 
 **Technical Notes:**
 
-- PL/SQL: Add `message_.PUT('SUBSCRIBER', subscriber_name_)` in `Enqueue_Event___()` — already has `subscriber_name_` parameter
-- Go: `QueueMessage` gets `subscriber` field and `IsBroadcast()` method
+- PL/SQL: Add `message_.PUT('MODE', CASE WHEN subscriber_name_ IS NULL THEN 'Global' ELSE 'Subscriber' END)` in `Enqueue_Event___()` — stamps mode, NOT subscriber name
+- Go: `QueueMessage` gets `mode` field and `IsBroadcast()` method
 - Go: New `BroadcastMode` value object with three states
 - BoltDB: Persist mode per client
 - UI: Key `b` cycles modes, filter at viewport render, status indicator in header

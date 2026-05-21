@@ -25,6 +25,7 @@ const (
 	LEGACY_CONFIG_KEY_PREFIX   = "cfg:"
 	DefaultWebhookKey          = "webhook:default"
 	TracerPackageVersionKey    = "tracer:package_version"
+	BroadcastModeKey           = "client:broadcast_mode"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -459,5 +460,44 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 		}
 
 		return b.Delete([]byte(id))
+	})
+}
+
+// GetBroadcastMode retrieves the stored broadcast mode.
+func (ba *BoltAdapter) GetBroadcastMode() (domain.BroadcastMode, error) {
+	if ba.db == nil {
+		return domain.BroadcastModeGlobal, fmt.Errorf("boltAdapter not initialized")
+	}
+
+	var mode domain.BroadcastMode
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
+		val := b.Get([]byte(BroadcastModeKey))
+		if val != nil {
+			mode = domain.NewBroadcastMode(string(val))
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.BroadcastModeGlobal, err
+	}
+	return mode, nil
+}
+
+// SetBroadcastMode stores the broadcast mode.
+func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+		}
+		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
 	})
 }

@@ -469,7 +469,7 @@ func (ba *BoltAdapter) GetBroadcastMode() (domain.BroadcastMode, error) {
 		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", fmt.Errorf("boltAdapter not initialized"))
 	}
 
-	var mode domain.BroadcastMode
+	mode := domain.BroadcastModeGlobal
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {

@@ -163,6 +163,7 @@ func (m *QueueMessage) MarshalJSON() ([]byte, error) {
 		Payload:       m.payload,
 		Timestamp:     []byte(fmt.Sprintf(`%d`, m.timestamp.Unix())),
 		SendToWebhook: fmt.Sprintf(`%t`, m.sendToWebhook),
+		Mode:          m.mode,
 	}
 	return json.Marshal(j)
 }
@@ -182,7 +183,7 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 
 	// Parse timestamp - handle both int64 and string formats
 	var ts time.Time
-	if len(j.Timestamp) == 0 || string(j.Timestamp) == "null" {
+	if len(j.Timestamp) == 0 {
 		return ErrInvalidTimestamp
 	} else {
 		// Try parsing as int64 first (Unix timestamp)
@@ -218,11 +219,8 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 	// Parse sendToWebhook flag - "TRUE" from Oracle JSON becomes true
 	sendToWebhookFlag := strings.ToUpper(j.SendToWebhook) == "TRUE"
 
-	// Parse mode - default to "Global" if absent
-	mode := "Global"
-	if j.Mode != "" {
-		mode = j.Mode
-	}
+	// Parse mode - normalize via NewBroadcastMode to reject invalid/case-variant values
+	mode := NewBroadcastMode(j.Mode).String()
 
 	qm, err := NewQueueMessage(j.MessageID, j.ProcessName, normalizedLevel, j.Payload, ts, sendToWebhookFlag)
 	if err != nil {

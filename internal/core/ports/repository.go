@@ -175,4 +175,11 @@ type ConfigRepository interface {
 
 	// SetTracerPackageVersion stores the package version hash.
 	SetTracerPackageVersion(version string) error
+
+	// GetBroadcastMode retrieves the stored broadcast mode.
+	// Returns BroadcastModeGlobal when no value has been stored yet.
+	GetBroadcastMode() (domain.BroadcastMode, error)
+
+	// SetBroadcastMode stores the broadcast mode.
+	SetBroadcastMode(mode domain.BroadcastMode) error
 }

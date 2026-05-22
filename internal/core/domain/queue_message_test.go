@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -48,5 +49,35 @@ func TestQueueMessage_IsGlobalMessage_FalseWhenModeIsArbitrary(t *testing.T) {
 
 	if msg.IsGlobalMessage() {
 		t.Fatalf("IsGlobalMessage() = true, want false when mode=%q", msg.Mode())
+	}
+}
+
+// ==========================================
+// JSON Round-Trip Tests
+// ==========================================
+
+// TestQueueMessage_JSONRoundTrip_PreservesNonDefaultMode verifies that a non-global
+// mode survives a full MarshalJSON → UnmarshalJSON cycle unchanged.
+func TestQueueMessage_JSONRoundTrip_PreservesNonDefaultMode(t *testing.T) {
+	t.Parallel()
+
+	msg := newTestQueueMessage(t)
+	msg.mode = "Subscriber"
+
+	data, err := msg.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+
+	var got QueueMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("UnmarshalJSON: %v", err)
+	}
+
+	if got.Mode() != msg.Mode() {
+		t.Fatalf("Mode() = %q, want %q", got.Mode(), msg.Mode())
+	}
+	if got.IsGlobalMessage() != msg.IsGlobalMessage() {
+		t.Fatalf("IsGlobalMessage() = %v, want %v", got.IsGlobalMessage(), msg.IsGlobalMessage())
 	}
 }

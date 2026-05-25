@@ -23,10 +23,10 @@ const (
 )
 
 const (
-	QueueName          = "OMNI_TRACER_QUEUE"
-	QueueTableName     = "AQ$OMNI_TRACER_QUEUE"
-	QueuePayloadType   = "OMNI_TRACER_PAYLOAD_TYPE"
-	OmniTracerPackage   = "OMNI_TRACER_API"
+	QueueName         = "OMNI_TRACER_QUEUE"
+	QueueTableName    = "AQ$OMNI_TRACER_QUEUE"
+	QueuePayloadType  = "OMNI_TRACER_PAYLOAD_TYPE"
+	OmniTracerPackage = "OMNI_TRACER_API"
 )
 
 // NewLogLevel creates a LogLevel with validation
@@ -51,6 +51,7 @@ type QueueMessage struct {
 	payload       string
 	timestamp     time.Time
 	sendToWebhook bool
+	mode          string
 }
 
 // NewQueueMessage creates a new QueueMessage with validation
@@ -92,6 +93,7 @@ func NewQueueMessage(messageID string, processName string, logLevel LogLevel, pa
 		payload:       payload,
 		timestamp:     timestamp,
 		sendToWebhook: sendToWebhookFlag,
+		mode:          "Global",
 	}, nil
 }
 
@@ -105,6 +107,11 @@ func (m *QueueMessage) LogLevel() LogLevel   { return m.logLevel }
 func (m *QueueMessage) Payload() string      { return m.payload }
 func (m *QueueMessage) Timestamp() time.Time { return m.timestamp }
 func (m *QueueMessage) SendToWebhook() bool  { return m.sendToWebhook }
+func (m *QueueMessage) Mode() string         { return m.mode }
+
+// IsGlobalMessage returns true when the message was broadcast to all subscribers (mode is "Global").
+// This is distinct from UI "Broadcast" filters.
+func (m *QueueMessage) IsGlobalMessage() bool { return m.mode == "Global" }
 
 // ==========================================
 // Business Methods
@@ -144,6 +151,7 @@ type queueMessageJSON struct {
 	Payload       string          `json:"payload"`
 	Timestamp     json.RawMessage `json:"timestamp"`
 	SendToWebhook string          `json:"send_to_webhook"`
+	Mode          string          `json:"mode"`
 }
 
 // MarshalJSON implements custom JSON marshaling for QueueMessage
@@ -155,6 +163,7 @@ func (m *QueueMessage) MarshalJSON() ([]byte, error) {
 		Payload:       m.payload,
 		Timestamp:     []byte(fmt.Sprintf(`%d`, m.timestamp.Unix())),
 		SendToWebhook: fmt.Sprintf(`%t`, m.sendToWebhook),
+		Mode:          m.mode,
 	}
 	return json.Marshal(j)
 }
@@ -174,7 +183,7 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 
 	// Parse timestamp - handle both int64 and string formats
 	var ts time.Time
-	if len(j.Timestamp) == 0 || string(j.Timestamp) == "null" {
+	if len(j.Timestamp) == 0 {
 		return ErrInvalidTimestamp
 	} else {
 		// Try parsing as int64 first (Unix timestamp)
@@ -210,10 +219,14 @@ func (m *QueueMessage) UnmarshalJSON(data []byte) error {
 	// Parse sendToWebhook flag - "TRUE" from Oracle JSON becomes true
 	sendToWebhookFlag := strings.ToUpper(j.SendToWebhook) == "TRUE"
 
+	// Parse mode - normalize via NewBroadcastMode to reject invalid/case-variant values
+	mode := NewBroadcastMode(j.Mode).String()
+
 	qm, err := NewQueueMessage(j.MessageID, j.ProcessName, normalizedLevel, j.Payload, ts, sendToWebhookFlag)
 	if err != nil {
 		return err
 	}
+	qm.mode = mode
 	*m = *qm
 	return nil
 }

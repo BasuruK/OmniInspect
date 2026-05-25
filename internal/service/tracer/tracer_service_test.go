@@ -19,8 +19,12 @@ func (stubConfigRepository) SetFirstRunCycleStatus(domain.RunCycleStatus) error 
 func (stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error      { return nil }
 func (stubConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error)   { return nil, nil }
 func (stubConfigRepository) DeleteWebhookConfig(string) error                   { return nil }
-func (stubConfigRepository) GetTracerPackageVersion() (string, error)             { return "", nil }
-func (stubConfigRepository) SetTracerPackageVersion(string) error                 { return nil }
+func (stubConfigRepository) GetTracerPackageVersion() (string, error)           { return "", nil }
+func (stubConfigRepository) SetTracerPackageVersion(string) error               { return nil }
+func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
+	return domain.BroadcastModeGlobal, nil
+}
+func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
 
 type stubDatabaseRepository struct{}
 
@@ -47,7 +51,9 @@ func (stubDatabaseRepository) FetchWithParams(context.Context, string, map[strin
 	return nil, nil
 }
 func (stubDatabaseRepository) PackageExists(context.Context, string) (bool, error) { return false, nil }
-func (stubDatabaseRepository) ProcedureExists(context.Context, string, string) (bool, error) { return false, nil }
+func (stubDatabaseRepository) ProcedureExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
 func (stubDatabaseRepository) DeployPackages(context.Context, []string, []string, []string, []string) error {
 	return nil
 }
@@ -146,10 +152,10 @@ func TestWebhookDispatcherStop_IsIdempotent(t *testing.T) {
 // spyDatabaseRepository is a controllable stub that tracks UnregisterSubscriber calls.
 type spyDatabaseRepository struct {
 	stubDatabaseRepository
-	mu                    sync.Mutex
-	unregisterCalled      bool
-	unregisterCalledWith  domain.Subscriber
-	unregisterErr         error
+	mu                   sync.Mutex
+	unregisterCalled     bool
+	unregisterCalledWith domain.Subscriber
+	unregisterErr        error
 }
 
 func (s *spyDatabaseRepository) UnregisterSubscriber(_ context.Context, sub domain.Subscriber) error {

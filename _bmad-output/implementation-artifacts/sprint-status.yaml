@@ -1,5 +1,5 @@
 # OmniInspect Sprint Status
-# Generated: 2026-04-28
+# Generated: 2026-05-21
 # Project: OmniInspect
 
 sprint:
@@ -97,15 +97,24 @@ development_status:
     last_updated: "2026-05-18"
     notes: "Unregister_Subscriber PL/SQL procedure added to OMNI_TRACER_API. UnregisterSubscriber port + Oracle adapter implemented. activeSubscriber stored in TracerService, called in CancelConnectionListener with 5s timeout. 3 new unit tests. make test and make build passing."
 
+  # Epic 4 Stories
+  4-1-broadcast-message-isolation:
+    status: "done"
+    title: "Broadcast Message Isolation"
+    epic: "Epic 4: Broadcast Message Filtering"
+    owner: "dev-agent"
+    last_updated: "2026-05-21"
+    notes: "Three-mode broadcast filtering (Global/SubscriberOnly/BroadcastOnly) with 'b' keybinding, BoltDB persistence, MODE field in JSON payload. Code review: 4 patches fixed, 5 deferred."
+
 # ==========================================
 # SPRINT METRICS
 # ==========================================
 metrics:
-  total_stories: 9
-  completed: 8
+  total_stories: 10
+  completed: 9
   ready_for_dev: 0
   cancelled: 1
-  completion_percentage: 89
+  completion_percentage: 90
 
 # ==========================================
 # EPIC SUMMARY
@@ -131,6 +140,13 @@ epic_summary:
     stories_completed: 2
     stories_in_progress: 0
     stories_cancelled: 1
+    status: "done"
+
+  epic-4:
+    title: "Epic 4: Broadcast Message Filtering"
+    stories_total: 1
+    stories_completed: 1
+    stories_in_progress: 0
     status: "done"
 
 # ==========================================
@@ -180,3 +196,8 @@ activity_log:
     story: "1-5-correlation-based-message-routing"
     action: "Completed"
     notes: "User tested with 2 subscribers — subscriber-specific and broadcast routing confirmed working. Epic 1 complete ✅"
+
+  - date: "2026-05-21"
+    story: "4-1-broadcast-message-isolation"
+    action: "Review completed"
+    notes: "Three-mode broadcast filtering implemented with 'b' keybinding, BoltDB persistence, MODE field. Code review: 4 patches fixed (filter wiring, init ordering, persist-before-mutate, dead null check), 5 deferred."

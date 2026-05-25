@@ -270,6 +270,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('LOG_LEVEL', log_level_);
         message_.PUT('PAYLOAD', payload);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
+        message_.PUT('MODE', CASE WHEN subscriber_name_ IS NULL THEN 'Global' ELSE 'Subscriber' END);
 
         message_properties_.correlation := subscriber_name_; -- Set correlation for routing. If NULL, message goes to all subscribers due to the subscriber rule defined in Register_Subscriber.
 

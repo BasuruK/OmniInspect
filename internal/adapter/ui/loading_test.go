@@ -76,9 +76,13 @@ func (stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error { ret
 func (stubConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	return nil, nil
 }
-func (stubConfigRepository) DeleteWebhookConfig(string) error { return nil }
+func (stubConfigRepository) DeleteWebhookConfig(string) error         { return nil }
 func (stubConfigRepository) GetTracerPackageVersion() (string, error) { return "", nil }
-func (stubConfigRepository) SetTracerPackageVersion(string) error { return nil }
+func (stubConfigRepository) SetTracerPackageVersion(string) error     { return nil }
+func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
+	return domain.BroadcastModeGlobal, nil
+}
+func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
 
 func newLoadingTestModel(t *testing.T, validated bool) *Model {
 	t.Helper()

@@ -78,6 +78,7 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 | FR-7 | Display procedure name in TUI | Epic 2 |
 | FR-8 | Correlation-based message routing via subscriber rules | Epic 1 |
 | FR-9 | Safe subscriber unregistration on shutdown | Epic 3 |
+| FR-10 | Client-side broadcast message isolation (3-mode toggle) | Epic 4 |
 
 ## Epic List
 
@@ -92,6 +93,14 @@ This document provides the complete epic and story breakdown for OmniInspect, de
 **User Outcome:** Developers can see exactly which PL/SQL procedure to call in their code.
 
 **FRs Covered:** FR-7
+
+### Epic 4: Broadcast Message Isolation
+
+**User Outcome:** Subscribers can toggle between seeing all messages, only their subscriber-isolated messages, or only global broadcasts — reducing noise during collaboration.
+
+**FRs Covered:** FR-10
+
+---
 
 ### Epic 3: Danger Zone Implementation
 
@@ -289,3 +298,50 @@ So that stale subscribers don't accumulate in the queue and consume resources.
 - Handle graceful shutdown via OS signal handlers (SIGINT, SIGTERM)
 - Must NOT block shutdown if Oracle is unreachable — use a 5-second timeout (e.g., `context.WithTimeout`).
 - Explanation: A 5s timeout provides sufficient head-room for a single `REMOVE_SUBSCRIBER` round-trip even on latent VPN connections, while remaining short enough to satisfy user expectations for a responsive CLI shutdown. If the timeout expires or a network error occurs, the application must exit immediately to avoid "hanging" processes; the next application startup will handle the stale subscriber via idempotent registration (Story 1.5).
+
+---
+
+### Story 4.1: Broadcast Message Isolation
+
+As a subscriber,
+I want to toggle which messages I see in the TUI (all, subscriber-only, or broadcast-only),
+So that I can reduce noise and focus on the messages relevant to my current debugging context.
+
+**Acceptance Criteria:**
+
+**Given** a subscriber named BARNACLE is registered
+**When** the mode is set to **Global** (default)
+**Then** the TUI displays ALL messages (both broadcast and subscriber-specific)
+
+**Given** a subscriber named BARNACLE is registered
+**When** the mode is set to **SubscriberOnly**
+**Then** the TUI displays ONLY messages where `SUBSCRIBER = 'BARNACLE'`
+**And** messages where `SUBSCRIBER IS NULL` (broadcast) are hidden
+
+**Given** a subscriber named BARNACLE is registered
+**When** the mode is set to **BroadcastOnly**
+**Then** the TUI displays ONLY messages where `SUBSCRIBER IS NULL`
+**And** messages where `SUBSCRIBER = 'BARNACLE'` are hidden
+
+**Given** the user is on the Main Screen
+**When** they press `b`
+**Then** the mode cycles: Global → SubscriberOnly → BroadcastOnly → Global
+**And** the current mode is visually indicated in the TUI
+
+**Given** the user sets a broadcast mode
+**When** OmniView restarts
+**Then** the mode is restored to the saved value (default: Global)
+
+**Technical Notes:**
+
+- PL/SQL: Add `message_.PUT('MODE', CASE WHEN subscriber_name_ IS NULL THEN 'Global' ELSE 'Subscriber' END)` in `Enqueue_Event___()` — stamps mode, NOT subscriber name
+- Go: `QueueMessage` gets `mode` field and `IsBroadcast()` method
+- Go: New `BroadcastMode` value object with three states
+- BoltDB: Persist mode per client
+- UI: Key `b` cycles modes, filter at viewport render, status indicator in header
+
+---
+
+**Epic 4 Goal:**
+
+Implement three-mode client-side display filtering (Global / SubscriberOnly / BroadcastOnly) with keyboard toggle and visual indicator.

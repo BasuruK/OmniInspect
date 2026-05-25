@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -512,6 +514,95 @@ func newTestMainModel(t *testing.T, width, height int) *Model {
 		main: mainState{
 			autoScroll: true,
 		},
+	}
+}
+
+// ==========================================
+// filterMessages Tests
+// ==========================================
+
+// mustNewTestQueueMessageWithMode builds a QueueMessage via JSON to allow injecting
+// an arbitrary mode value (the mode field is unexported and cannot be set directly
+// from the ui package).
+func mustNewTestQueueMessageWithMode(t *testing.T, id, mode string) *domain.QueueMessage {
+	t.Helper()
+
+	raw := fmt.Sprintf(
+		`{"message_id":%q,"process_name":"TEST","log_level":"INFO","payload":"test payload","timestamp":1700000000,"send_to_webhook":"false","mode":%q}`,
+		id, mode,
+	)
+	var msg domain.QueueMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatalf("failed to create QueueMessage with mode %q: %v", mode, err)
+	}
+	return &msg
+}
+
+func TestFilterMessages_GlobalModeReturnsAllMessages(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.broadcastMode = domain.BroadcastModeGlobal
+
+	msgs := []*domain.QueueMessage{
+		mustNewTestQueueMessageWithMode(t, "1", "Global"),
+		mustNewTestQueueMessageWithMode(t, "2", "Subscriber"),
+	}
+
+	got := m.filterMessages(msgs)
+	if len(got) != len(msgs) {
+		t.Fatalf("filterMessages(Global) returned %d messages, want %d", len(got), len(msgs))
+	}
+}
+
+func TestFilterMessages_SubscriberModeFiltersOutGlobalMessages(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.broadcastMode = domain.BroadcastModeSubscriber
+
+	global := mustNewTestQueueMessageWithMode(t, "1", "Global")
+	subscriber := mustNewTestQueueMessageWithMode(t, "2", "Subscriber")
+	msgs := []*domain.QueueMessage{global, subscriber}
+
+	got := m.filterMessages(msgs)
+	if len(got) != 1 {
+		t.Fatalf("filterMessages(Subscriber) returned %d messages, want 1", len(got))
+	}
+	if got[0] != subscriber {
+		t.Fatalf("filterMessages(Subscriber) kept wrong message: got mode=%q, want Subscriber", got[0].Mode())
+	}
+}
+
+func TestFilterMessages_BroadcastModeKeepsOnlyGlobalMessages(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.broadcastMode = domain.BroadcastModeBroadcast
+
+	global := mustNewTestQueueMessageWithMode(t, "1", "Global")
+	subscriber := mustNewTestQueueMessageWithMode(t, "2", "Subscriber")
+	msgs := []*domain.QueueMessage{global, subscriber}
+
+	got := m.filterMessages(msgs)
+	if len(got) != 1 {
+		t.Fatalf("filterMessages(Broadcast) returned %d messages, want 1", len(got))
+	}
+	if got[0] != global {
+		t.Fatalf("filterMessages(Broadcast) kept wrong message: got mode=%q, want Global", got[0].Mode())
+	}
+}
+
+func TestFilterMessages_EmptyInputReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	for _, mode := range []domain.BroadcastMode{domain.BroadcastModeGlobal, domain.BroadcastModeSubscriber, domain.BroadcastModeBroadcast} {
+		m.broadcastMode = mode
+		got := m.filterMessages(nil)
+		if len(got) != 0 {
+			t.Fatalf("filterMessages with nil input for mode %v returned %d items, want 0", mode, len(got))
+		}
 	}
 }
 

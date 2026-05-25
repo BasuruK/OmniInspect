@@ -416,11 +416,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			if m.tracerService != nil {
-				m.tracerService.StopConnectionListener()
+			// Do NOT quit if an overlay is visible — consume the signal.
+			if !m.showHelp {
+				if m.tracerService != nil {
+					m.tracerService.StopConnectionListener()
+				}
+				m.cancel() // Cancel all background operations
+				return m, tea.Quit
 			}
-			m.cancel() // Cancel all background operations
-			return m, tea.Quit
 		case "q":
 			// Only quit from screens that don't need 'q' for navigation.
 			// Do NOT quit if an overlay (Help, DB, Webhook) is visible.

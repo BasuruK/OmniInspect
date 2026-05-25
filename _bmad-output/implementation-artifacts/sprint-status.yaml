@@ -106,15 +106,23 @@ development_status:
     last_updated: "2026-05-21"
     notes: "Three-mode broadcast filtering (Global/SubscriberOnly/BroadcastOnly) with 'b' keybinding, BoltDB persistence, MODE field in JSON payload. Code review: 4 patches fixed, 5 deferred."
 
+  4-2-help-overlay:
+    status: "ready-for-dev"
+    title: "Help Overlay"
+    epic: "Epic 4: Broadcast Message Filtering"
+    owner: ""
+    last_updated: "2026-05-25"
+    notes: "H key opens centered help panel over main screen. Covers subscriber method, broadcast method, database management, webhook config, and B filter. No persistence needed."
+
 # ==========================================
 # SPRINT METRICS
 # ==========================================
 metrics:
-  total_stories: 10
+  total_stories: 11
   completed: 9
-  ready_for_dev: 0
+  ready_for_dev: 1
   cancelled: 1
-  completion_percentage: 90
+  completion_percentage: 82
 
 # ==========================================
 # EPIC SUMMARY
@@ -144,10 +152,11 @@ epic_summary:
 
   epic-4:
     title: "Epic 4: Broadcast Message Filtering"
-    stories_total: 1
+    stories_total: 2
     stories_completed: 1
     stories_in_progress: 0
-    status: "done"
+    stories_ready_for_dev: 1
+    status: "in-progress"
 
 # ==========================================
 # NEXT ACTIONS

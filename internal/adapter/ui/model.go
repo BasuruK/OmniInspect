@@ -160,6 +160,9 @@ type Model struct {
 
 	// Broadcast mode for message filtering
 	broadcastMode domain.BroadcastMode
+
+	// showHelp controls whether the in-app help overlay is visible
+	showHelp bool
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -508,6 +511,8 @@ func (m *Model) View() tea.View {
 				}
 			} else if m.webhookSettings.visible {
 				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)
+			} else if m.showHelp {
+				content = renderCenteredOverlay(content, m.renderHelpOverlay(), m.width, m.height)
 			}
 		}
 	case screenOnboarding:

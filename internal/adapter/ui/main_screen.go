@@ -154,6 +154,14 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// Keyboard input
 	case tea.KeyPressMsg:
+		// When help overlay is open, H and Esc close it; all other input is consumed.
+		if m.showHelp {
+			switch msg.String() {
+			case "h", "esc":
+				m.showHelp = false
+			}
+			return m, nil
+		}
 		if m.dbSettings.visible {
 			return m.updateDatabaseSettings(msg)
 		}
@@ -195,6 +203,10 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 				databases = []domain.DatabaseSettings{}
 			}
 			m.initDatabaseSettings(databases, activeID)
+			return m, nil
+		case "h":
+			// Open help overlay
+			m.showHelp = true
 			return m, nil
 		case "s":
 			// Open settings
@@ -775,7 +787,7 @@ func (m *Model) mainProcedureCall() string {
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
-	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  B Mode [Global/Subscriber/Broadcast] •  C Clear  •  D Database Settings  •  S Settings  •  Q Quit"
+	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  B Mode [Global/Subscriber/Broadcast]  •  C Clear  •  D Database Settings  •  H Help  •  S Settings  •  Q Quit"
 }
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.

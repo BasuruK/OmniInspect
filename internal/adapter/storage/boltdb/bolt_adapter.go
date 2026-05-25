@@ -466,7 +466,7 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 // GetBroadcastMode retrieves the stored broadcast mode.
 func (ba *BoltAdapter) GetBroadcastMode() (domain.BroadcastMode, error) {
 	if ba.db == nil {
-		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", fmt.Errorf("boltAdapter not initialized"))
+		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", ErrAdapterNotInitialized)
 	}
 
 	mode := domain.BroadcastModeGlobal

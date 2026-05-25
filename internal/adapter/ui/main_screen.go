@@ -154,19 +154,19 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// Keyboard input
 	case tea.KeyPressMsg:
-		// When help overlay is open, H and Esc close it; all other input is consumed.
+		if m.dbSettings.visible {
+			return m.updateDatabaseSettings(msg)
+		}
+		if m.webhookSettings.visible {
+			return m.updateWebhookSettings(msg)
+		}
+		// Help overlay keyboard handling
 		if m.showHelp {
 			switch msg.String() {
 			case "h", "esc":
 				m.showHelp = false
 			}
 			return m, nil
-		}
-		if m.dbSettings.visible {
-			return m.updateDatabaseSettings(msg)
-		}
-		if m.webhookSettings.visible {
-			return m.updateWebhookSettings(msg)
 		}
 		switch msg.String() {
 		case "a":

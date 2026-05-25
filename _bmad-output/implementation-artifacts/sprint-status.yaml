@@ -107,12 +107,12 @@ development_status:
     notes: "Three-mode broadcast filtering (Global/SubscriberOnly/BroadcastOnly) with 'b' keybinding, BoltDB persistence, MODE field in JSON payload. Code review: 4 patches fixed, 5 deferred."
 
   4-2-help-overlay:
-    status: "ready-for-dev"
+    status: "in-progress"
     title: "Help Overlay"
     epic: "Epic 4: Broadcast Message Filtering"
     owner: ""
     last_updated: "2026-05-25"
-    notes: "H key opens centered help panel over main screen. Covers subscriber method, broadcast method, database management, webhook config, and B filter. No persistence needed."
+    notes: "Code review completed for PR #103. Open patch items: root q-quit bypasses the help overlay, procedure signatures differ from the story, B-mode cycle text omits the return to Global, and tests miss the root modal path."
 
 # ==========================================
 # SPRINT METRICS
@@ -120,7 +120,7 @@ development_status:
 metrics:
   total_stories: 11
   completed: 9
-  ready_for_dev: 1
+  ready_for_dev: 0
   cancelled: 1
   completion_percentage: 82
 
@@ -154,8 +154,8 @@ epic_summary:
     title: "Epic 4: Broadcast Message Filtering"
     stories_total: 2
     stories_completed: 1
-    stories_in_progress: 0
-    stories_ready_for_dev: 1
+    stories_in_progress: 1
+    stories_ready_for_dev: 0
     status: "in-progress"
 
 # ==========================================
@@ -210,3 +210,8 @@ activity_log:
     story: "4-1-broadcast-message-isolation"
     action: "Review completed"
     notes: "Three-mode broadcast filtering implemented with 'b' keybinding, BoltDB persistence, MODE field. Code review: 4 patches fixed (filter wiring, init ordering, persist-before-mutate, dead null check), 5 deferred."
+
+  - date: "2026-05-25"
+    story: "4-2-help-overlay"
+    action: "Review completed"
+    notes: "PR #103 reviewed. 4 patch items remain open: root q quit bypass, help text signature mismatch, incomplete B-mode cycle copy, and missing root-level regression coverage."

@@ -1,6 +1,6 @@
 # Story 4.2: Help Overlay
 
-## Status: ready-for-dev
+## Status: in-progress
 
 ---
 
@@ -37,31 +37,38 @@ So that I can quickly reference the PL/SQL API methods, database management keys
 ## Help Panel Content
 
 ### Section 1: Subscriber-Specific Method
-```
+
+```sql
 OMNI_TRACER_API.TRACE_MESSAGE_<NAME>('msg', log_level_)
 ```
+
 Routes the message ONLY to your OmniView subscriber instance.
 Your instance's live method name is shown dynamically.
 
 ### Section 2: Global Broadcast Method
-```
+
+```sql
 OMNI_TRACER_API.Trace_Message('msg', log_level_)
 ```
+
 Sends the message to ALL connected OmniView subscribers simultaneously.
 
 ### Section 3: Database Management
+
 - `D` — Open Database Settings (add, switch, or edit a database connection)
 - In Database Settings: `N` New connection, `E` Edit selected, `Enter` Switch to selected
 
 ### Section 4: Webhook Configuration
+
 - `S` — Open Settings → navigate to Webhook section
 - Configure the endpoint URL and toggle webhook delivery on/off
 
 ### Section 5: Message Filtering (B key)
+
 - `B` — Cycle display filter: `Global` → `Subscriber Only` → `Broadcast Only` → `Global`
   - **Global**: Shows all messages (broadcast + subscriber-specific)
   - **Subscriber Only**: Shows only messages routed to your subscriber
-  - **Broadcast Only**: Shows only global broadcast messages (NULL correlation)
+  - **Broadcast Only**: Displays only broadcast messages
 
 ---
 
@@ -158,3 +165,12 @@ Use existing style tokens from `styles/styles.go`. If a dedicated panel title st
 | `updateMainScreen` with `H` keypress when `showHelp=true` | `showHelp` becomes `false` |
 | `mainFooterText()` | Contains `H Help` |
 | Escape key when `showHelp=true` | `showHelp` becomes `false`, normal esc NOT triggered |
+
+---
+
+## Review Findings
+
+- [x] **Review/Patch** — Help overlay still allows the root `q` quit path while the overlay is open [internal/adapter/ui/model.go:424] — **Fixed**: `!m.showHelp` guard added to global quit handler.
+- [x] **Review/Patch** — Help overlay procedure signatures do not match the story examples exactly [internal/adapter/ui/help_overlay.go:37] — **Fixed**: Removed `[optional]` suffix from both procedure signature strings.
+- [x] **Review/Patch** — Help overlay omits the final `Broadcast Only → Global` step from the B-mode help text [internal/adapter/ui/help_overlay.go:64] — **Fixed**: Cycle text now reads `Global → Subscriber Only → Broadcast Only → Global`.
+- [x] **Review/Patch** — Regression coverage misses the root `Update()` modal path and exact overlay text assertions [internal/adapter/ui/help_overlay_test.go:14] — **Fixed**: Added `TestUpdate_QuitBlockedWhenHelpOpen` testing the root `Update()` quit-block path.

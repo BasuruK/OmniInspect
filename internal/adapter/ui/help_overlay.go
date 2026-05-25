@@ -21,8 +21,10 @@ const helpOverlayMaxWidth = 90
 func (m *Model) renderHelpOverlay() string {
 	contentWidth, _ := screenContentSize(m.width, m.height)
 	width := min(contentWidth-4, helpOverlayMaxWidth)
-	if width < 40 {
-		width = 40
+	// Clampting logic: Ensure we don't exceed helpOverlayMaxWidth,
+	// but don't force a minimum of 40 if contentWidth is smaller.
+	if width < 0 {
+		width = 0
 	}
 	// border=2, Padding(1,3) → horizontal overhead = 2 + 3*2 = 8
 	innerWidth := max(width-8, 1)
@@ -32,7 +34,7 @@ func (m *Model) renderHelpOverlay() string {
 	if m.subscriber != nil {
 		funnyName := m.subscriber.FunnyName()
 		if funnyName != "" {
-			subscriberProc = fmt.Sprintf("OMNI_TRACER_API.TRACE_MESSAGE_%s('msg', log_level_ [optional])", funnyName)
+			subscriberProc = fmt.Sprintf("OMNI_TRACER_API.TRACE_MESSAGE_%s('msg', log_level_)", funnyName)
 		}
 	}
 
@@ -47,7 +49,7 @@ func (m *Model) renderHelpOverlay() string {
 		styles.SubtitleStyle.Render("Routes the message ONLY to your OmniView instance."),
 		"",
 		styles.SectionTitleStyle.Render("2. Global Broadcast Method"),
-		styles.ProcedureCallStyle.Render("OMNI_TRACER_API.Trace_Message('msg', log_level_ [optional])"),
+		styles.ProcedureCallStyle.Render("OMNI_TRACER_API.Trace_Message('msg', log_level_)"),
 		styles.SubtitleStyle.Render("Sends to ALL connected OmniView subscribers."),
 		"",
 		styles.SectionTitleStyle.Render("3. Database Management  [D]"),
@@ -59,7 +61,7 @@ func (m *Model) renderHelpOverlay() string {
 		styles.SubtitleStyle.Render("Configure endpoint URL and toggle delivery on/off."),
 		"",
 		styles.SectionTitleStyle.Render("5. Message Filtering  [B]"),
-		styles.BodyTextStyle.Render("Cycle: Global → Subscriber Only → Broadcast Only"),
+		styles.BodyTextStyle.Render("Cycle: Global → Subscriber Only → Broadcast Only → Global"),
 		styles.SubtitleStyle.Render("Global: all messages  •  Subscriber: yours only  •  Broadcast: broadcast only"),
 		"",
 		lipgloss.NewStyle().

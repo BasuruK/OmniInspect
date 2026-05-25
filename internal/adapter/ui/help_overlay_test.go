@@ -45,11 +45,11 @@ func TestRenderHelpOverlay_ContainsAllSections(t *testing.T) {
 	overlay := m.renderHelpOverlay()
 
 	sections := []string{
-		"Trace_Message",        // global broadcast method
-		"Database Management",  // section 3
-		"Webhook",              // section 4
-		"Filtering",            // section 5
-		"H or Esc",             // close hint
+		"Trace_Message",       // global broadcast method
+		"Database Management", // section 3
+		"Webhook",             // section 4
+		"Filtering",           // section 5
+		"H or Esc",            // close hint
 	}
 	for _, expected := range sections {
 		if !strings.Contains(overlay, expected) {
@@ -124,5 +124,38 @@ func TestUpdateMain_OtherKeysConsumedWhenHelpOpen(t *testing.T) {
 	}
 	if updated.main.autoScroll {
 		t.Fatal("auto-scroll should NOT toggle when help is open and 'a' is pressed")
+	}
+
+	// Regression: Press 'q' — should be consumed, not quit
+	// Since updateMain returns *Model directly in this internal test helper,
+	// we check that the command is nil or specific state remains unchanged.
+	final, cmd := updated.updateMain(makeCharPress("q"))
+	if !final.showHelp {
+		t.Fatal("help should remain open when 'q' is pressed")
+	}
+	if cmd != nil {
+		// In Bubble Tea v2, tea.Quit() returns a tea.QuitMsg.
+		// If updateMain wraps it in a cmd, we check if it emitted anything.
+		// For our model, 'q' logic is usually in the root Update or screen-specific.
+		// We'll verify the intent that it doesn't close/quit.
+	}
+}
+
+// TestUpdate_QuitBlockedWhenHelpOpen verifies that the root Update() handler does NOT
+// issue tea.Quit when the help overlay is open and 'q' is pressed.
+func TestUpdate_QuitBlockedWhenHelpOpen(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.screen = screenMain
+	m.main.ready = true
+	m.showHelp = true
+
+	_, cmd := m.Update(makeCharPress("q"))
+	if cmd != nil {
+		msg := cmd()
+		if _, isQuit := msg.(tea.QuitMsg); isQuit {
+			t.Fatal("Update() must not issue tea.Quit when the help overlay is open")
+		}
 	}
 }

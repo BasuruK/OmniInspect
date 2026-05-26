@@ -15,19 +15,29 @@ import (
 // helpOverlayMaxWidth is the maximum rendered width of the help overlay panel.
 const helpOverlayMaxWidth = 90
 
+// helpOverlaySepMaxWidth caps the header separator line so it does not span the
+// full inner width on wide terminals. Chosen to match the typical title line length.
+const helpOverlaySepMaxWidth = 52
+
 // renderHelpOverlay renders the in-app help overlay panel.
 // It is displayed centered over the main screen when m.showHelp is true.
 // The subscriber's live procedure name is injected into section 1 when available.
 func (m *Model) renderHelpOverlay() string {
 	contentWidth, _ := screenContentSize(m.width, m.height)
 	width := min(contentWidth-4, helpOverlayMaxWidth)
-	// Clampting logic: Ensure we don't exceed helpOverlayMaxWidth,
+	// Clamping logic: Ensure we don't exceed helpOverlayMaxWidth,
 	// but don't force a minimum of 40 if contentWidth is smaller.
 	if width < 0 {
 		width = 0
 	}
 	// border=2, Padding(1,3) → horizontal overhead = 2 + 3*2 = 8
 	innerWidth := max(width-8, 1)
+
+	// closeHintStyle is the base style for the close-hint line. Width is applied
+	// dynamically below because it depends on the runtime innerWidth value.
+	closeHintStyle := lipgloss.NewStyle().
+		Foreground(styles.MutedColor).
+		Align(lipgloss.Center)
 
 	// Derive subscriber procedure name — show placeholder when not yet assigned.
 	subscriberProc := "OMNI_TRACER_API.TRACE_MESSAGE_<YOUR_NAME>('msg', log_level_)"
@@ -38,7 +48,7 @@ func (m *Model) renderHelpOverlay() string {
 		}
 	}
 
-	sep := styles.SubtitleStyle.Render(strings.Repeat("─", min(innerWidth, 52)))
+	sep := styles.SubtitleStyle.Render(strings.Repeat("─", min(innerWidth, helpOverlaySepMaxWidth)))
 
 	lines := []string{
 		styles.HeaderTitleStyle.Render("OmniView Help"),
@@ -49,6 +59,8 @@ func (m *Model) renderHelpOverlay() string {
 		styles.SubtitleStyle.Render("Routes the message ONLY to your OmniView instance."),
 		"",
 		styles.SectionTitleStyle.Render("2. Global Broadcast Method"),
+		// Trace_Message is the actual mixed-case PL/SQL identifier in OMNI_TRACER_API;
+		// subscriber-specific procedures are generated all-caps (TRACE_MESSAGE_<NAME>).
 		styles.ProcedureCallStyle.Render("OMNI_TRACER_API.Trace_Message('msg', log_level_)"),
 		styles.SubtitleStyle.Render("Sends to ALL connected OmniView subscribers."),
 		"",
@@ -64,11 +76,7 @@ func (m *Model) renderHelpOverlay() string {
 		styles.BodyTextStyle.Render("Cycle: Global → Subscriber Only → Broadcast Only → Global"),
 		styles.SubtitleStyle.Render("Global: all messages  •  Subscriber: yours only  •  Broadcast: broadcast only"),
 		"",
-		lipgloss.NewStyle().
-			Foreground(styles.MutedColor).
-			Width(innerWidth).
-			Align(lipgloss.Center).
-			Render("[ H or Esc — Close ]"),
+		closeHintStyle.Width(innerWidth).Render("[ H or Esc — Close ]"),
 	}
 
 	content := strings.Join(lines, "\n")

@@ -134,10 +134,7 @@ func TestUpdateMain_OtherKeysConsumedWhenHelpOpen(t *testing.T) {
 		t.Fatal("help should remain open when 'q' is pressed")
 	}
 	if cmd != nil {
-		// In Bubble Tea v2, tea.Quit() returns a tea.QuitMsg.
-		// If updateMain wraps it in a cmd, we check if it emitted anything.
-		// For our model, 'q' logic is usually in the root Update or screen-specific.
-		// We'll verify the intent that it doesn't close/quit.
+		t.Fatal("updateMain should return nil cmd for 'q' when help is open — quit is handled at the root Update() level")
 	}
 }
 
@@ -156,6 +153,25 @@ func TestUpdate_QuitBlockedWhenHelpOpen(t *testing.T) {
 		msg := cmd()
 		if _, isQuit := msg.(tea.QuitMsg); isQuit {
 			t.Fatal("Update() must not issue tea.Quit when the help overlay is open")
+		}
+	}
+}
+
+// TestUpdate_CtrlCBlockedWhenHelpOpen verifies that the root Update() handler does NOT
+// issue tea.Quit when the help overlay is open and ctrl+c is pressed.
+func TestUpdate_CtrlCBlockedWhenHelpOpen(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.screen = screenMain
+	m.main.ready = true
+	m.showHelp = true
+
+	_, cmd := m.Update(makeCtrlKeyPress('c'))
+	if cmd != nil {
+		msg := cmd()
+		if _, isQuit := msg.(tea.QuitMsg); isQuit {
+			t.Fatal("Update() must not issue tea.Quit when the help overlay is open and ctrl+c is pressed")
 		}
 	}
 }

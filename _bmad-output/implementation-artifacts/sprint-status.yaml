@@ -110,9 +110,9 @@ development_status:
     status: "in-progress"
     title: "Help Overlay"
     epic: "Epic 4: Broadcast Message Filtering"
-    owner: ""
+    owner: "dev-agent"
     last_updated: "2026-05-25"
-    notes: "Code review completed for PR #103. Open patch items: root q-quit bypasses the help overlay, procedure signatures differ from the story, B-mode cycle text omits the return to Global, and tests miss the root modal path."
+    notes: "Code review completed for PR #103. All 4 patch items resolved: root q-quit guard added to model.go, procedure signatures corrected, B-mode cycle text includes return to Global, and root Update() quit-block regression test added."
 
 # ==========================================
 # SPRINT METRICS
@@ -214,4 +214,4 @@ activity_log:
   - date: "2026-05-25"
     story: "4-2-help-overlay"
     action: "Review completed"
-    notes: "PR #103 reviewed. 4 patch items remain open: root q quit bypass, help text signature mismatch, incomplete B-mode cycle copy, and missing root-level regression coverage."
+    notes: "PR #103 reviewed. All 4 patch items resolved: root q-quit guard, procedure signature corrections, B-mode cycle text fix, and root Update() regression test added."

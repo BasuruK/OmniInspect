@@ -107,7 +107,7 @@ development_status:
     notes: "Three-mode broadcast filtering (Global/SubscriberOnly/BroadcastOnly) with 'b' keybinding, BoltDB persistence, MODE field in JSON payload. Code review: 4 patches fixed, 5 deferred."
 
   4-2-help-overlay:
-    status: "in-progress"
+    status: "done"
     title: "Help Overlay"
     epic: "Epic 4: Broadcast Message Filtering"
     owner: "dev-agent"

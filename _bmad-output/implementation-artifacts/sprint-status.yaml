@@ -153,10 +153,10 @@ epic_summary:
   epic-4:
     title: "Epic 4: Broadcast Message Filtering"
     stories_total: 2
-    stories_completed: 1
-    stories_in_progress: 1
+    stories_completed: 2
+    stories_in_progress: 0
     stories_ready_for_dev: 0
-    status: "in-progress"
+    status: "done"
 
 # ==========================================
 # NEXT ACTIONS

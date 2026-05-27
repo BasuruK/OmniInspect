@@ -25,8 +25,7 @@ const helpOverlaySepMaxWidth = 52
 func (m *Model) renderHelpOverlay() string {
 	contentWidth, _ := screenContentSize(m.width, m.height)
 	width := min(contentWidth-4, helpOverlayMaxWidth)
-	// Clamping logic: Ensure we don't exceed helpOverlayMaxWidth,
-	// but don't force a minimum of 40 if contentWidth is smaller.
+	// Prevent negative width if terminal is extremely narrow.
 	if width < 0 {
 		width = 0
 	}

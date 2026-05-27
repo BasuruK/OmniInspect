@@ -15,7 +15,6 @@ import (
 	"OmniView/internal/updater"
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -160,6 +159,9 @@ type Model struct {
 
 	// Broadcast mode for message filtering
 	broadcastMode domain.BroadcastMode
+
+	// showHelp controls whether the in-app help overlay is visible
+	showHelp bool
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -413,14 +415,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			if m.tracerService != nil {
-				m.tracerService.StopConnectionListener()
+			// Do NOT quit if an overlay is visible — consume the signal.
+			if !m.showHelp {
+				if m.tracerService != nil {
+					m.tracerService.StopConnectionListener()
+				}
+				m.cancel() // Cancel all background operations
+				return m, tea.Quit
 			}
-			m.cancel() // Cancel all background operations
-			return m, tea.Quit
 		case "q":
-			// Only quit from screens that don't need 'q' for navigation
-			if (m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible) {
+			// Only quit from screens that don't need 'q' for navigation.
+			// Do NOT quit if an overlay (Help, DB, Webhook) is visible.
+			if !m.showHelp && ((m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible)) {
 				if m.tracerService != nil {
 					m.tracerService.StopConnectionListener()
 				}
@@ -433,14 +439,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Resize main viewport on Main Screen (after first init). On Windows, rely on
-		// runtime.GOOS only—terminal profile / type detection is unreliable in PowerShell/CMD.
+		// Resize main viewport on Main Screen (after first init).
 		if m.screen == screenMain && m.main.ready {
-			if runtime.GOOS == "windows" {
-				m.resizeMainViewport()
-			} else {
-				m.resizeMainViewport()
-			}
+			m.resizeMainViewport()
 		}
 
 		m.resizeDatabaseSettings(msg.Width, msg.Height)
@@ -508,6 +509,8 @@ func (m *Model) View() tea.View {
 				}
 			} else if m.webhookSettings.visible {
 				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)
+			} else if m.showHelp {
+				content = renderCenteredOverlay(content, m.renderHelpOverlay(), m.width, m.height)
 			}
 		}
 	case screenOnboarding:

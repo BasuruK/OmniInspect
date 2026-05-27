@@ -106,15 +106,23 @@ development_status:
     last_updated: "2026-05-21"
     notes: "Three-mode broadcast filtering (Global/SubscriberOnly/BroadcastOnly) with 'b' keybinding, BoltDB persistence, MODE field in JSON payload. Code review: 4 patches fixed, 5 deferred."
 
+  4-2-help-overlay:
+    status: "done"
+    title: "Help Overlay"
+    epic: "Epic 4: Broadcast Message Filtering"
+    owner: "dev-agent"
+    last_updated: "2026-05-25"
+    notes: "Code review completed for PR #103. All 4 patch items resolved: root q-quit guard added to model.go, procedure signatures corrected, B-mode cycle text includes return to Global, and root Update() quit-block regression test added."
+
 # ==========================================
 # SPRINT METRICS
 # ==========================================
 metrics:
-  total_stories: 10
+  total_stories: 11
   completed: 9
   ready_for_dev: 0
   cancelled: 1
-  completion_percentage: 90
+  completion_percentage: 82
 
 # ==========================================
 # EPIC SUMMARY
@@ -144,9 +152,10 @@ epic_summary:
 
   epic-4:
     title: "Epic 4: Broadcast Message Filtering"
-    stories_total: 1
-    stories_completed: 1
+    stories_total: 2
+    stories_completed: 2
     stories_in_progress: 0
+    stories_ready_for_dev: 0
     status: "done"
 
 # ==========================================
@@ -201,3 +210,8 @@ activity_log:
     story: "4-1-broadcast-message-isolation"
     action: "Review completed"
     notes: "Three-mode broadcast filtering implemented with 'b' keybinding, BoltDB persistence, MODE field. Code review: 4 patches fixed (filter wiring, init ordering, persist-before-mutate, dead null check), 5 deferred."
+
+  - date: "2026-05-25"
+    story: "4-2-help-overlay"
+    action: "Review completed"
+    notes: "PR #103 reviewed. All 4 patch items resolved: root q-quit guard, procedure signature corrections, B-mode cycle text fix, and root Update() regression test added."

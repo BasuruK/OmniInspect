@@ -342,6 +342,33 @@ So that I can reduce noise and focus on the messages relevant to my current debu
 
 ---
 
+### Story 4.2: Help Overlay
+
+As a user of OmniView,
+I want to press `H` to open an in-app help panel,
+So that I can quickly reference the PL/SQL API methods, database management keys, webhook setup, and message filtering — without leaving the application.
+
+**Acceptance Criteria:**
+
+**Given** the user is on the Main Screen
+**When** they press `H`
+**Then** a help overlay panel appears centered over the main screen
+**And** the overlay shows all five help sections
+**And** the footer shows the `H Help` keyboard hint
+
+**Given** the help overlay is open
+**When** the user presses `H` or `Escape`
+**Then** the overlay closes
+
+**Technical Notes:**
+- `showHelp bool` flag on root `Model`, no persistence needed
+- New `help_overlay.go` with `renderHelpOverlay()` helper
+- `H` key in `updateMainScreen()`; `Esc` closes overlay before other esc handling
+- Overlay renders centered via `lipgloss.Place()` over main content
+- Subscriber's live funny name injected into Section 1 procedure example
+
+---
+
 **Epic 4 Goal:**
 
-Implement three-mode client-side display filtering (Global / SubscriberOnly / BroadcastOnly) with keyboard toggle and visual indicator.
+Implement three-mode client-side display filtering (Global / SubscriberOnly / BroadcastOnly) with keyboard toggle and visual indicator, and an in-app help overlay accessible via `H`.

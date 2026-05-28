@@ -2,7 +2,7 @@ package domain
 
 import (
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"strings"
 	"sync"
 )
@@ -99,7 +99,7 @@ func newFunnyNameGenerator(seed int64) *FunnyNameGenerator {
 		seen[upper] = true
 		names = append(names, funnyNameEntry{funnyName: funnyName})
 	}
-	src := rand.NewSource(seed)
+	src := rand.NewPCG(uint64(seed), uint64(seed>>32)^0x9e3779b97f4a7c15)
 	return &FunnyNameGenerator{
 		names:  names,
 		used:   make(map[string]bool),
@@ -207,7 +207,7 @@ func (g *FunnyNameGenerator) GetRandomName() (string, error) {
 		return "", ErrNoAvailableNames
 	}
 
-	idx := available[g.source.Intn(len(available))]
+	idx := available[g.source.IntN(len(available))]
 	g.names[idx].used = true
 	name := g.names[idx].funnyName.Name()
 	g.used[strings.ToUpper(name)] = true

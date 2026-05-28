@@ -2,7 +2,7 @@ module OmniView
 
 go 1.24.2
 
-toolchain go1.24.4
+toolchain go1.25.10
 
 require (
 	charm.land/bubbles/v2 v2.0.0

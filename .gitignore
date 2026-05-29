@@ -1,7 +1,9 @@
 # macOS metadata files
 .DS_Store
-.claude/settings.local.json
+.codacy
 omniview.bolt
+omniview.key
+settings.json
 .vscode/launch.json
 omniview.exe
 .letta

@@ -408,6 +408,12 @@ func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (b
 		return false, fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
 	}
 
+	// Authenticate the checksum file with a detached signature when release signing
+	// is provisioned. This is fail-closed: a configured key requires a valid signature.
+	if _, err := verifyChecksumFileSignature(release, checksumAssetName, checksumData); err != nil {
+		return false, fmt.Errorf("signature verification failed: %w", err)
+	}
+
 	// Parse the expected checksum from the downloaded data
 	expectedChecksum, err := parseChecksum(checksumData, assetName)
 	if err != nil {

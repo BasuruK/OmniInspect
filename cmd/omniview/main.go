@@ -2,6 +2,7 @@ package main
 
 import (
 	"OmniView/internal/adapter/logger"
+	"OmniView/internal/adapter/security/credcipher"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
 	"OmniView/internal/adapter/ui"
@@ -38,6 +39,14 @@ func run(omniApp *app.App) error {
 	logger.Info("OmniInspect starting", "version", omniApp.GetVersion())
 
 	updater.CleanupOldBinary()
+
+	// Enable at-rest encryption for credentials persisted in BoltDB. The master key
+	// is stored in a 0600 file alongside the database and generated on first run.
+	credCipher, err := credcipher.New(credcipher.NewFileKeyProvider("omniview.key"))
+	if err != nil {
+		return fmt.Errorf("failed to initialise credential cipher: %w", err)
+	}
+	domain.SetCredentialCipher(credCipher)
 
 	// Initialize BoltDB
 	boltAdapter, err := boltdb.NewBoltAdapter("omniview.bolt")

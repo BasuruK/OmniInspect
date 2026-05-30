@@ -1,8 +1,10 @@
 package credcipher
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -86,6 +88,12 @@ func TestEncryptUsesFreshNonce(t *testing.T) {
 	}
 }
 
+func TestNewNilProviderReturnsSentinel(t *testing.T) {
+	if _, err := New(nil); !errors.Is(err, ErrNilKeyProvider) {
+		t.Fatalf("New(nil) error = %v, want ErrNilKeyProvider", err)
+	}
+}
+
 func TestFileKeyProviderPersistsAndPermissions(t *testing.T) {
 	keyPath := filepath.Join(t.TempDir(), "omniview.key")
 	p := NewFileKeyProvider(keyPath)
@@ -102,8 +110,10 @@ func TestFileKeyProviderPersistsAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat key file: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != fileKeyPerm {
-		t.Fatalf("key file perm = %o, want %o", perm, fileKeyPerm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != fileKeyPerm {
+			t.Fatalf("key file perm = %o, want %o", perm, fileKeyPerm)
+		}
 	}
 
 	k2, err := p.Key()
@@ -112,5 +122,29 @@ func TestFileKeyProviderPersistsAndPermissions(t *testing.T) {
 	}
 	if string(k1) != string(k2) {
 		t.Fatal("key changed across reloads; expected stable key")
+	}
+}
+
+func TestFileKeyProviderTightensExistingPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows does not report POSIX file permissions reliably")
+	}
+
+	keyPath := filepath.Join(t.TempDir(), "omniview.key")
+	if err := os.WriteFile(keyPath, []byte(strings.Repeat("ab", keySize)), 0644); err != nil {
+		t.Fatalf("seed key file: %v", err)
+	}
+
+	p := NewFileKeyProvider(keyPath)
+	if _, err := p.Key(); err != nil {
+		t.Fatalf("Key: %v", err)
+	}
+
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat key file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != fileKeyPerm {
+		t.Fatalf("key file perm = %o, want %o", perm, fileKeyPerm)
 	}
 }

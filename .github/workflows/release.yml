@@ -49,7 +49,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.10'
 
       - name: Generate Windows icon .syso
         env:
@@ -144,7 +144,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.10'
 
       - name: Build release binary
         run: go build -v -ldflags "-X OmniView/internal/app.Version=${{ github.ref_name }}" -o omniview ./cmd/omniview

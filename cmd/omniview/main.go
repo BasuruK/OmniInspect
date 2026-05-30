@@ -12,6 +12,7 @@ import (
 	"OmniView/internal/service/tracer"
 	updaterSvc "OmniView/internal/service/updater"
 	"OmniView/internal/updater"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -42,14 +43,27 @@ func run(omniApp *app.App) error {
 
 	// Enable at-rest encryption for credentials persisted in BoltDB. The master key
 	// is stored in a 0600 file alongside the database and generated on first run.
-	credCipher, err := credcipher.New(credcipher.NewFileKeyProvider("omniview.key"))
+	const boltDBPath = "omniview.bolt"
+	const keyPath = "omniview.key"
+	if _, err := os.Stat(boltDBPath); err == nil {
+		if _, keyErr := os.Stat(keyPath); keyErr != nil {
+			if errors.Is(keyErr, os.ErrNotExist) {
+				return fmt.Errorf("credential key %q is missing while %q already exists; restore the original key file or remove %q and reconfigure, otherwise stored credentials cannot be decrypted", keyPath, boltDBPath, boltDBPath)
+			}
+			return fmt.Errorf("failed to stat credential key %s: %w", keyPath, keyErr)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to stat BoltDB file %s: %w", boltDBPath, err)
+	}
+
+	credCipher, err := credcipher.New(credcipher.NewFileKeyProvider(keyPath))
 	if err != nil {
 		return fmt.Errorf("failed to initialise credential cipher: %w", err)
 	}
 	domain.SetCredentialCipher(credCipher)
 
 	// Initialize BoltDB
-	boltAdapter, err := boltdb.NewBoltAdapter("omniview.bolt")
+	boltAdapter, err := boltdb.NewBoltAdapter(boltDBPath)
 	if err != nil {
 		return fmt.Errorf("failed to create BoltDB adapter: %w", err)
 	}

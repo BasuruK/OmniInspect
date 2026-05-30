@@ -31,6 +31,9 @@ const keySize = 32
 // ErrInvalidKeySize is returned when a provided key is not 32 bytes.
 var ErrInvalidKeySize = errors.New("credential key must be 32 bytes")
 
+// ErrNilKeyProvider is returned when New is called without a key provider.
+var ErrNilKeyProvider = errors.New("credcipher: nil key provider")
+
 // ErrMalformedToken is returned when a value with the cipher prefix cannot be decoded.
 var ErrMalformedToken = errors.New("malformed credential token")
 
@@ -49,7 +52,7 @@ type Cipher struct {
 // New constructs a Cipher using the key supplied by the given provider.
 func New(provider KeyProvider) (*Cipher, error) {
 	if provider == nil {
-		return nil, errors.New("credcipher: nil key provider")
+		return nil, fmt.Errorf("credcipher.New: %w", ErrNilKeyProvider)
 	}
 	key, err := provider.Key()
 	if err != nil {

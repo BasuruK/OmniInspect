@@ -29,6 +29,7 @@ const GitHubRepo = "BasuruK/OmniInspect"
 const gitHubAPIBase = "https://api.github.com"
 
 const maxArchiveEntrySize int64 = 100 * 1024 * 1024
+const maxExtractedArchiveSize int64 = 500 * 1024 * 1024
 
 // releaseAsset represents a single downloadable file attached to a GitHub release.
 type releaseAsset struct {
@@ -536,6 +537,10 @@ func extractArchive(archivePath, destDir, selfPath string) error {
 // .old before the new version is written. This works on Windows because the OS
 // allows renaming a loaded DLL/EXE — it only prevents deletion or overwriting.
 func extractZip(archivePath, destDir, selfPath string) error {
+	return extractZipWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
+}
+
+func extractZipWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open zip: %w", err)
@@ -543,6 +548,7 @@ func extractZip(archivePath, destDir, selfPath string) error {
 	defer r.Close()
 
 	selfName := filepath.Base(selfPath)
+	totalSize := int64(0)
 
 	for _, f := range r.File {
 		if f.FileInfo().IsDir() {
@@ -562,6 +568,12 @@ func extractZip(archivePath, destDir, selfPath string) error {
 			return fmt.Errorf("archive entry %s exceeds maximum size limit of %d bytes", name, maxArchiveEntrySize)
 		}
 
+		entrySize := int64(f.UncompressedSize64)
+		if totalSize > maxTotalSize-entrySize {
+			return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+		}
+		totalSize += entrySize
+
 		destPath, err := archiveDestPath(destDir, name)
 		if err != nil {
 			return err
@@ -578,6 +590,10 @@ func extractZip(archivePath, destDir, selfPath string) error {
 // running process (the executable itself and any .dylib shared libraries) are
 // renamed to .old before the new version is written.
 func extractTarGz(archivePath, destDir, selfPath string) error {
+	return extractTarGzWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
+}
+
+func extractTarGzWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
@@ -590,8 +606,10 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
+	limitedGz := &io.LimitedReader{R: gz, N: maxTotalSize + 1}
+	tr := tar.NewReader(limitedGz)
 	selfName := filepath.Base(selfPath)
+	totalSize := int64(0)
 
 	for {
 		header, err := tr.Next()
@@ -599,6 +617,9 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 			break
 		}
 		if err != nil {
+			if limitedGz.N == 0 {
+				return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+			}
 			return fmt.Errorf("tar read error: %w", err)
 		}
 
@@ -614,6 +635,10 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 		if header.Size > maxArchiveEntrySize {
 			return fmt.Errorf("archive entry %s exceeds maximum size limit of %d bytes", name, maxArchiveEntrySize)
 		}
+		if totalSize > maxTotalSize-header.Size {
+			return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+		}
+		totalSize += header.Size
 
 		destPath, err := archiveDestPath(destDir, name)
 		if err != nil {
@@ -622,8 +647,14 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 
 		mode := os.FileMode(header.Mode) & os.ModePerm // strip setuid/setgid/sticky
 		if err := writeFileFromReaderDirect(tr, destPath, mode, selfName); err != nil {
+			if limitedGz.N == 0 {
+				return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+			}
 			return err
 		}
+	}
+	if limitedGz.N == 0 {
+		return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
 	}
 	return nil
 }
@@ -652,7 +683,12 @@ func archiveDestPath(destDir, name string) (string, error) {
 		return "", fmt.Errorf("resolve destination directory: %w", err)
 	}
 
-	destPath := filepath.Join(cleanDestDir, name)
+	safeName, ok := safeArchiveFileName(name)
+	if !ok || safeName != name {
+		return "", fmt.Errorf("archive entry %q has unsafe path", name)
+	}
+
+	destPath := filepath.Join(cleanDestDir, safeName)
 	rel, err := filepath.Rel(cleanDestDir, destPath)
 	if err != nil {
 		return "", fmt.Errorf("validate destination path: %w", err)
@@ -729,7 +765,6 @@ func writeFileFromReaderDirectWithLimit(src io.Reader, destPath string, mode os.
 	if err := replaceFile(tmpPath, destPath, selfName); err != nil {
 		return err
 	}
-	tmpPath = ""
 
 	return nil
 }

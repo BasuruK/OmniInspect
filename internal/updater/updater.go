@@ -695,7 +695,7 @@ func archiveDestPath(destDir, name string) (string, error) {
 	}
 
 	safeName, ok := safeArchiveFileName(name)
-	if !ok || safeName != name {
+	if !ok {
 		return "", fmt.Errorf("archive entry %q has unsafe path", name)
 	}
 

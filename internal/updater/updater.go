@@ -540,6 +540,9 @@ func extractZip(archivePath, destDir, selfPath string) error {
 	return extractZipWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
 }
 
+// extractZipWithLimit is the testable core of extractZip, accepting an explicit
+// maxTotalSize cap so unit tests can exercise the size-limit path without creating
+// multi-megabyte archives.
 func extractZipWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
@@ -593,6 +596,9 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 	return extractTarGzWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
 }
 
+// extractTarGzWithLimit is the testable core of extractTarGz, accepting an explicit
+// maxTotalSize cap so unit tests can exercise the size-limit path without creating
+// multi-megabyte archives.
 func extractTarGzWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
@@ -659,6 +665,9 @@ func extractTarGzWithLimit(archivePath, destDir, selfPath string, maxTotalSize i
 	return nil
 }
 
+// safeArchiveFileName validates and sanitises an archive entry name, returning the
+// base filename and true when the entry is safe to extract. It rejects absolute
+// paths, path-traversal sequences (".."), null bytes, and drive-letter prefixes.
 func safeArchiveFileName(archiveName string) (string, bool) {
 	normalized := strings.ReplaceAll(archiveName, "\\", "/")
 	if normalized == "" || strings.HasPrefix(normalized, "/") || strings.ContainsRune(normalized, 0) || strings.Contains(normalized, ":/") {
@@ -677,6 +686,8 @@ func safeArchiveFileName(archiveName string) (string, bool) {
 	return name, true
 }
 
+// archiveDestPath resolves the absolute destination path for an archive entry,
+// verifying that the result stays within destDir to prevent path-traversal attacks.
 func archiveDestPath(destDir, name string) (string, error) {
 	cleanDestDir, err := filepath.Abs(destDir)
 	if err != nil {
@@ -700,6 +711,10 @@ func archiveDestPath(destDir, name string) (string, error) {
 	return destPath, nil
 }
 
+// shouldRenameLockedFile reports whether the file should be renamed to ".old"
+// before overwriting, rather than deleted in-place. This is necessary for the
+// running executable and any platform shared libraries (.dll on Windows, .dylib
+// on macOS) that cannot be deleted or truncated while in use.
 func shouldRenameLockedFile(name, selfName string) bool {
 	lowerName := strings.ToLower(name)
 	if strings.EqualFold(name, selfName) {
@@ -730,6 +745,10 @@ func writeFileFromReaderDirect(src io.Reader, destPath string, mode os.FileMode,
 	return writeFileFromReaderDirectWithLimit(src, destPath, mode, maxArchiveEntrySize, selfName)
 }
 
+// writeFileFromReaderDirectWithLimit is the testable core of writeFileFromReaderDirect,
+// accepting an explicit maxFileSize cap so unit tests can exercise the per-entry
+// size-limit path without constructing large payloads. It writes src to a sibling
+// temporary file and atomically renames it into place via replaceFile.
 func writeFileFromReaderDirectWithLimit(src io.Reader, destPath string, mode os.FileMode, maxFileSize int64, selfName string) error {
 	if mode == 0 {
 		mode = 0755
@@ -769,6 +788,10 @@ func writeFileFromReaderDirectWithLimit(src io.Reader, destPath string, mode os.
 	return nil
 }
 
+// replaceFile atomically moves tmpPath to destPath. For files that cannot be
+// deleted while in use (see shouldRenameLockedFile), the existing file is first
+// renamed to destPath+".old" so the rename of the new binary succeeds. On failure
+// after a rename, the old file is restored.
 func replaceFile(tmpPath, destPath, selfName string) error {
 	name := filepath.Base(destPath)
 	renamedOld := false

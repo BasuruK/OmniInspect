@@ -696,7 +696,7 @@ func archiveDestPath(destDir, name string) (string, error) {
 
 	safeName, ok := safeArchiveFileName(name)
 	if !ok {
-		return "", fmt.Errorf("archive entry %q has unsafe path", name)
+		return "", fmt.Errorf("%w: %q", domain.ErrUnsafeArchivePath, name)
 	}
 
 	destPath := filepath.Join(cleanDestDir, safeName)

@@ -58,6 +58,7 @@ var (
 	// Updater errors
 	ErrNoMatchingReleaseAsset = errors.New("no matching release asset")
 	ErrNoUpdateInfo           = errors.New("no update info provided")
+	ErrUnsafeArchivePath      = errors.New("unsafe archive path")
 
 	// Webhook config errors
 	ErrWebhookConfigNotFound = errors.New("webhook config not found")

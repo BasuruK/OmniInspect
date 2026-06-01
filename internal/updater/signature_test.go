@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
@@ -11,7 +12,7 @@ func TestVerifyChecksumFileSignatureDisabledWhenNoKey(t *testing.T) {
 	defer func(prev ed25519.PublicKey) { signaturePublicKey = prev }(signaturePublicKey)
 	signaturePublicKey = nil
 
-	verified, err := verifyChecksumFileSignature(&githubRelease{}, "checksums.txt", "data")
+	verified, err := verifyChecksumFileSignature(context.Background(), &githubRelease{}, "checksums.txt", "data")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +30,7 @@ func TestVerifyChecksumFileSignatureRequiresAssetWhenKeySet(t *testing.T) {
 	signaturePublicKey = pub
 
 	// Release has no .sig asset -> fail-closed.
-	_, err = verifyChecksumFileSignature(&githubRelease{}, "checksums.txt", "data")
+	_, err = verifyChecksumFileSignature(context.Background(), &githubRelease{}, "checksums.txt", "data")
 	if err == nil {
 		t.Fatal("expected error when signature asset is missing")
 	}

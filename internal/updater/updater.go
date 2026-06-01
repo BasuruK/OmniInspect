@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
 	"archive/tar"
 	"archive/zip"
@@ -138,7 +139,7 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 	}
 
 	progress("Verifying checksum...")
-	if _, err := verifyChecksum(tmpFile, release, expectedAssetName(info.NewVersion)); err != nil {
+	if _, err := verifyChecksum(ctx, tmpFile, release, expectedAssetName(info.NewVersion)); err != nil {
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 	// verified == false with err == nil means no checksum file was found - skip verification
@@ -162,9 +163,15 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 		return fmt.Errorf("extraction failed: %w", err)
 	}
 
-	// Write RELEASE_NOTES.md in the same directory as the binary
+	// Write RELEASE_NOTES.md in the same directory as the binary. A failure here
+	// is non-fatal — the binary has already been swapped in and the user can
+	// still read release notes from GitHub — but it is logged for diagnosis.
 	if err := writeReleaseNotes(selfDir, release); err != nil {
-		fmt.Printf("[updater] writeReleaseNotes failed for release %v at %s: %v\n", release.TagName, selfDir, err)
+		logger.Error("writeReleaseNotes failed",
+			"release", release.TagName,
+			"dir", selfDir,
+			"err", err,
+		)
 	}
 
 	// Clean up temp archive before restart (defers won't run after os.Exit)
@@ -176,13 +183,17 @@ func DownloadAndApply(ctx context.Context, info *UpdateInfo, progressFn func(sta
 	return restartSelf(selfPath)
 }
 
-// CheckAndUpdate checks the latest GitHub release and prompts the user to update.
+// checkAndUpdate checks the latest GitHub release and prompts the user to update.
 // currentVersion is the version string embedded in the binary at build time (e.g. "v0.2.0").
 // Returns nil if no update is needed or the user declines. Returns an error on failure.
 //
 // Deprecated: Use CheckForUpdate followed by DownloadAndApply instead.
-// This function is kept for backward compatibility.
-func CheckAndUpdate(currentVersion string) error {
+// This function is kept for backward compatibility with non-TUI entry points and
+// the CLI updater. It uses fmt.Scanln for interactive prompting, which is not
+// safe to invoke from within a Bubble Tea program (the TUI owns stdin/stdout).
+// Unexported because all in-process callers should go through the TUI's
+// UpdaterService, which uses CheckForUpdate + DownloadAndApply.
+func checkAndUpdate(currentVersion string) error {
 	info, err := CheckForUpdate(context.Background(), currentVersion)
 	if err != nil {
 		fmt.Printf("[updater] Could not check for updates: %v\n", err)
@@ -366,7 +377,7 @@ func downloadToTemp(ctx context.Context, url string) (string, error) {
 // and compares the computed hash against the expected value.
 // Returns (true, nil) when checksum is verified, (false, nil) when no checksum file exists,
 // and (false, err) for verification failures.
-func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (bool, error) {
+func verifyChecksum(ctx context.Context, tmpFile string, release *githubRelease, assetName string) (bool, error) {
 	// Try to find a checksum file in the release assets
 	// Common patterns: <asset>.sha256, checksums.txt, SHA256SUMS, etc.
 	var checksumURL string
@@ -404,14 +415,14 @@ func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (b
 	}
 
 	// Download the checksum file
-	checksumData, err := downloadChecksumFile(checksumURL)
+	checksumData, err := downloadChecksumFile(ctx, checksumURL)
 	if err != nil {
 		return false, fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
 	}
 
 	// Authenticate the checksum file with a detached signature when release signing
 	// is provisioned. This is fail-closed: a configured key requires a valid signature.
-	if _, err := verifyChecksumFileSignature(release, checksumAssetName, checksumData); err != nil {
+	if _, err := verifyChecksumFileSignature(ctx, release, checksumAssetName, checksumData); err != nil {
 		return false, fmt.Errorf("signature verification failed: %w", err)
 	}
 
@@ -436,9 +447,15 @@ func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (b
 }
 
 // downloadChecksumFile downloads the checksum file and returns its content as a string.
-func downloadChecksumFile(url string) (string, error) {
+// The context is used to cancel the in-flight HTTP request; checksum files are tiny
+// (a few hundred bytes), so no separate size cap is required.
+func downloadChecksumFile(ctx context.Context, url string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -832,21 +849,66 @@ func writeReleaseNotes(dir string, release *githubRelease) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+// restartGracePeriod is how long we wait after StartProcess returns to confirm
+// the child actually launched. If the child dies within this window — for
+// example because the new binary is corrupt or a required shared library
+// could not be loaded — we roll back to the .old backup instead of stranding
+// the user with a broken install.
+const restartGracePeriod = 500 * time.Millisecond
+
 // restartSelf launches a new instance of the binary and exits the current process.
+// The child is started in its own process group so signals sent to the parent's
+// group (e.g. SIGHUP from a closing terminal) do not propagate to the new instance.
+// If the child exits within restartGracePeriod the previous binary is restored
+// from the .old backup and an error is returned without exiting the parent.
 func restartSelf(selfPath string) error {
 	args := os.Args
 	env := os.Environ()
+	oldPath := selfPath + ".old"
+
+	// Record whether a .old backup exists so we know whether restoration is
+	// possible if the new child fails to start.
+	hadOldBackup := false
+	if _, err := os.Stat(oldPath); err == nil {
+		hadOldBackup = true
+	}
 
 	proc, err := os.StartProcess(selfPath, args, &os.ProcAttr{
 		Dir:   filepath.Dir(selfPath),
 		Env:   env,
 		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+		Sys:   detachSysProcAttr(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to restart: %w", err)
 	}
 
-	// Detach the child so it survives our exit
+	// Wait briefly to confirm the child actually started.
+	type waitResult struct {
+		state *os.ProcessState
+		err   error
+	}
+	waitCh := make(chan waitResult, 1)
+	go func() {
+		state, err := proc.Wait()
+		waitCh <- waitResult{state: state, err: err}
+	}()
+
+	select {
+	case result := <-waitCh:
+		if hadOldBackup {
+			if renameErr := os.Rename(oldPath, selfPath); renameErr != nil {
+				return fmt.Errorf("restart: child exited (%v) and restore of %s failed: %w", result.err, oldPath, renameErr)
+			}
+		}
+		if result.err != nil {
+			return fmt.Errorf("restart: child process exited immediately: %w", result.err)
+		}
+		return fmt.Errorf("restart: child process exited immediately (state: %s)", result.state)
+	case <-time.After(restartGracePeriod):
+	}
+
+	// Detach the child so it survives our exit.
 	proc.Release()
 	os.Exit(0)
 

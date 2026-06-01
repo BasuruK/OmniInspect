@@ -1,4 +1,5 @@
 import os
+import stat
 import sys
 import shutil
 import zipfile
@@ -130,7 +131,7 @@ def cleanup():
                     # Handle Windows readonly files
                     if IS_WINDOWS:
                         def handle_remove_readonly(func, path, exc):
-                            os.chmod(path, 0o777)
+                            os.chmod(path, stat.S_IWRITE)
                             func(path)
                         shutil.rmtree(path, onerror=handle_remove_readonly)
                     else:

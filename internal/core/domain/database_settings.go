@@ -169,6 +169,25 @@ func (dbs *DatabaseSettings) GetConnectionDetails() string {
 	return fmt.Sprintf("%s@%s:%d/%s", dbs.username, dbs.host, dbs.port, dbs.database)
 }
 
+// String implements fmt.Stringer with the password redacted. This guarantees the
+// credential is never leaked when a DatabaseSettings value is formatted via the
+// %v, %+v or %s verbs (e.g. in logs or error messages).
+func (dbs *DatabaseSettings) String() string {
+	if dbs == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf(
+		"DatabaseSettings{databaseID:%q, database:%q, host:%q, port:%d, username:%q, password:[REDACTED], isDefault:%t}",
+		dbs.databaseID, dbs.database, dbs.host, int(dbs.port), dbs.username, dbs.isDefault,
+	)
+}
+
+// GoString implements fmt.GoStringer so the password is also redacted under the
+// %#v verb used by some debugging output.
+func (dbs *DatabaseSettings) GoString() string {
+	return dbs.String()
+}
+
 // DisplayTarget returns the compact secondary label shown in the UI.
 func (dbs *DatabaseSettings) DisplayTarget() string {
 	return fmt.Sprintf("%s @ %s", dbs.database, dbs.host)
@@ -211,15 +230,20 @@ type databaseSettingsJSON struct {
 	Validated  bool   `json:"validated,omitempty"`
 }
 
-// MarshalJSON implements custom JSON marshaling for DatabaseSettings
+// MarshalJSON implements custom JSON marshaling for DatabaseSettings.
+// The password is encrypted at rest via the configured CredentialCipher.
 func (dbs *DatabaseSettings) MarshalJSON() ([]byte, error) {
+	encryptedPassword, err := credentialCipher.Encrypt(dbs.password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt credential: %w", err)
+	}
 	j := databaseSettingsJSON{
 		DatabaseID: dbs.databaseID,
 		Database:   dbs.database,
 		Host:       dbs.host,
 		Port:       int(dbs.port),
 		Username:   dbs.username,
-		Password:   dbs.password,
+		Password:   encryptedPassword,
 		IsDefault:  dbs.isDefault,
 		Validated:  dbs.validated,
 	}
@@ -249,7 +273,13 @@ func (dbs *DatabaseSettings) UnmarshalJSON(data []byte) error {
 		databaseID = dbSettingJson.Database
 	}
 
-	cfg, err := NewDatabaseSettings(databaseID, dbSettingJson.Database, dbSettingJson.Host, p, dbSettingJson.Username, dbSettingJson.Password)
+	// Decrypt the password at rest. Legacy plaintext values are returned unchanged.
+	password, err := credentialCipher.Decrypt(dbSettingJson.Password)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt credential: %w", err)
+	}
+
+	cfg, err := NewDatabaseSettings(databaseID, dbSettingJson.Database, dbSettingJson.Host, p, dbSettingJson.Username, password)
 	if err != nil {
 		return err
 	}

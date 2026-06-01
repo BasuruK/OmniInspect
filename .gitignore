@@ -1,7 +1,9 @@
 # macOS metadata files
 .DS_Store
-.claude/settings.local.json
+.codacy
 omniview.bolt
+omniview.key
+settings.json
 .vscode/launch.json
 omniview.exe
 .letta
@@ -21,3 +23,4 @@ omniview.log
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+.codacy/codacy.yaml

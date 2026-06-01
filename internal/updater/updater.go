@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -26,6 +27,9 @@ const GitHubRepo = "BasuruK/OmniInspect"
 
 // gitHubAPIBase is the base URL for the GitHub API.
 const gitHubAPIBase = "https://api.github.com"
+
+const maxArchiveEntrySize int64 = 100 * 1024 * 1024
+const maxExtractedArchiveSize int64 = 500 * 1024 * 1024
 
 // releaseAsset represents a single downloadable file attached to a GitHub release.
 type releaseAsset struct {
@@ -405,6 +409,12 @@ func verifyChecksum(tmpFile string, release *githubRelease, assetName string) (b
 		return false, fmt.Errorf("failed to download checksum file %s: %w", checksumAssetName, err)
 	}
 
+	// Authenticate the checksum file with a detached signature when release signing
+	// is provisioned. This is fail-closed: a configured key requires a valid signature.
+	if _, err := verifyChecksumFileSignature(release, checksumAssetName, checksumData); err != nil {
+		return false, fmt.Errorf("signature verification failed: %w", err)
+	}
+
 	// Parse the expected checksum from the downloaded data
 	expectedChecksum, err := parseChecksum(checksumData, assetName)
 	if err != nil {
@@ -527,6 +537,13 @@ func extractArchive(archivePath, destDir, selfPath string) error {
 // .old before the new version is written. This works on Windows because the OS
 // allows renaming a loaded DLL/EXE — it only prevents deletion or overwriting.
 func extractZip(archivePath, destDir, selfPath string) error {
+	return extractZipWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
+}
+
+// extractZipWithLimit is the testable core of extractZip, accepting an explicit
+// maxTotalSize cap so unit tests can exercise the size-limit path without creating
+// multi-megabyte archives.
+func extractZipWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open zip: %w", err)
@@ -534,22 +551,38 @@ func extractZip(archivePath, destDir, selfPath string) error {
 	defer r.Close()
 
 	selfName := filepath.Base(selfPath)
+	totalSize := int64(0)
 
 	for _, f := range r.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 
-		// Use only the base name — archives may contain a top-level directory
-		name := filepath.Base(f.Name)
-		destPath := filepath.Join(destDir, name)
+		if !f.FileInfo().Mode().IsRegular() {
+			continue
+		}
 
-		// Rename any file that may be locked by the running process
-		if err := renameIfLocked(destPath, name, selfName); err != nil {
+		name, ok := safeArchiveFileName(f.Name)
+		if !ok {
+			continue
+		}
+
+		if f.UncompressedSize64 > uint64(maxArchiveEntrySize) {
+			return fmt.Errorf("archive entry %s exceeds maximum size limit of %d bytes", name, maxArchiveEntrySize)
+		}
+
+		entrySize := int64(f.UncompressedSize64)
+		if totalSize > maxTotalSize-entrySize {
+			return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+		}
+		totalSize += entrySize
+
+		destPath, err := archiveDestPath(destDir, name)
+		if err != nil {
 			return err
 		}
 
-		if err := writeFileFromReader(f.Open, destPath, f.Mode()); err != nil {
+		if err := writeFileFromReader(f.Open, destPath, f.FileInfo().Mode(), selfName); err != nil {
 			return err
 		}
 	}
@@ -560,6 +593,13 @@ func extractZip(archivePath, destDir, selfPath string) error {
 // running process (the executable itself and any .dylib shared libraries) are
 // renamed to .old before the new version is written.
 func extractTarGz(archivePath, destDir, selfPath string) error {
+	return extractTarGzWithLimit(archivePath, destDir, selfPath, maxExtractedArchiveSize)
+}
+
+// extractTarGzWithLimit is the testable core of extractTarGz, accepting an explicit
+// maxTotalSize cap so unit tests can exercise the size-limit path without creating
+// multi-megabyte archives.
+func extractTarGzWithLimit(archivePath, destDir, selfPath string, maxTotalSize int64) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
@@ -572,8 +612,10 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
+	limitedGz := &io.LimitedReader{R: gz, N: maxTotalSize + 1}
+	tr := tar.NewReader(limitedGz)
 	selfName := filepath.Base(selfPath)
+	totalSize := int64(0)
 
 	for {
 		header, err := tr.Next()
@@ -581,6 +623,9 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 			break
 		}
 		if err != nil {
+			if limitedGz.N == 0 {
+				return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+			}
 			return fmt.Errorf("tar read error: %w", err)
 		}
 
@@ -588,88 +633,190 @@ func extractTarGz(archivePath, destDir, selfPath string) error {
 			continue // Skip directories and special files
 		}
 
-		name := filepath.Base(header.Name)
-		destPath := filepath.Join(destDir, name)
+		name, ok := safeArchiveFileName(header.Name)
+		if !ok {
+			continue
+		}
 
-		// Rename any file that may be locked by the running process
-		if err := renameIfLocked(destPath, name, selfName); err != nil {
+		if header.Size > maxArchiveEntrySize {
+			return fmt.Errorf("archive entry %s exceeds maximum size limit of %d bytes", name, maxArchiveEntrySize)
+		}
+		if totalSize > maxTotalSize-header.Size {
+			return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+		}
+		totalSize += header.Size
+
+		destPath, err := archiveDestPath(destDir, name)
+		if err != nil {
 			return err
 		}
 
 		mode := os.FileMode(header.Mode) & os.ModePerm // strip setuid/setgid/sticky
-		if err := writeFileFromReaderDirect(tr, destPath, mode); err != nil {
+		if err := writeFileFromReaderDirect(tr, destPath, mode, selfName); err != nil {
+			if limitedGz.N == 0 {
+				return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+			}
 			return err
 		}
 	}
+	if limitedGz.N == 0 {
+		return fmt.Errorf("archive exceeds maximum extracted size limit of %d bytes", maxTotalSize)
+	}
 	return nil
 }
 
-// renameIfLocked renames a file to .old if it may be locked by the running process.
-// On Windows, this applies to the running executable and any .dll files.
-// On macOS, this applies to the running executable and any .dylib files.
-// The OS allows renaming loaded files — it only prevents deletion/overwriting.
-func renameIfLocked(destPath, name, selfName string) error {
-	// Nothing to rename if the destination doesn't exist yet
-	if _, err := os.Stat(destPath); os.IsNotExist(err) {
-		return nil
+// safeArchiveFileName validates and sanitises an archive entry name, returning the
+// base filename and true when the entry is safe to extract. It rejects absolute
+// paths, path-traversal sequences (".."), null bytes, and drive-letter prefixes.
+func safeArchiveFileName(archiveName string) (string, bool) {
+	normalized := strings.ReplaceAll(archiveName, "\\", "/")
+	if normalized == "" || strings.HasPrefix(normalized, "/") || strings.ContainsRune(normalized, 0) || strings.Contains(normalized, ":/") {
+		return "", false
 	}
-
-	needRename := false
-	lowerName := strings.ToLower(name)
-
-	// Always rename the running executable
-	if strings.EqualFold(name, selfName) {
-		needRename = true
-	}
-
-	// On Windows, rename any .dll files (they may be loaded by the PE loader)
-	if runtime.GOOS == "windows" && strings.HasSuffix(lowerName, ".dll") {
-		needRename = true
-	}
-
-	// On macOS, rename any .dylib files (they may be loaded by dyld)
-	if runtime.GOOS == "darwin" && strings.HasSuffix(lowerName, ".dylib") {
-		needRename = true
-	}
-
-	if needRename {
-		oldPath := destPath + ".old"
-		// Remove any previous .old file first (in case of repeated update attempts)
-		os.Remove(oldPath)
-		if err := os.Rename(destPath, oldPath); err != nil {
-			return fmt.Errorf("failed to rename locked file %s: %w", name, err)
+	for _, segment := range strings.Split(normalized, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", false
 		}
 	}
 
-	return nil
+	name := path.Base(normalized)
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", false
+	}
+	return name, true
+}
+
+// archiveDestPath resolves the absolute destination path for an archive entry,
+// verifying that the result stays within destDir to prevent path-traversal attacks.
+func archiveDestPath(destDir, name string) (string, error) {
+	cleanDestDir, err := filepath.Abs(destDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve destination directory: %w", err)
+	}
+
+	safeName, ok := safeArchiveFileName(name)
+	if !ok || safeName != name {
+		return "", fmt.Errorf("%w: %q", domain.ErrUnsafeArchivePath, name)
+	}
+
+	destPath := filepath.Join(cleanDestDir, safeName)
+	rel, err := filepath.Rel(cleanDestDir, destPath)
+	if err != nil {
+		return "", fmt.Errorf("validate destination path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("archive entry %s escapes destination directory", name)
+	}
+
+	return destPath, nil
+}
+
+// shouldRenameLockedFile reports whether the file should be renamed to ".old"
+// before overwriting, rather than deleted in-place. This is necessary for the
+// running executable and any platform shared libraries (.dll on Windows, .dylib
+// on macOS) that cannot be deleted or truncated while in use.
+func shouldRenameLockedFile(name, selfName string) bool {
+	lowerName := strings.ToLower(name)
+	if strings.EqualFold(name, selfName) {
+		return true
+	}
+	if runtime.GOOS == "windows" && strings.HasSuffix(lowerName, ".dll") {
+		return true
+	}
+	if runtime.GOOS == "darwin" && strings.HasSuffix(lowerName, ".dylib") {
+		return true
+	}
+	return false
 }
 
 // writeFileFromReader opens the source via openFn and writes it to destPath.
-func writeFileFromReader(openFn func() (io.ReadCloser, error), destPath string, mode os.FileMode) error {
+func writeFileFromReader(openFn func() (io.ReadCloser, error), destPath string, mode os.FileMode, selfName string) error {
 	src, err := openFn()
 	if err != nil {
 		return fmt.Errorf("failed to open archive entry: %w", err)
 	}
 	defer src.Close()
 
-	return writeFileFromReaderDirect(src, destPath, mode)
+	return writeFileFromReaderDirect(src, destPath, mode, selfName)
 }
 
 // writeFileFromReaderDirect writes content from reader to destPath with the given permissions.
-func writeFileFromReaderDirect(src io.Reader, destPath string, mode os.FileMode) error {
+func writeFileFromReaderDirect(src io.Reader, destPath string, mode os.FileMode, selfName string) error {
+	return writeFileFromReaderDirectWithLimit(src, destPath, mode, maxArchiveEntrySize, selfName)
+}
+
+// writeFileFromReaderDirectWithLimit is the testable core of writeFileFromReaderDirect,
+// accepting an explicit maxFileSize cap so unit tests can exercise the per-entry
+// size-limit path without constructing large payloads. It writes src to a sibling
+// temporary file and atomically renames it into place via replaceFile.
+func writeFileFromReaderDirectWithLimit(src io.Reader, destPath string, mode os.FileMode, maxFileSize int64, selfName string) error {
 	if mode == 0 {
 		mode = 0755
 	}
 
-	dst, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	dir := filepath.Dir(destPath)
+	base := filepath.Base(destPath)
+	tmp, err := os.CreateTemp(dir, "."+base+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to create file %s: %w", destPath, err)
+		return fmt.Errorf("failed to create temporary file for %s: %w", destPath, err)
 	}
-	defer dst.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
 
-	if _, err := io.Copy(dst, src); err != nil {
+	limitedSrc := &io.LimitedReader{R: src, N: maxFileSize + 1}
+	written, err := io.Copy(tmp, limitedSrc)
+	if err != nil {
+		tmp.Close()
 		return fmt.Errorf("failed to write file %s: %w", destPath, err)
 	}
+	if written > maxFileSize || limitedSrc.N == 0 {
+		tmp.Close()
+		return fmt.Errorf("file %s exceeds maximum size limit of %d bytes", destPath, maxFileSize)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to set file mode for %s: %w", destPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file for %s: %w", destPath, err)
+	}
+
+	if err := replaceFile(tmpPath, destPath, selfName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// replaceFile atomically moves tmpPath to destPath. For files that cannot be
+// deleted while in use (see shouldRenameLockedFile), the existing file is first
+// renamed to destPath+".old" so the rename of the new binary succeeds. On failure
+// after a rename, the old file is restored.
+func replaceFile(tmpPath, destPath, selfName string) error {
+	name := filepath.Base(destPath)
+	renamedOld := false
+	oldPath := destPath + ".old"
+
+	if shouldRenameLockedFile(name, selfName) {
+		os.Remove(oldPath)
+		if err := os.Rename(destPath, oldPath); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to rename locked file %s: %w", name, err)
+			}
+		} else {
+			renamedOld = true
+		}
+	} else if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to replace file %s: %w", destPath, err)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		if renamedOld {
+			_ = os.Rename(oldPath, destPath)
+		}
+		return fmt.Errorf("failed to move temporary file into place for %s: %w", destPath, err)
+	}
+
 	return nil
 }
 

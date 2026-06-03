@@ -942,6 +942,16 @@ func restoreOldBackups(selfPath string) error {
 		}
 		for _, match := range matches {
 			dest := strings.TrimSuffix(match, ".old")
+			// Verify the .old backup still exists before deleting dest. If it
+			// has already been removed (e.g. by a prior partial rollback,
+			// manual cleanup, or an external process), skip the swap so we do
+			// not delete the only working copy.
+			if _, err := os.Stat(match); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return fmt.Errorf("stat %s: %w", match, err)
+			}
 			// os.Rename on Windows fails if the destination already exists; the
 			// replaceFile path overwrote it with the new file, so remove it first.
 			if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {

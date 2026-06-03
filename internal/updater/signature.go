@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
@@ -61,7 +62,7 @@ func mustDecodePublicKey(b64 string) ed25519.PublicKey {
 // Returns (false, nil) when signature verification is disabled (no public key
 // configured). Returns (true, nil) when the signature is valid. Returns (false, err)
 // when a key is configured but the signature is missing, malformed, or invalid.
-func verifyChecksumFileSignature(release *githubRelease, checksumAssetName, checksumData string) (bool, error) {
+func verifyChecksumFileSignature(ctx context.Context, release *githubRelease, checksumAssetName, checksumData string) (bool, error) {
 	if len(signaturePublicKey) == 0 {
 		// Signing not yet provisioned; integrity is still covered by the checksum.
 		return false, nil
@@ -72,7 +73,7 @@ func verifyChecksumFileSignature(release *githubRelease, checksumAssetName, chec
 		return false, fmt.Errorf("%w for %s", errSignatureRequired, checksumAssetName)
 	}
 
-	sigBytes, err := downloadSignature(sigURL)
+	sigBytes, err := downloadSignature(ctx, sigURL)
 	if err != nil {
 		return false, fmt.Errorf("failed to download signature: %w", err)
 	}
@@ -99,9 +100,13 @@ func findSignatureAssetURL(release *githubRelease, checksumAssetName string) str
 
 // downloadSignature fetches and decodes a detached signature. The signature may be
 // stored raw (64 bytes), base64-encoded, or hex-encoded.
-func downloadSignature(url string) ([]byte, error) {
+func downloadSignature(ctx context.Context, url string) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

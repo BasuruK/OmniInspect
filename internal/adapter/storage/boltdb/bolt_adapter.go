@@ -501,3 +501,42 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
 	})
 }
+
+// HasEncryptedCredentials checks if this BoltDB instance contains any credentials
+// encrypted via the current format (prefixed with "enc:v1:").
+// If the database is not initialized (db == nil), it temporarily opens the file read-only.
+func (ba *BoltAdapter) HasEncryptedCredentials() (bool, error) {
+	db := ba.db
+	var shouldClose bool
+
+	if db == nil {
+		var err error
+		db, err = bolt.Open(ba.dbPath, 0600, &bolt.Options{ReadOnly: true, Timeout: 1 * time.Second})
+		if err != nil {
+			return false, err
+		}
+		shouldClose = true
+	}
+	if shouldClose {
+		defer db.Close()
+	}
+
+	hasEncrypted := false
+	err := db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			// Skip default key pointer or metadata configs
+			if string(k) == DefaultDatabaseConfigKey {
+				return nil
+			}
+			if strings.Contains(string(v), `"enc:v1:`) {
+				hasEncrypted = true
+			}
+			return nil
+		})
+	})
+	return hasEncrypted, err
+}

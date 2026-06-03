@@ -39,11 +39,13 @@ func (m *Model) renderHelpOverlay() string {
 		Align(lipgloss.Center)
 
 	// Derive subscriber procedure name — show placeholder when not yet assigned.
-	subscriberProc := "OMNI_TRACER_API.TRACE_MESSAGE_<YOUR_NAME>('msg', log_level_)"
+	subscriberProc := "Omni_Tracer_API.Trace_Message<YOUR_NAME>('msg', optional [log_level_])"
 	if m.subscriber != nil {
 		funnyName := m.subscriber.FunnyName()
 		if funnyName != "" {
-			subscriberProc = fmt.Sprintf("OMNI_TRACER_API.TRACE_MESSAGE_%s('msg', log_level_)", funnyName)
+			// Convert single-word funnyName from ALL-CAPS to PascalCase (e.g., "Chester")
+			pascalName := strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
+			subscriberProc = fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg', optional [log_level_])", pascalName)
 		}
 	}
 
@@ -60,7 +62,7 @@ func (m *Model) renderHelpOverlay() string {
 		styles.SectionTitleStyle.Render("2. Global Broadcast Method"),
 		// Trace_Message is the actual mixed-case PL/SQL identifier in OMNI_TRACER_API;
 		// subscriber-specific procedures are generated all-caps (TRACE_MESSAGE_<NAME>).
-		styles.ProcedureCallStyle.Render("OMNI_TRACER_API.Trace_Message('msg', log_level_)"),
+		styles.ProcedureCallStyle.Render("Omni_Tracer_API.Trace_Message('msg', optional [log_level_])"),
 		styles.SubtitleStyle.Render("Sends to ALL connected OmniView subscribers."),
 		"",
 		styles.SectionTitleStyle.Render("3. Database Management  [D]"),

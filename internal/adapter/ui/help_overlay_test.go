@@ -19,7 +19,7 @@ func TestRenderHelpOverlay_ContainsSubscriberProcedureName(t *testing.T) {
 
 	overlay := m.renderHelpOverlay()
 
-	if !strings.Contains(overlay, "TRACE_MESSAGE_BARNACLE") {
+	if !strings.Contains(overlay, "Trace_Message_Barnacle") {
 		t.Fatalf("help overlay should contain subscriber procedure name, got: %s", overlay)
 	}
 }
@@ -32,7 +32,7 @@ func TestRenderHelpOverlay_WithoutSubscriberShowsPlaceholder(t *testing.T) {
 
 	overlay := m.renderHelpOverlay()
 
-	if !strings.Contains(overlay, "TRACE_MESSAGE_<YOUR_NAME>") {
+	if !strings.Contains(overlay, "Trace_Message<YOUR_NAME>") {
 		t.Fatalf("help overlay should contain placeholder when no subscriber, got: %s", overlay)
 	}
 }

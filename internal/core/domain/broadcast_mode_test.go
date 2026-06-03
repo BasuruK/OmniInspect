@@ -15,7 +15,9 @@ func TestNewBroadcastMode_ParsesKnownModes(t *testing.T) {
 	}{
 		{"Global", BroadcastModeGlobal},
 		{"Subscriber", BroadcastModeSubscriber},
+		{"Only Subscriber", BroadcastModeSubscriber},
 		{"Broadcast", BroadcastModeBroadcast},
+		{"Only Broadcast", BroadcastModeBroadcast},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -54,8 +56,8 @@ func TestBroadcastMode_String(t *testing.T) {
 		want string
 	}{
 		{BroadcastModeGlobal, "Global"},
-		{BroadcastModeSubscriber, "Subscriber"},
-		{BroadcastModeBroadcast, "Broadcast"},
+		{BroadcastModeSubscriber, "Only Subscriber"},
+		{BroadcastModeBroadcast, "Only Broadcast"},
 	}
 	for _, tt := range tests {
 		tt := tt

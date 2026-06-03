@@ -898,13 +898,14 @@ func restartSelf(selfPath string) error {
 	case result := <-waitCh:
 		// A clean exit (e.g. the new version printed a one-shot message and
 		// exited 0 within the grace period) is a successful run, not a failure
-		// to start. Do not roll back and do not report an error in that case.
+		// to start. The new binary is on disk; terminate the parent so the
+		// running process matches the reported successful update.
 		if result.err == nil && result.state.Success() {
-			return nil
+			os.Exit(0)
 		}
 		if hadOldBackup {
 			if restoreErr := restoreOldBackups(selfPath); restoreErr != nil {
-				return fmt.Errorf("restart: child exited (%v) and restore failed: %w", result.err, restoreErr)
+				return fmt.Errorf("restart: child exited (state: %s) and restore failed: %w", result.state, restoreErr)
 			}
 		}
 		if result.err != nil {
@@ -940,7 +941,13 @@ func restoreOldBackups(selfPath string) error {
 			continue
 		}
 		for _, match := range matches {
-			if err := os.Rename(match, strings.TrimSuffix(match, ".old")); err != nil && !os.IsNotExist(err) {
+			dest := strings.TrimSuffix(match, ".old")
+			// os.Rename on Windows fails if the destination already exists; the
+			// replaceFile path overwrote it with the new file, so remove it first.
+			if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove %s: %w", dest, err)
+			}
+			if err := os.Rename(match, dest); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("rename %s: %w", match, err)
 			}
 		}

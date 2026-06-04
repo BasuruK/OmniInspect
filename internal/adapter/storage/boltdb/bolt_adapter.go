@@ -534,9 +534,13 @@ func (ba *BoltAdapter) HasEncryptedCredentials() (bool, error) {
 			}
 			if strings.Contains(string(v), `"enc:v1:`) {
 				hasEncrypted = true
+				return domain.ErrEarlyAbort
 			}
 			return nil
 		})
 	})
+	if errors.Is(err, domain.ErrEarlyAbort) {
+		return true, nil
+	}
 	return hasEncrypted, err
 }

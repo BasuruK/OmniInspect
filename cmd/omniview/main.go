@@ -53,11 +53,15 @@ func run(omniApp *app.App) error {
 				// a missing key. If no credentials are encrypted yet (i.e. legacy plaintext),
 				// we let database initialization automatically generate a new key file.
 				tempBA, err := boltdb.NewBoltAdapter(boltDBPath)
-				if err == nil {
-					hasEncrypted, scanErr := tempBA.HasEncryptedCredentials()
-					if scanErr == nil && hasEncrypted {
-						return fmt.Errorf("credential key %q is missing while %q already exists and contains encrypted credentials; restore the original key file or remove %q and reconfigure, otherwise stored credentials cannot be decrypted", keyPath, boltDBPath, boltDBPath)
-					}
+				if err != nil {
+					return fmt.Errorf("could not open BoltDB at %q to scan for encrypted credentials (key file: %q): %w", boltDBPath, keyPath, err)
+				}
+				hasEncrypted, scanErr := tempBA.HasEncryptedCredentials()
+				if scanErr != nil {
+					return fmt.Errorf("BoltDB encrypted-credentials scan failed on file %q (key file: %q): %w", boltDBPath, keyPath, scanErr)
+				}
+				if hasEncrypted {
+					return fmt.Errorf("credential key %q is missing while %q already exists and contains encrypted credentials; restore the original key file or remove %q and reconfigure, otherwise stored credentials cannot be decrypted", keyPath, boltDBPath, boltDBPath)
 				}
 			} else {
 				return fmt.Errorf("failed to stat credential key %s: %w", keyPath, keyErr)

@@ -161,7 +161,7 @@ func TestContainsEncryptedTokenInJSON(t *testing.T) {
 		{"unquoted substring is not a JSON token", `enc:v1:abc123`, false},
 		{"token as JSON key", `{"enc:v1:":"x"}`, true},
 		{"plaintext plus token", `{"user":"plain","password":"enc:v1:abc123"}`, true},
-		{"prefix without JSON quote inside value", `{"password": "prefix-enc:v1:abc"}`, false},
+		{"token not immediately after opening quote", `{"password": "prefix-enc:v1:abc"}`, false},
 	}
 
 	for _, tc := range cases {

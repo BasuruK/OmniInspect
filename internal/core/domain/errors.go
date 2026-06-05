@@ -62,4 +62,7 @@ var (
 
 	// Webhook config errors
 	ErrWebhookConfigNotFound = errors.New("webhook config not found")
+
+	// Internal/Adapter sentinel errors
+	ErrEarlyAbort = errors.New("early return: encrypted credential found")
 )

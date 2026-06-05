@@ -148,3 +148,27 @@ func TestFileKeyProviderTightensExistingPermissions(t *testing.T) {
 		t.Fatalf("key file perm = %o, want %o", perm, fileKeyPerm)
 	}
 }
+
+func TestContainsEncryptedTokenInJSON(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty", "", false},
+		{"legacy plaintext only", `{"password": "plain_password"}`, false},
+		{"quoted token value", `{"password": "enc:v1:abc123"}`, true},
+		{"unquoted substring is not a JSON token", `enc:v1:abc123`, false},
+		{"token as JSON key", `{"enc:v1:":"x"}`, true},
+		{"plaintext plus token", `{"user":"plain","password":"enc:v1:abc123"}`, true},
+		{"token not immediately after opening quote", `{"password": "prefix-enc:v1:abc"}`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContainsEncryptedTokenInJSON(tc.in); got != tc.want {
+				t.Fatalf("ContainsEncryptedTokenInJSON(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}

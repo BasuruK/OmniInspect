@@ -13,7 +13,7 @@ type BroadcastMode int
 // ==========================================
 
 const (
-	BroadcastModeGlobal      BroadcastMode = 0
+	BroadcastModeGlobal     BroadcastMode = 0
 	BroadcastModeSubscriber BroadcastMode = 1
 	BroadcastModeBroadcast  BroadcastMode = 2
 )
@@ -28,9 +28,9 @@ func NewBroadcastMode(mode string) BroadcastMode {
 	switch mode {
 	case "Global":
 		return BroadcastModeGlobal
-	case "Subscriber":
+	case "Subscriber", "Only Subscriber":
 		return BroadcastModeSubscriber
-	case "Broadcast":
+	case "Broadcast", "Only Broadcast":
 		return BroadcastModeBroadcast
 	default:
 		return BroadcastModeGlobal
@@ -47,9 +47,9 @@ func (m BroadcastMode) String() string {
 	case BroadcastModeGlobal:
 		return "Global"
 	case BroadcastModeSubscriber:
-		return "Subscriber"
+		return "Only Subscriber"
 	case BroadcastModeBroadcast:
-		return "Broadcast"
+		return "Only Broadcast"
 	default:
 		return "Global"
 	}

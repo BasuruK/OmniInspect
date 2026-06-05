@@ -787,7 +787,7 @@ func (m *Model) mainProcedureCall() string {
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.
 func (m *Model) mainFooterText() string {
-	return "↑/↓ Scroll  •  A Auto Scroll [on/off]  •  B Mode [Global/Subscriber/Broadcast]  •  C Clear  •  D Database Settings  •  H Help  •  S Settings  •  Q Quit"
+	return "↑/↓ Scroll  •  A Auto Scroll  •  B Mode  •  C Clear  •  D Database Settings  •  H Help  •  S Settings  •  Q Quit"
 }
 
 // appendSingleMessage appends only the newly-arrived message to the rendered buffer.

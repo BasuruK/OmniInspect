@@ -62,7 +62,7 @@ func TestQueueMessage_JSONRoundTrip_PreservesNonDefaultMode(t *testing.T) {
 	t.Parallel()
 
 	msg := newTestQueueMessage(t)
-	msg.mode = "Subscriber"
+	msg.mode = "Only Subscriber"
 
 	data, err := msg.MarshalJSON()
 	if err != nil {

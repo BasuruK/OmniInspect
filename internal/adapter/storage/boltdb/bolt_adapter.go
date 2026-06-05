@@ -2,6 +2,7 @@ package boltdb
 
 import (
 	"OmniView/internal/adapter/logger"
+	"OmniView/internal/adapter/security/credcipher"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"encoding/json"
@@ -500,4 +501,49 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 		}
 		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
 	})
+}
+
+// HasEncryptedCredentials checks if this BoltDB instance contains any credentials
+// encrypted via the current format. The detection delegates to
+// credcipher.ContainsEncryptedTokenInJSON so the wire-format marker stays
+// defined in exactly one place.
+// If the database is not initialized (db == nil), it temporarily opens the file read-only.
+func (ba *BoltAdapter) HasEncryptedCredentials() (bool, error) {
+	db := ba.db
+	var shouldClose bool
+
+	if db == nil {
+		var err error
+		db, err = bolt.Open(ba.dbPath, 0600, &bolt.Options{ReadOnly: true, Timeout: 1 * time.Second})
+		if err != nil {
+			return false, err
+		}
+		shouldClose = true
+	}
+	if shouldClose {
+		defer db.Close()
+	}
+
+	hasEncrypted := false
+	err := db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			// Skip default key pointer or metadata configs
+			if string(k) == DefaultDatabaseConfigKey {
+				return nil
+			}
+			if credcipher.ContainsEncryptedTokenInJSON(string(v)) {
+				hasEncrypted = true
+				return domain.ErrEarlyAbort
+			}
+			return nil
+		})
+	})
+	if errors.Is(err, domain.ErrEarlyAbort) {
+		return true, nil
+	}
+	return hasEncrypted, err
 }

@@ -1,6 +1,7 @@
 package boltdb
 
 import (
+	"OmniView/internal/adapter/security/credcipher"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -41,7 +42,17 @@ func TestBoltAdapter_HasEncryptedCredentials(t *testing.T) {
 		t.Parallel()
 		adapter := newTestBoltAdapter(t)
 
-		err := adapter.db.Update(func(tx *bolt.Tx) error {
+		cipher, err := credcipher.New(credcipher.NewFileKeyProvider(filepath.Join(t.TempDir(), "omniview.key")))
+		if err != nil {
+			t.Fatalf("credcipher.New: %v", err)
+		}
+		encrypted, err := cipher.Encrypt("encrypted_password")
+		if err != nil {
+			t.Fatalf("Encrypt: %v", err)
+		}
+		encryptedRow := `{"password": "` + encrypted + `"}`
+
+		err = adapter.db.Update(func(tx *bolt.Tx) error {
 			b := tx.Bucket([]byte(DatabaseConfigBucket))
 			if b == nil {
 				return errors.New("bucket not found")
@@ -49,7 +60,7 @@ func TestBoltAdapter_HasEncryptedCredentials(t *testing.T) {
 			if err := b.Put([]byte("DBconfig:test_plain"), []byte(`{"password": "plain_password"}`)); err != nil {
 				return err
 			}
-			return b.Put([]byte("DBconfig:test_enc"), []byte(`{"password": "enc:v1:encrypted_password"}`))
+			return b.Put([]byte("DBconfig:test_enc"), []byte(encryptedRow))
 		})
 		if err != nil {
 			t.Fatalf("failed to insert test data: %v", err)

@@ -2,6 +2,7 @@ package boltdb
 
 import (
 	"OmniView/internal/adapter/logger"
+	"OmniView/internal/adapter/security/credcipher"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"encoding/json"
@@ -503,7 +504,9 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 }
 
 // HasEncryptedCredentials checks if this BoltDB instance contains any credentials
-// encrypted via the current format (prefixed with "enc:v1:").
+// encrypted via the current format. The detection delegates to
+// credcipher.ContainsEncryptedTokenInJSON so the wire-format marker stays
+// defined in exactly one place.
 // If the database is not initialized (db == nil), it temporarily opens the file read-only.
 func (ba *BoltAdapter) HasEncryptedCredentials() (bool, error) {
 	db := ba.db
@@ -532,7 +535,7 @@ func (ba *BoltAdapter) HasEncryptedCredentials() (bool, error) {
 			if string(k) == DefaultDatabaseConfigKey {
 				return nil
 			}
-			if strings.Contains(string(v), `"enc:v1:`) {
+			if credcipher.ContainsEncryptedTokenInJSON(string(v)) {
 				hasEncrypted = true
 				return domain.ErrEarlyAbort
 			}

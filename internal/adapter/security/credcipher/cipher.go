@@ -25,6 +25,15 @@ import (
 // compatibility with data written before encryption was enabled.
 const tokenPrefix = "enc:v1:"
 
+// ContainsEncryptedTokenInJSON reports whether s contains the canonical cipher
+// token marker as it appears inside a JSON-encoded credential value
+// (i.e. preceded by a JSON opening quote). It is safe to call without
+// constructing a Cipher and is the canonical predicate other packages
+// (e.g. the boltdb storage adapter) should use to detect ciphertext rows.
+func ContainsEncryptedTokenInJSON(s string) bool {
+	return strings.Contains(s, `"`+tokenPrefix)
+}
+
 // keySize is the AES-256 key length in bytes.
 const keySize = 32
 

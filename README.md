@@ -84,7 +84,15 @@ The application consists of two main components:
 
 ## Key Functionality
 
-The primary and only essential function for end users is:
+OmniView supports multiple methods for sending trace messages to Oracle Database:
+
+1. **Global Trace Procedure** - For general-purpose tracing visible to all subscribers
+2. **Subscriber-Specific Procedures** - For targeted messages to specific subscribers
+3. **Webhook Integration** - For forwarding messages to external systems
+
+### Global Trace Message
+
+The primary general-purpose function for tracing:
 
 ```sql
 OMNI_TRACER_API.Trace_Message(
@@ -163,6 +171,60 @@ END;
 >| IPv6 equivalents | `::1`, `fe80::/10`, `fc00::/7` |
 >
 > **Note**: VPN ranges, proxy chains, DNS rebinding attacks, and other advanced SSRF vectors are **not** covered.
+
+### Named Subscriber Procedures
+
+OmniInspect supports multi-subscriber tracing with automatically generated, subscriber-specific procedures. When a subscriber is registered in OmniView, the system generates a custom procedure with a funny-name alias that routes messages specifically to that subscriber.
+
+Each subscriber gets their own named trace procedure in the format `TRACE_MESSAGE_<SUBSCRIBER_NAME>()`, allowing you to send messages targeted to specific subscribers.
+
+**Procedure Signature:**
+```sql
+OMNI_TRACER_API.TRACE_MESSAGE_<SUBSCRIBER_NAME>(
+    message_       IN CLOB,
+    log_level_     IN VARCHAR2 DEFAULT 'INFO',
+    process_name_  IN VARCHAR2 DEFAULT NULL
+);
+```
+
+**Parameters:**
+- `message_` - The trace message content (CLOB)
+- `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
+- `process_name_` - Optional process identifier for organizing messages
+
+**Example Usage:**
+
+If you have a subscriber named "WEBAPP", OmniView automatically creates the procedure `TRACE_MESSAGE_WEBAPP()`:
+
+```sql
+-- Send a message to the WEBAPP subscriber
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP('User login initiated', 'INFO');
+END;
+
+-- Send with process name for better organization
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP(
+        'Processing payment order #12345',
+        'INFO',
+        'payment_service'
+    );
+END;
+
+-- Send an error message
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP(
+        'Database connection timeout',
+        'ERROR'
+    );
+END;
+```
+
+**Benefits:**
+- **Subscriber-Specific**: Messages are routed directly to the target subscriber
+- **Auto-Generated**: Procedures are created automatically when you register a subscriber in OmniView
+- **Idempotent**: Procedures persist across application restarts
+- **Process Tracking**: Optional process name parameter helps organize and filter related messages
 
 ## Project Structure
 
@@ -475,10 +537,11 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 - [x] Trace Message webhook integration
 - [x] New UI with BubbleteaV2/Lipgloss
 - [x] Multiple database support with dynamic switching
+- [x] Multi-subscriber support with subscriber-specific procedure generation
+- [x] Dynamic subscription management and targeted message delivery
 
 ### Planned
 
-- [ ] multi-subscriber support with dynamic subscription management and targeted message delivery
 - [ ] Save Trace Messages to file integration
 - [ ] Connection health/latency/queue/message per second checking
 - [ ] Light theme support

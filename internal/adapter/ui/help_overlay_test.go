@@ -49,6 +49,7 @@ func TestRenderHelpOverlay_ContainsAllSections(t *testing.T) {
 		"Database Management", // section 3
 		"Webhook",             // section 4
 		"Filtering",           // section 5
+		"Made With Love",      // signature line
 		"H or Esc",            // close hint
 	}
 	for _, expected := range sections {

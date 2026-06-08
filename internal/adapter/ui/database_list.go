@@ -80,7 +80,6 @@ func (dl DatabaseList) Update(msg tea.KeyPressMsg) (DatabaseList, tea.Cmd) {
 
 var (
 	listHeaderStyle   = lipgloss.NewStyle().Foreground(styles.SecondaryColor).Bold(true)
-	listItemSelected  = lipgloss.NewStyle().Background(styles.SelectionColor).Foreground(styles.BackgroundColor).Bold(true)
 	listItemNormal    = lipgloss.NewStyle().Foreground(styles.TextColor)
 	listSubtextStyle  = lipgloss.NewStyle().Foreground(styles.MutedColor)
 	listCursor        = lipgloss.NewStyle().Foreground(styles.PrimaryColor).Bold(true)
@@ -103,7 +102,7 @@ func (dl DatabaseList) Render() string {
 
 		cursor := "  "
 		if selected {
-			cursor = listCursor.Render("▸ ")
+			cursor = listCursor.Render("▶ ")
 		}
 
 		var dot string
@@ -131,17 +130,6 @@ func (dl DatabaseList) Render() string {
 			listStateStyle.Render(state),
 		)
 		subLine := fmt.Sprintf("   %s", truncate(fmt.Sprintf("%s @ %s", entry.Service, entry.Host), max(dl.width-3, 8)))
-
-		if selected {
-			selectedStyle := listItemSelected.Width(dl.width)
-			lines = append(
-				lines,
-				selectedStyle.Render(titleLine),
-				selectedStyle.Render(subLine),
-				"",
-			)
-			continue
-		}
 
 		lines = append(
 			lines,

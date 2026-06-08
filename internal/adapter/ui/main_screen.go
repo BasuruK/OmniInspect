@@ -742,9 +742,15 @@ func (m *Model) mainStatusText() string {
 		autoScrollText = "on"
 	}
 
+	subscriberLabel := "Subscriber"
 	subscriberName := "pending"
+	subscriberNameStyle := styles.BodyTextStyle
 	if m.subscriber != nil {
 		subscriberName = m.subscriber.Name()
+		if funnyName := m.subscriber.FunnyName(); funnyName != "" {
+			subscriberName = strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
+			subscriberNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
+		}
 	}
 
 	broadcastModeText := m.broadcastMode.String()
@@ -760,7 +766,7 @@ func (m *Model) mainStatusText() string {
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Center,
-		styles.BodyTextStyle.Render("Sub "+subscriberName),
+		styles.BodyTextStyle.Render(subscriberLabel+" ")+subscriberNameStyle.Render(subscriberName),
 		styles.SubtitleStyle.Render("  •  "),
 		styles.BodyTextStyle.Render(fmt.Sprintf("Messages %d/%d", len(m.main.messages), maxMessages)),
 		styles.SubtitleStyle.Render("  •  "),
@@ -780,8 +786,10 @@ func (m *Model) mainProcedureCall() string {
 		return ""
 	}
 
+	funnyName = strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
+
 	return styles.ProcedureCallStyle.Render(
-		fmt.Sprintf("OMNI_TRACER_API.TRACE_MESSAGE_%s('msg')", funnyName),
+		fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg')", funnyName),
 	)
 }
 

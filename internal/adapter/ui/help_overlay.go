@@ -37,6 +37,9 @@ func (m *Model) renderHelpOverlay() string {
 	closeHintStyle := lipgloss.NewStyle().
 		Foreground(styles.MutedColor).
 		Align(lipgloss.Center)
+	centerLineStyle := lipgloss.NewStyle().
+		Width(innerWidth).
+		Align(lipgloss.Center)
 
 	// Derive subscriber procedure name — show placeholder when not yet assigned.
 	subscriberProc := "Omni_Tracer_API.Trace_Message<YOUR_NAME>('msg', optional [log_level_])"
@@ -49,10 +52,10 @@ func (m *Model) renderHelpOverlay() string {
 		}
 	}
 
-	sep := styles.SubtitleStyle.Render(strings.Repeat("─", min(innerWidth, helpOverlaySepMaxWidth)))
+	sep := centerLineStyle.Render(styles.SubtitleStyle.Render(strings.Repeat("─", min(innerWidth, helpOverlaySepMaxWidth))))
 
 	lines := []string{
-		styles.HeaderTitleStyle.Render("OmniView Help"),
+		centerLineStyle.Render(styles.HeaderTitleStyle.Render("OmniView Help")),
 		sep,
 		"",
 		styles.SectionTitleStyle.Render("1. Subscriber-Specific Method"),
@@ -76,6 +79,9 @@ func (m *Model) renderHelpOverlay() string {
 		styles.SectionTitleStyle.Render("5. Message Filtering  [B]"),
 		styles.BodyTextStyle.Render("Cycle: Global → Subscriber Only → Broadcast Only → Global"),
 		styles.SubtitleStyle.Render("Global: all messages  •  Subscriber: yours only  •  Broadcast: broadcast only"),
+		"",
+		centerLineStyle.Render(styles.SubtitleStyle.Render(strings.Repeat("─", min(innerWidth, helpOverlaySepMaxWidth)))),
+		centerLineStyle.Render(styles.SubtitleStyle.Render("Made With Love 💖 by Basuru Balasuriya")),
 		"",
 		closeHintStyle.Width(innerWidth).Render("[ H or Esc — Close ]"),
 	}

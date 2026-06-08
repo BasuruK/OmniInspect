@@ -28,13 +28,13 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 
 	layout := m.computeMainLayout()
 
-	if !strings.Contains(layout.header, "OMNI_TRACER_API.TRACE_MESSAGE_BARNACLE('msg')") {
+	if !strings.Contains(layout.header, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
 		t.Fatalf("header should contain procedure call, got: %s", layout.header)
 	}
 	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
 	}
-	if !headerLineContainsAll(layout.header, "QA_DB", "OMNI_TRACER_API.TRACE_MESSAGE_BARNACLE('msg')") {
+	if !headerLineContainsAll(layout.header, "QA_DB", "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
 		t.Fatalf("header should place procedure call next to database name, got: %s", layout.header)
 	}
 }
@@ -49,6 +49,35 @@ func TestComputeMainLayout_WithoutFunnyNameOmitsProcedureCall(t *testing.T) {
 
 	if strings.Contains(layout.header, "TRACE_MESSAGE_") {
 		t.Fatalf("header should not contain procedure call when no funny name, got: %s", layout.header)
+	}
+}
+
+func TestMainStatusText_WithFunnyNameShowsFriendlySubscriberName(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
+
+	status := m.mainStatusText()
+
+	if !strings.Contains(status, "Subscriber ") || !strings.Contains(status, "Barnacle") {
+		t.Fatalf("status should show friendly funny name, got: %s", status)
+	}
+	if strings.Contains(status, "SUB_TEST") {
+		t.Fatalf("status should not show subscriber ID when funny name exists, got: %s", status)
+	}
+}
+
+func TestMainStatusText_WithoutFunnyNameShowsSubscriberID(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	m.subscriber = mustNewTestSubscriber(t, "SUB_TEST")
+
+	status := m.mainStatusText()
+
+	if !strings.Contains(status, "Subscriber ") || !strings.Contains(status, "SUB_TEST") {
+		t.Fatalf("status should fall back to subscriber ID when no funny name, got: %s", status)
 	}
 }
 

@@ -440,7 +440,6 @@ func (m *Model) viewDatabaseSettings() string {
 			BorderColor: styles.ConnectionBorderColor,
 		}),
 		"",
-		"",
 		m.dbSettings.databaseList.Render(),
 	}
 

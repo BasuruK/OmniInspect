@@ -84,7 +84,15 @@ The application consists of two main components:
 
 ## Key Functionality
 
-The primary and only essential function for end users is:
+OmniView supports multiple methods for sending trace messages to Oracle Database:
+
+1. **Global Trace Procedure** - For general-purpose tracing visible to all subscribers
+2. **Subscriber-Specific Procedures** - For targeted messages to specific subscribers
+3. **Webhook Integration** - For forwarding messages to external systems
+
+### Global Trace Message
+
+The primary general-purpose function for tracing:
 
 ```sql
 OMNI_TRACER_API.Trace_Message(
@@ -163,6 +171,64 @@ END;
 >| IPv6 equivalents | `::1`, `fe80::/10`, `fc00::/7` |
 >
 > **Note**: VPN ranges, proxy chains, DNS rebinding attacks, and other advanced SSRF vectors are **not** covered.
+
+### Named Subscriber Procedures
+
+OmniInspect supports multi-subscriber tracing with automatically generated, subscriber-specific procedures. When a subscriber is registered in OmniView, the system generates a custom procedure whose name is built from the subscriber's `FunnyName()` alias and that routes messages specifically to that subscriber.
+
+Each subscriber gets their own named trace procedure in the format `TRACE_MESSAGE_<FUNNY_NAME>()`, where `<FUNNY_NAME>` is the subscriber's `FunnyName()` alias (e.g., `BARNACLE`, `WEBAPP`) — *not* the subscriber's display name. The procedure name is produced by `buildProcedureName` in `internal/service/subscribers/procedure_generator.go`, which concatenates `TRACE_MESSAGE_` with the uppercased funny name.
+
+The procedure is created and kept in sync during registration. `SubscriberService.RegisterSubscriber` (`internal/service/subscribers/subscriber_service.go`) calls `procGen.EnsureSubscriberProcedure`, which inspects the existing `OMNI_TRACER_API` package spec/body, reuses the procedure if it is already owned by this subscriber and has the expected generated body, and otherwise injects (or upgrades) the declaration and body before redeploying the package.
+
+**Procedure Signature:**
+```sql
+OMNI_TRACER_API.TRACE_MESSAGE_<FUNNY_NAME>(
+    message_       IN CLOB,
+    log_level_     IN VARCHAR2 DEFAULT 'INFO',
+    process_name_  IN VARCHAR2 DEFAULT NULL
+);
+```
+
+**Parameters:**
+- `message_` - The trace message content (CLOB)
+- `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
+- `process_name_` - Optional process identifier. The generated body forwards this value to `Enqueue_Event___(process_name_ => process_name_, ...)`, where it is stored as the `PROCESS_NAME` field of the JSON payload (falling back to `SYS_CONTEXT('USERENV','MODULE')` and then `'OMNI_TRACER_API'` when `NULL`) — see `assets/sql/Omni_Tracer.sql`.
+
+**Example Usage:**
+
+For a subscriber whose `FunnyName()` is `WEBAPP`, OmniView generates the procedure `TRACE_MESSAGE_WEBAPP()`:
+
+```sql
+-- Send a message to the WEBAPP subscriber
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP('User login initiated', 'INFO');
+END;
+
+-- Send with process name for better organization
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP(
+        'Processing payment order #12345',
+        'INFO',
+        'payment_service'
+    );
+END;
+
+-- Send an error message
+BEGIN
+    OMNI_TRACER_API.TRACE_MESSAGE_WEBAPP(
+        'Database connection timeout',
+        'ERROR'
+    );
+END;
+```
+
+> **Note**: The procedure name is based on the subscriber's auto-generated funny name, not the subscriber's display name. OmniView assigns each subscriber a unique funny name (e.g., `WEBAPP`, `BARNACLE`) at registration time, and the generated procedure always uses that funny name. If you change a subscriber's display name in OmniView, the existing procedure name (and the PL/SQL code calling it) remains unchanged.
+
+**Benefits:**
+- **Subscriber-Specific**: Messages are routed directly to the target subscriber
+- **Auto-Generated**: Procedures are created automatically when you register a subscriber in OmniView
+- **Persistent**: Procedures persist across application restarts
+- **Process Tracking**: Optional process name parameter helps organize and filter related messages
 
 ## Project Structure
 
@@ -475,10 +541,11 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 - [x] Trace Message webhook integration
 - [x] New UI with BubbleteaV2/Lipgloss
 - [x] Multiple database support with dynamic switching
+- [x] Multi-subscriber support with subscriber-specific procedure generation
+- [x] Dynamic subscription management and targeted message delivery
 
 ### Planned
 
-- [ ] multi-subscriber support with dynamic subscription management and targeted message delivery
 - [ ] Save Trace Messages to file integration
 - [ ] Connection health/latency/queue/message per second checking
 - [ ] Light theme support

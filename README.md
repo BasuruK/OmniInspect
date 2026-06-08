@@ -174,13 +174,15 @@ END;
 
 ### Named Subscriber Procedures
 
-OmniInspect supports multi-subscriber tracing with automatically generated, subscriber-specific procedures. When a subscriber is registered in OmniView, the system generates a custom procedure with a funny-name alias that routes messages specifically to that subscriber.
+OmniInspect supports multi-subscriber tracing with automatically generated, subscriber-specific procedures. When a subscriber is registered in OmniView, the system generates a custom procedure whose name is built from the subscriber's `FunnyName()` alias and that routes messages specifically to that subscriber.
 
-Each subscriber gets their own named trace procedure in the format `TRACE_MESSAGE_<SUBSCRIBER_NAME>()`, allowing you to send messages targeted to specific subscribers.
+Each subscriber gets their own named trace procedure in the format `TRACE_MESSAGE_<FUNNY_NAME>()`, where `<FUNNY_NAME>` is the subscriber's `FunnyName()` alias (e.g., `BARNACLE`, `WEBAPP`) — *not* the subscriber's display name. The procedure name is produced by `buildProcedureName` in `internal/service/subscribers/procedure_generator.go`, which concatenates `TRACE_MESSAGE_` with the uppercased funny name.
+
+The procedure is created and kept in sync during registration. `SubscriberService.RegisterSubscriber` (`internal/service/subscribers/subscriber_service.go`) calls `procGen.EnsureSubscriberProcedure`, which inspects the existing `OMNI_TRACER_API` package spec/body, reuses the procedure if it is already owned by this subscriber and has the expected generated body, and otherwise injects (or upgrades) the declaration and body before redeploying the package.
 
 **Procedure Signature:**
 ```sql
-OMNI_TRACER_API.TRACE_MESSAGE_<SUBSCRIBER_NAME>(
+OMNI_TRACER_API.TRACE_MESSAGE_<FUNNY_NAME>(
     message_       IN CLOB,
     log_level_     IN VARCHAR2 DEFAULT 'INFO',
     process_name_  IN VARCHAR2 DEFAULT NULL
@@ -190,11 +192,11 @@ OMNI_TRACER_API.TRACE_MESSAGE_<SUBSCRIBER_NAME>(
 **Parameters:**
 - `message_` - The trace message content (CLOB)
 - `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
-- `process_name_` - Optional process identifier for organizing messages
+- `process_name_` - Optional process identifier. The generated body forwards this value to `Enqueue_Event___(process_name_ => process_name_, ...)`, where it is stored as the `PROCESS_NAME` field of the JSON payload (falling back to `SYS_CONTEXT('USERENV','MODULE')` and then `'OMNI_TRACER_API'` when `NULL`) — see `assets/sql/Omni_Tracer.sql`.
 
 **Example Usage:**
 
-If you have a subscriber named "WEBAPP", OmniView automatically creates the procedure `TRACE_MESSAGE_WEBAPP()`:
+For a subscriber whose `FunnyName()` is `WEBAPP`, OmniView generates the procedure `TRACE_MESSAGE_WEBAPP()`:
 
 ```sql
 -- Send a message to the WEBAPP subscriber
@@ -220,10 +222,12 @@ BEGIN
 END;
 ```
 
+> **Note**: The procedure name is based on the subscriber's auto-generated funny name, not the subscriber's display name. OmniView assigns each subscriber a unique funny name (e.g., `WEBAPP`, `BARNACLE`) at registration time, and the generated procedure always uses that funny name. If you change a subscriber's display name in OmniView, the existing procedure name (and the PL/SQL code calling it) remains unchanged.
+
 **Benefits:**
 - **Subscriber-Specific**: Messages are routed directly to the target subscriber
 - **Auto-Generated**: Procedures are created automatically when you register a subscriber in OmniView
-- **Idempotent**: Procedures persist across application restarts
+- **Persistent**: Procedures persist across application restarts
 - **Process Tracking**: Optional process name parameter helps organize and filter related messages
 
 ## Project Structure

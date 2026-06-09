@@ -565,7 +565,7 @@ func generateProcedureBody(funnyName string, subscriberName string) string {
         Enqueue_Event___(
             process_name_     => process_name_,
             log_level_        => log_level_,
-            payload           => message_,
+            payload_          => message_,
             subscriber_name_  => '%s'
         );
     END %s;`, procedureName, upperName, procedureName))

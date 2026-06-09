@@ -124,9 +124,6 @@ END OMNI_TRACER_API;
 
 CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
 
-    -- Internal type for RAW array fetching
-    TYPE raw_payload_tab IS TABLE OF RAW(32767) INDEX BY PLS_INTEGER;
-
     -- Forward declarations for private functions
     FUNCTION Clob_To_Blob___(input_ IN CLOB) RETURN BLOB;
 
@@ -239,7 +236,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     PROCEDURE Enqueue_Event___ (
         process_name_       IN VARCHAR2,
         log_level_          IN VARCHAR2,
-        payload             IN CLOB,
+        payload_            IN CLOB,
         additional_props_   IN CLOB DEFAULT NULL,
         subscriber_name_    IN VARCHAR2 DEFAULT NULL )
     IS
@@ -268,7 +265,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         message_.PUT('MESSAGE_ID', TO_CHAR(OMNI_tracer_id_seq.NEXTVAL));
         message_.PUT('PROCESS_NAME', resolved_process_);
         message_.PUT('LOG_LEVEL', log_level_);
-        message_.PUT('PAYLOAD', payload);
+        message_.PUT('PAYLOAD', payload_);
         message_.PUT('TIMESTAMP', TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM'));
         message_.PUT('MODE', CASE WHEN subscriber_name_ IS NULL THEN 'Global' ELSE 'Subscriber' END);
 
@@ -296,8 +293,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             END IF;
         END IF;
 
-        json_payload_ := message_.TO_CLOB();
-        temp_blob_ := Clob_To_Blob___(json_payload_);
+        json_payload_  := message_.TO_CLOB();
+        temp_blob_     := Clob_To_Blob___(json_payload_);
         payload_object_ := OMNI_TRACER_PAYLOAD_TYPE(temp_blob_);
 
         DBMS_AQ.ENQUEUE (
@@ -339,7 +336,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         Enqueue_Event___(
             process_name_       => calling_process_,
             log_level_          => log_level_,
-            payload             => message_,
+            payload_            => message_,
             additional_props_   => NULL
         );
     END Trace_Message;
@@ -358,7 +355,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         Enqueue_Event___(
             process_name_       => calling_process_,
             log_level_          => log_level_,
-            payload             => message_,
+            payload_            => message_,
             additional_props_   => '{"SEND_TO_WEBHOOK":"TRUE"}'
         );
     END Trace_Message_To_Webhook;

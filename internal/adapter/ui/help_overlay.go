@@ -19,6 +19,22 @@ const helpOverlayMaxWidth = 90
 // full inner width on wide terminals. Chosen to match the typical title line length.
 const helpOverlaySepMaxWidth = 52
 
+// logLevelLabel renders the four valid log_level_ values in their canonical
+// colors so users can match what they type with the colors in the live log.
+// Reuses the same color tokens as getLevelStyle() in main_screen.go.
+func logLevelLabel() string {
+	bold := lipgloss.NewStyle().Bold(true)
+	return styles.SubtitleStyle.Render("log_level_: ") +
+		bold.Foreground(styles.InfoColor).Render("'INFO'") +
+		styles.SubtitleStyle.Render(", ") +
+		bold.Foreground(styles.DebugColor).Render("'DEBUG'") +
+		styles.SubtitleStyle.Render(", ") +
+		bold.Foreground(styles.WarningColor).Render("'WARNING'") +
+		styles.SubtitleStyle.Render(", ") +
+		bold.Foreground(styles.ErrorColor).Render("'ERROR'") +
+		styles.SubtitleStyle.Render("  (default: INFO)")
+}
+
 // renderHelpOverlay renders the in-app help overlay panel.
 // It is displayed centered over the main screen when m.showHelp is true.
 // The subscriber's live procedure name is injected into section 1 when available.
@@ -60,12 +76,14 @@ func (m *Model) renderHelpOverlay() string {
 		"",
 		styles.SectionTitleStyle.Render("1. Subscriber-Specific Method"),
 		styles.ProcedureCallStyle.Render(subscriberProc),
+		logLevelLabel(),
 		styles.SubtitleStyle.Render("Routes the message ONLY to your OmniView instance."),
 		"",
 		styles.SectionTitleStyle.Render("2. Global Broadcast Method"),
 		// Trace_Message is the actual mixed-case PL/SQL identifier in OMNI_TRACER_API;
 		// subscriber-specific procedures are generated all-caps (TRACE_MESSAGE_<NAME>).
 		styles.ProcedureCallStyle.Render("Omni_Tracer_API.Trace_Message('msg', optional [log_level_])"),
+		logLevelLabel(),
 		styles.SubtitleStyle.Render("Sends to ALL connected OmniView subscribers."),
 		"",
 		styles.SectionTitleStyle.Render("3. Database Management  [D]"),

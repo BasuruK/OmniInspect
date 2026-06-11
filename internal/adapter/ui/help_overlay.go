@@ -19,19 +19,21 @@ const helpOverlayMaxWidth = 90
 // full inner width on wide terminals. Chosen to match the typical title line length.
 const helpOverlaySepMaxWidth = 52
 
-// logLevelLabel renders the four valid log_level_ values in their canonical
+// logLevelLabel renders the five valid log_level_ values in their canonical
 // colors so users can match what they type with the colors in the live log.
 // Reuses the same color tokens as getLevelStyle() in main_screen.go.
 func logLevelLabel() string {
-	bold := lipgloss.NewStyle().Bold(true)
+	base := styles.LogLevelStyle
 	return styles.SubtitleStyle.Render("log_level_: ") +
-		bold.Foreground(styles.InfoColor).Render("'INFO'") +
+		base.Foreground(styles.InfoColor).Render("'INFO'") +
 		styles.SubtitleStyle.Render(", ") +
-		bold.Foreground(styles.DebugColor).Render("'DEBUG'") +
+		base.Foreground(styles.DebugColor).Render("'DEBUG'") +
 		styles.SubtitleStyle.Render(", ") +
-		bold.Foreground(styles.WarningColor).Render("'WARNING'") +
+		base.Foreground(styles.WarningColor).Render("'WARNING'") +
 		styles.SubtitleStyle.Render(", ") +
-		bold.Foreground(styles.ErrorColor).Render("'ERROR'") +
+		base.Foreground(styles.ErrorColor).Render("'ERROR'") +
+		styles.SubtitleStyle.Render(", ") +
+		base.Foreground(styles.CriticalColor).Render("'CRITICAL'") +
 		styles.SubtitleStyle.Render("  (default: INFO)")
 }
 

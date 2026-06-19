@@ -176,10 +176,6 @@ END;
 
 OmniInspect supports multi-subscriber tracing with automatically generated, subscriber-specific procedures. When a subscriber is registered in OmniView, the system generates a custom procedure whose name is built from the subscriber's `FunnyName()` alias and that routes messages specifically to that subscriber.
 
-Each subscriber gets their own named trace procedure in the format `TRACE_MESSAGE_<FUNNY_NAME>()`, where `<FUNNY_NAME>` is the subscriber's `FunnyName()` alias (e.g., `BARNACLE`, `WEBAPP`) — *not* the subscriber's display name. The procedure name is produced by `buildProcedureName` in `internal/service/subscribers/procedure_generator.go`, which concatenates `TRACE_MESSAGE_` with the uppercased funny name.
-
-The procedure is created and kept in sync during registration. `SubscriberService.RegisterSubscriber` (`internal/service/subscribers/subscriber_service.go`) calls `procGen.EnsureSubscriberProcedure`, which inspects the existing `OMNI_TRACER_API` package spec/body, reuses the procedure if it is already owned by this subscriber and has the expected generated body, and otherwise injects (or upgrades) the declaration and body before redeploying the package.
-
 **Procedure Signature:**
 ```sql
 OMNI_TRACER_API.TRACE_MESSAGE_<FUNNY_NAME>(
@@ -192,7 +188,7 @@ OMNI_TRACER_API.TRACE_MESSAGE_<FUNNY_NAME>(
 **Parameters:**
 - `message_` - The trace message content (CLOB)
 - `log_level_` - Log level (e.g., 'INFO', 'WARN', 'ERROR', 'DEBUG')
-- `process_name_` - Optional process identifier. The generated body forwards this value to `Enqueue_Event___(process_name_ => process_name_, ...)`, where it is stored as the `PROCESS_NAME` field of the JSON payload (falling back to `SYS_CONTEXT('USERENV','MODULE')` and then `'OMNI_TRACER_API'` when `NULL`) — see `assets/sql/Omni_Tracer.sql`.
+- `process_name_` - Optional process identifier.
 
 **Example Usage:**
 
@@ -232,80 +228,16 @@ END;
 
 ## Project Structure
 
-```text
-OmniInspect/
-├── cmd/omniview/              # Main application entry point
-│   └── main.go                 # Application bootstrap and initialization
-├── internal/
-│   ├── app/                    # Application core
-│   │   └── app.go             # App version and server management
-│   ├── adapter/
-│   │   ├── config/            # Configuration loading
-│   │   │   └── settings_loader.go
-│   │   └── storage/
-│   │       ├── boltdb/        # BoltDB local storage adapter
-│   │       │   ├── bolt_adapter.go
-│   │       │   ├── database_settings_repository.go
-│   │       │   ├── permissions_repository.go
-│   │       │   └── subscriber_repository.go
-│   │       └── oracle/        # Oracle database adapter
-│   │           ├── oracle_adapter.go
-│   │           ├── queue.go
-│   │           ├── subscriptions.go
-│   │           ├── sql_parse.go
-│   │           ├── dequeue_ops.c      # CGO bindings for dequeuing
-│   │           └── dequeue_ops.h
-│   │   └── ui/                # Bubble Tea TUI
-│   │       ├── model.go              # Root model and screen state
-│   │       ├── main_screen.go        # Main trace console view
-│   │       ├── welcome.go            # Animated welcome screen
-│   │       ├── loading.go            # Loading progress screen
-│   │       ├── onboarding.go         # Database config form
-│   │       ├── database_settings.go  # Database settings panel
-│   │       ├── database_list.go      # Database list component
-│   │       ├── add_database_form.go  # Add database modal
-│   │       ├── chrome.go             # Layout and rendering helpers
-│   │       ├── messages.go          # Bubble Tea message types
-│   │       └── styles/
-│   │           └── styles.go         # Lipgloss style definitions
-│   ├── core/
-│   │   ├── domain/            # Domain entities
-│   │   │   ├── config.go
-│   │   │   ├── database_settings.go
-│   │   │   ├── errors.go
-│   │   │   ├── permissions.go
-│   │   │   ├── queue_message.go
-│   │   │   └── subscriber.go
-│   │   └── ports/             # Port interfaces
-│   │       ├── config.go
-│   │       └── repository.go
-│   └── service/               # Business logic services
-│       ├── permissions/       # Permission deployment and checks
-│       ├── subscribers/      # Subscriber management
-│       └── tracer/           # Trace message handling
-│           └── tracer_service.go
-├── assets/
-│   ├── embed_files.go         # Embedded asset management
-│   ├── ins/
-│   │   └── Omni_Initialize.ins  # Initialization script
-│   └── sql/
-│       ├── Omni_Tracer.sql    # Main tracer PL/SQL package
-│       └── Permission_Checks.sql
-├── scripts/
-│   ├── setup_odpi.py          # ODPI-C library setup script
-│   ├── delete_queues.sql     # Cleanup script
-│   └── restart_ora_listener.sh
-├── third_party/
-│   └── odpi/                  # ODPI-C library (Oracle DB driver for C)
-│       ├── include/
-│       ├── src/
-│       └── lib/
-├── docs/                      # Architecture documentation
-├── resources/                 # Application resources
-├── Makefile                   # Build automation
-├── go.mod                     # Go module definition
-└── omniview.bolt              # Local database (created on first run)
-```
+OmniView follows a hexagonal layout with a small composition root, core domain and ports, service layer, and adapters for Oracle, BoltDB, config, and the Bubble Tea UI. Supporting PL/SQL, CGO, scripts, assets, and reference docs live alongside the Go code, while the detailed source tree is documented in [docs/source-tree-analysis.md](docs/source-tree-analysis.md).
+
+Key areas:
+
+- `cmd/omniview/` - application entry point and wiring
+- `internal/core/` - domain models and port interfaces
+- `internal/service/` - business logic orchestration
+- `internal/adapter/` - Oracle, storage, config, and UI implementations
+- `assets/` and `scripts/` - embedded SQL, setup, and maintenance helpers
+- `docs/` - architecture and deeper project references
 
 ## Prerequisites
 
@@ -499,11 +431,11 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 ### Screen Flow
 
 ```
-┌─────────────┐     Animation Complete      ┌─────────────┐
-│  Welcome    │ ──────────────────────────▶│  Loading    │
+┌─────────────┐     Animation Complete    ┌─────────────┐
+│  Welcome    │ ─────────────────────────▶│  Loading    │
 │  (Animated  │                           │  (Progress  │
 │   Logo)     │                           │   Steps)    │
-└─────────────┘                           └──────┬──────┘
+└─────────────┘                           └───────┬─────┘
                                                   │
                                Config Not Found   │
                               ┌───────────────────┘
@@ -514,15 +446,15 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
                      │ (Database   │     │  (Trace     │
                      │  Config)    │     │   Console)  │
                      └─────────────┘     └──────┬──────┘
-                                                  │
-                                                  ▼
+                                                │
+                                                ▼
                                          ┌─────────────┐
                                          │  Database   │
                                          │  Settings   │
                                          │  (Overlay)  │
                                          └──────┬──────┘
-                                               │
-                                               ▼
+                                                │
+                                                ▼
                                         ┌─────────────┐
                                         │   Add       │
                                         │  Database   │

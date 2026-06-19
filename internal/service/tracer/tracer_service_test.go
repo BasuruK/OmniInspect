@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 type stubConfigRepository struct{}
@@ -25,6 +26,15 @@ func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
 	return domain.BroadcastModeGlobal, nil
 }
 func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
+
+type webhookConfigRepository struct {
+	stubConfigRepository
+	config *domain.WebhookConfig
+}
+
+func (r webhookConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error) {
+	return r.config, nil
+}
 
 type stubDatabaseRepository struct{}
 
@@ -242,5 +252,54 @@ func TestCancelConnectionListener_ContinuesOnUnregisterError(t *testing.T) {
 	}
 	if ts.activeSubscriber != nil {
 		t.Fatal("expected activeSubscriber to be cleared even after unregistration error")
+	}
+}
+
+func TestHandleTracerMessage_QueuesWebhookOnlyWithOptIn(t *testing.T) {
+	previousDispatcher := globalWebhookDispatcher
+
+	t.Cleanup(func() {
+		globalWebhookDispatcher = previousDispatcher
+		dispatcherOnce = sync.Once{}
+	})
+
+	config, err := domain.NewWebhookConfig(domain.DefaultWebhookID, "https://example.com/webhook", true)
+	if err != nil {
+		t.Fatalf("failed to create webhook config: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name          string
+		sendToWebhook bool
+		wantQueued    int
+	}{
+		{name: "without opt-in", sendToWebhook: false, wantQueued: 0},
+		{name: "with opt-in", sendToWebhook: true, wantQueued: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			globalWebhookDispatcher = &webhookDispatcher{queue: make(chan webhookJob, 1)}
+			dispatcherOnce = sync.Once{}
+
+			msg, err := domain.NewQueueMessage(
+				"message",
+				"TEST_PROCESS",
+				domain.LogLevelInfo,
+				"payload",
+				time.Unix(1700000000, 0),
+				tt.sendToWebhook,
+			)
+			if err != nil {
+				t.Fatalf("failed to create queue message: %v", err)
+			}
+
+			ts := &TracerService{bolt: webhookConfigRepository{config: config}}
+			if ok := ts.handleTracerMessage(context.Background(), msg); !ok {
+				t.Fatal("expected handleTracerMessage to continue processing")
+			}
+
+			if queued := len(globalWebhookDispatcher.queue); queued != tt.wantQueued {
+				t.Fatalf("expected %d webhook jobs to be queued, got %d", tt.wantQueued, queued)
+			}
+		})
 	}
 }

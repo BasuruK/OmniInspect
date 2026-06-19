@@ -335,6 +335,10 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 		logger.Info("event channel unavailable, emitting via structured logger", "msg", msg.Format())
 	}
 
+	if !msg.SendToWebhook() {
+		return true
+	}
+
 	// Dispatch to webhook if configured
 	webhookConfig, err := ts.bolt.GetWebhookConfig()
 	if err != nil || webhookConfig == nil || webhookConfig.URL == "" {

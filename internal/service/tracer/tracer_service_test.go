@@ -11,28 +11,28 @@ import (
 
 type stubConfigRepository struct{}
 
-func (stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
-func (stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
+func (r *stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
+func (r *stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
 	return nil, nil
 }
-func (stubConfigRepository) IsApplicationFirstRun() (bool, error)               { return false, nil }
-func (stubConfigRepository) SetFirstRunCycleStatus(domain.RunCycleStatus) error { return nil }
-func (stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error      { return nil }
-func (stubConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error)   { return nil, nil }
-func (stubConfigRepository) DeleteWebhookConfig(string) error                   { return nil }
-func (stubConfigRepository) GetTracerPackageVersion() (string, error)           { return "", nil }
-func (stubConfigRepository) SetTracerPackageVersion(string) error               { return nil }
-func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
+func (r *stubConfigRepository) IsApplicationFirstRun() (bool, error)               { return false, nil }
+func (r *stubConfigRepository) SetFirstRunCycleStatus(domain.RunCycleStatus) error { return nil }
+func (r *stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error      { return nil }
+func (r *stubConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error)   { return nil, nil }
+func (r *stubConfigRepository) DeleteWebhookConfig(string) error                   { return nil }
+func (r *stubConfigRepository) GetTracerPackageVersion() (string, error)           { return "", nil }
+func (r *stubConfigRepository) SetTracerPackageVersion(string) error               { return nil }
+func (r *stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
 	return domain.BroadcastModeGlobal, nil
 }
-func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
+func (r *stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
 
 type webhookConfigRepository struct {
 	stubConfigRepository
 	config *domain.WebhookConfig
 }
 
-func (r webhookConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error) {
+func (r *webhookConfigRepository) GetWebhookConfig() (*domain.WebhookConfig, error) {
 	return r.config, nil
 }
 
@@ -72,7 +72,7 @@ func (stubDatabaseRepository) DeployFile(context.Context, string) error { return
 func TestNewTracerService_RejectsNilDependencies(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewTracerService(nil, stubConfigRepository{}, make(chan *domain.QueueMessage, 1))
+	_, err := NewTracerService(nil, &stubConfigRepository{}, make(chan *domain.QueueMessage, 1))
 	if !errors.Is(err, domain.ErrNilRepository) {
 		t.Fatalf("expected ErrNilRepository, got %v", err)
 	}
@@ -292,7 +292,7 @@ func TestHandleTracerMessage_QueuesWebhookOnlyWithOptIn(t *testing.T) {
 				t.Fatalf("failed to create queue message: %v", err)
 			}
 
-			ts := &TracerService{bolt: webhookConfigRepository{config: config}}
+			ts := &TracerService{bolt: &webhookConfigRepository{config: config}}
 			if ok := ts.handleTracerMessage(context.Background(), msg); !ok {
 				t.Fatal("expected handleTracerMessage to continue processing")
 			}

@@ -277,8 +277,10 @@ func TestHandleTracerMessage_QueuesWebhookOnlyWithOptIn(t *testing.T) {
 		{name: "with opt-in", sendToWebhook: true, wantQueued: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			globalWebhookDispatcher = &webhookDispatcher{queue: make(chan webhookJob, 1)}
+			injectedDispatcher := &webhookDispatcher{queue: make(chan webhookJob, 1)}
+			globalWebhookDispatcher = injectedDispatcher
 			dispatcherOnce = sync.Once{}
+			dispatcherOnce.Do(func() {})
 
 			msg, err := domain.NewQueueMessage(
 				"message",
@@ -297,7 +299,7 @@ func TestHandleTracerMessage_QueuesWebhookOnlyWithOptIn(t *testing.T) {
 				t.Fatal("expected handleTracerMessage to continue processing")
 			}
 
-			if queued := len(globalWebhookDispatcher.queue); queued != tt.wantQueued {
+			if queued := len(injectedDispatcher.queue); queued != tt.wantQueued {
 				t.Fatalf("expected %d webhook jobs to be queued, got %d", tt.wantQueued, queued)
 			}
 		})

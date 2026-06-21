@@ -280,6 +280,8 @@ func TestHandleTracerMessage_QueuesWebhookOnlyWithOptIn(t *testing.T) {
 			injectedDispatcher := &webhookDispatcher{queue: make(chan webhookJob, 1)}
 			globalWebhookDispatcher = injectedDispatcher
 			dispatcherOnce = sync.Once{}
+			// Mark sync.Once as used so getWebhookDispatcher keeps the injected dispatcher
+			// instead of replacing it with a real worker-backed dispatcher.
 			dispatcherOnce.Do(func() {})
 
 			msg, err := domain.NewQueueMessage(

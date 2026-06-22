@@ -85,13 +85,8 @@ func sanitizeLogString(s string) string {
 		}
 		return r
 	}, s)
-	// Collapse leading/trailing whitespace and limit length
-	s = strings.TrimSpace(s)
-	const maxLen = 10000
-	if len(s) > maxLen {
-		s = s[:maxLen] + "…"
-	}
-	return s
+	// Collapse leading/trailing whitespace without truncating payload content.
+	return strings.TrimSpace(s)
 }
 
 // ==========================================

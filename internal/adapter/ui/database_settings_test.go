@@ -753,7 +753,7 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	testMsg := newTestQueueMessage(t)
 	m.main.messages = []*domain.QueueMessage{testMsg}
 	m.main.ready = true
-	m.main.renderedContent.WriteString("some content")
+	m.main.renderedLines = []string{"some content"}
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -771,8 +771,8 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	if updated.main.ready {
 		t.Error("expected main.ready to be false after reset")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Error("expected main.renderedContent to be reset")
+	if len(updated.main.renderedLines) != 0 {
+		t.Error("expected main.renderedLines to be reset")
 	}
 }
 

@@ -417,8 +417,8 @@ func TestQueueMessageBeforeViewportReadyBuffersWithoutRendering(t *testing.T) {
 	if updated.main.messages[0] != msg {
 		t.Fatalf("expected buffered message to be retained before viewport init")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	if len(updated.main.renderedLines) != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %v", updated.main.renderedLines)
 	}
 }
 
@@ -449,8 +449,8 @@ func TestQueueMessageBeforeViewportReadyEvictsWithoutRendering(t *testing.T) {
 	if updated.main.messages[len(updated.main.messages)-1] != newest {
 		t.Fatalf("expected newest message to be appended after eviction")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	if len(updated.main.renderedLines) != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %v", updated.main.renderedLines)
 	}
 	if updated.main.cachedLevelWidth != 0 || updated.main.cachedAPIWidth != 0 || updated.main.cachedWidthKey != 0 {
 		t.Fatalf(
@@ -459,6 +459,43 @@ func TestQueueMessageBeforeViewportReadyEvictsWithoutRendering(t *testing.T) {
 			updated.main.cachedAPIWidth,
 			updated.main.cachedWidthKey,
 		)
+	}
+}
+
+// TestQueueMessageEvictsWhenRawBytesExceedCap guards the byte-based ceiling:
+// a single multi-MB payload must not blow past maxRawBytes. Oldest messages
+// must be evicted to keep the buffer under the cap, even when maxMessages is
+// nowhere near its count limit.
+func TestQueueMessageEvictsWhenRawBytesExceedCap(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 30)
+
+	// 80 MB of small filler messages — well under maxMessages (10000) but
+	// already > 50% of maxRawBytes. Combined with the next message they force
+	// eviction under the cap.
+	filler := newTestQueueMessageWithPayload(t, "filler", strings.Repeat("x", 80*1024*1024))
+	updated, _ := m.updateMain(queueMessageMsg{message: filler})
+	if updated.main.totalRawBytes != len(filler.Payload()) {
+		t.Fatalf("expected totalRawBytes %d after first insert, got %d",
+			len(filler.Payload()), updated.main.totalRawBytes)
+	}
+
+	// 40 MB push message — adding it without eviction would be 120 MB > 100 MB cap.
+	push := newTestQueueMessageWithPayload(t, "push", strings.Repeat("y", 40*1024*1024))
+	updated, _ = m.updateMain(queueMessageMsg{message: push})
+
+	if updated.main.totalRawBytes > maxRawBytes {
+		t.Fatalf("totalRawBytes %d exceeded maxRawBytes %d", updated.main.totalRawBytes, maxRawBytes)
+	}
+	if len(updated.main.messages) != 1 {
+		t.Fatalf("expected single message after byte-cap eviction, got %d", len(updated.main.messages))
+	}
+	if updated.main.messages[0] != push {
+		t.Fatalf("expected filler to be evicted, newest push to remain")
+	}
+	if updated.main.totalRawBytes != len(push.Payload()) {
+		t.Fatalf("expected totalRawBytes to reflect remaining message only, got %d", updated.main.totalRawBytes)
 	}
 }
 
@@ -471,9 +508,12 @@ func TestInitViewportRebuildsBufferedMessagesAtViewportWidth(t *testing.T) {
 	updated, _ := m.updateMain(queueMessageMsg{message: msg})
 	updated.initViewport()
 
-	expected := renderTraceColumns(parseTraceLine(msg), updated.traceColumnLayout(updated.main.viewport.Width())) + "\n"
-	if updated.main.renderedContent.String() != expected {
-		t.Fatalf("expected viewport init to rebuild buffered messages with actual width\n got: %q\nwant: %q", updated.main.renderedContent.String(), expected)
+	expected := renderTraceColumns(parseTraceLine(msg), updated.traceColumnLayout(updated.main.viewport.Width()))
+	if len(updated.main.renderedLines) != 1 {
+		t.Fatalf("expected one rendered line after viewport init, got %d", len(updated.main.renderedLines))
+	}
+	if updated.main.renderedLines[0] != expected {
+		t.Fatalf("expected viewport init to rebuild buffered messages with actual width\n got: %q\nwant: %q", updated.main.renderedLines[0], expected)
 	}
 	if updated.main.viewport.TotalLineCount() == 0 {
 		t.Fatalf("expected viewport content to be populated after init")

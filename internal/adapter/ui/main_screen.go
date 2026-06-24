@@ -115,9 +115,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			m.main.messages = m.main.messages[1:]
 			m.main.messages = append(m.main.messages, msg.message)
 			// Invalidate the cached column widths when the ring buffer evicts a row.
-			m.main.cachedLevelWidth = 0
-			m.main.cachedAPIWidth = 0
-			m.main.cachedWidthKey = 0
+			m.invalidateColumnWidthCache()
 			if m.main.ready {
 				m.rebuildRenderedContent(m.main.viewport.Width())
 			}
@@ -181,8 +179,7 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			// Clear all messages
-			m.main.messages = nil
-			m.main.renderedContent.Reset()
+			m.resetMainLogState()
 			m.main.viewport.SetContent(m.renderLogContent())
 			m.main.viewport.GotoTop()
 			return m, nil
@@ -223,6 +220,20 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.main.viewport, cmd = m.main.viewport.Update(msg)
 	return m, cmd
+}
+
+// resetMainLogState clears all buffered log state and invalidates cached widths.
+func (m *Model) resetMainLogState() {
+	m.main.messages = nil
+	m.main.renderedContent.Reset()
+	m.invalidateColumnWidthCache()
+}
+
+// invalidateColumnWidthCache clears memoized trace column widths.
+func (m *Model) invalidateColumnWidthCache() {
+	m.main.cachedLevelWidth = 0
+	m.main.cachedAPIWidth = 0
+	m.main.cachedWidthKey = 0
 }
 
 // ==========================================

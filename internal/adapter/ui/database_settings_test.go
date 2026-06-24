@@ -754,6 +754,9 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	m.main.messages = []*domain.QueueMessage{testMsg}
 	m.main.ready = true
 	m.main.renderedContent.WriteString("some content")
+	m.main.cachedLevelWidth = 9
+	m.main.cachedAPIWidth = 17
+	m.main.cachedWidthKey = 88
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -773,6 +776,15 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	}
 	if updated.main.renderedContent.Len() != 0 {
 		t.Error("expected main.renderedContent to be reset")
+	}
+	if updated.main.cachedLevelWidth != 0 {
+		t.Errorf("expected main.cachedLevelWidth to be reset to 0, got %d", updated.main.cachedLevelWidth)
+	}
+	if updated.main.cachedAPIWidth != 0 {
+		t.Errorf("expected main.cachedAPIWidth to be reset to 0, got %d", updated.main.cachedAPIWidth)
+	}
+	if updated.main.cachedWidthKey != 0 {
+		t.Errorf("expected main.cachedWidthKey to be reset to 0, got %d", updated.main.cachedWidthKey)
 	}
 }
 

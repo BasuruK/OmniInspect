@@ -688,8 +688,7 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	m.permissionService = nil
 	m.tracerService = nil
 	m.subscriberService = nil
-	m.main.messages = nil
-	m.main.renderedContent.Reset()
+	m.resetMainLogState()
 	m.main.ready = false
 	m.closeDatabaseSettings()
 	m.stopLoadingRetryTimer()

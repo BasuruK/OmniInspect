@@ -29,6 +29,9 @@ type MockDatabaseRepository struct {
 	ConnectCalls []context.Context
 	CloseCalls   []context.Context
 
+	UnregisterSubscriberFunc  func(ctx context.Context, subscriber domain.Subscriber) error
+	UnregisterSubscriberCalls []string
+
 	connectError error
 	closeError   error
 }
@@ -104,6 +107,10 @@ func (m *MockDatabaseRepository) RegisterNewSubscriber(ctx context.Context, subs
 
 // UnregisterSubscriber implements ports.DatabaseRepository (no-op for mock).
 func (m *MockDatabaseRepository) UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	m.UnregisterSubscriberCalls = append(m.UnregisterSubscriberCalls, subscriber.Name())
+	if m.UnregisterSubscriberFunc != nil {
+		return m.UnregisterSubscriberFunc(ctx, subscriber)
+	}
 	return nil
 }
 
@@ -258,6 +265,17 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	// Setup existing services
 	m.dbAdapter = mockDB
 	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
+	defer m.tracerService.CancelConnectionListener()
+
+	// Activate a subscriber so CancelConnectionListener has an observable side
+	// effect: it must call db.UnregisterSubscriber before the service is nilled.
+	activeSubscriber, err := domain.NewSubscriberWithFunnyName("EXISTING_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName: %v", err)
+	}
+	if err := m.tracerService.StartEventListener(t.Context(), activeSubscriber, ""); err != nil {
+		t.Fatalf("StartEventListener: %v", err)
+	}
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -271,7 +289,7 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	// Execute
 	updated, cmd := m.handleSettingsSetAsMain(*selected)
 
-	// Assert services are nil after switch (observable effect of StopAll being called)
+	// Assert services are nil after switch (observable effect of StopAll being called).
 	if updated.tracerService != nil {
 		t.Error("expected tracerService to be nil after switch")
 	}
@@ -280,6 +298,11 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	}
 	if updated.subscriberService != nil {
 		t.Error("expected subscriberService to be nil after switch")
+	}
+
+	// Assert the active subscriber was unregistered before the service was nilled.
+	if len(mockDB.UnregisterSubscriberCalls) == 0 {
+		t.Error("expected CancelConnectionListener to invoke UnregisterSubscriber on existing tracerService before nil assignment")
 	}
 
 	// Assert factory was called
@@ -753,7 +776,11 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	testMsg := newTestQueueMessage(t)
 	m.main.messages = []*domain.QueueMessage{testMsg}
 	m.main.ready = true
-	m.main.renderedContent.WriteString("some content")
+	m.main.renderedLines = []string{"some content"}
+	m.main.totalRawBytes = len(testMsg.Payload())
+	m.main.cachedLevelWidth = 9
+	m.main.cachedAPIWidth = 17
+	m.main.cachedWidthKey = 88
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -771,8 +798,20 @@ func TestHandleSettingsSetAsMain_Success_MainStateReset(t *testing.T) {
 	if updated.main.ready {
 		t.Error("expected main.ready to be false after reset")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Error("expected main.renderedContent to be reset")
+	if len(updated.main.renderedLines) != 0 {
+		t.Error("expected main.renderedLines to be reset")
+	}
+	if updated.main.totalRawBytes != 0 {
+		t.Errorf("expected main.totalRawBytes to be reset to 0, got %d", updated.main.totalRawBytes)
+	}
+	if updated.main.cachedLevelWidth != 0 {
+		t.Errorf("expected main.cachedLevelWidth to be reset to 0, got %d", updated.main.cachedLevelWidth)
+	}
+	if updated.main.cachedAPIWidth != 0 {
+		t.Errorf("expected main.cachedAPIWidth to be reset to 0, got %d", updated.main.cachedAPIWidth)
+	}
+	if updated.main.cachedWidthKey != 0 {
+		t.Errorf("expected main.cachedWidthKey to be reset to 0, got %d", updated.main.cachedWidthKey)
 	}
 }
 

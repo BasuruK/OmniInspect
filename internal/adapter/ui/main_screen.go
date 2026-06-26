@@ -20,11 +20,13 @@ import (
 // Constants
 // ==========================================
 
-// maxMessages is the maximum number of messages to retain in the ring buffer.
-// Oldest messages are dropped when capacity is reached.
-// TODO: Make this configurable if users want to adjust memory usage vs. log history depth, consider when implementing main settings flow.
+// Ring-buffer caps. The buffer evicts oldest messages when either limit is
+// exceeded. maxMessages is a count ceiling; maxRawBytes is the real memory
+// safety net — a single multi-MB payload would never trip maxMessages alone,
+// so we bound the total raw payload bytes too.
 const (
-	maxMessages         = 1000
+	maxMessages         = 10000
+	maxRawBytes         = 100 * 1024 * 1024
 	maxProcessNameWidth = 20
 	mainGapAfterHeader  = 1
 	mainGapAfterStatus  = 0
@@ -85,13 +87,9 @@ func sanitizeLogString(s string) string {
 		}
 		return r
 	}, s)
-	// Collapse leading/trailing whitespace and limit length
-	s = strings.TrimSpace(s)
-	const maxLen = 10000
-	if len(s) > maxLen {
-		s = s[:maxLen] + "…"
-	}
-	return s
+	// Collapse leading/trailing whitespace. Length bounding lives at the ring-buffer
+	// layer (maxMessages + maxRawBytes) so we never truncate payload content here.
+	return strings.TrimSpace(s)
 }
 
 // ==========================================
@@ -115,23 +113,26 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 
 	// New log message from event listener
 	case queueMessageMsg:
-		if len(m.main.messages) >= maxMessages {
-			// Ring-buffer shift — old content is invalid; full rebuild required.
+		newPayload := len(msg.message.Payload())
+		evicted := false
+		// Evict oldest until adding the new message keeps us under both caps.
+		for len(m.main.messages) > 0 &&
+			(len(m.main.messages) >= maxMessages || m.main.totalRawBytes+newPayload > maxRawBytes) {
+			m.main.totalRawBytes -= len(m.main.messages[0].Payload())
 			m.main.messages = m.main.messages[1:]
-			m.main.messages = append(m.main.messages, msg.message)
-			// Invalidate the cached column widths when the ring buffer evicts a row.
-			m.main.cachedLevelWidth = 0
-			m.main.cachedAPIWidth = 0
-			m.main.cachedWidthKey = 0
+			evicted = true
+		}
+		m.main.messages = append(m.main.messages, msg.message)
+		m.main.totalRawBytes += newPayload
+		if evicted {
+			// Column-width cache is stale after eviction — invalidate and rebuild.
+			m.invalidateColumnWidthCache()
 			if m.main.ready {
 				m.rebuildRenderedContent(m.main.viewport.Width())
 			}
-		} else {
+		} else if m.main.ready {
 			// Fast path: append the message, then render only the new line.
-			m.main.messages = append(m.main.messages, msg.message)
-			if m.main.ready {
-				m.appendSingleMessage(msg.message, m.main.viewport.Width())
-			}
+			m.appendSingleMessage(msg.message, m.main.viewport.Width())
 		}
 		if m.main.ready && m.main.autoScroll {
 			m.main.viewport.GotoBottom()
@@ -186,9 +187,8 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			// Clear all messages
-			m.main.messages = nil
-			m.main.renderedContent.Reset()
-			m.main.viewport.SetContent(m.renderLogContent())
+			m.resetMainLogState()
+			m.main.viewport.SetContentLines(m.viewportLines())
 			m.main.viewport.GotoTop()
 			return m, nil
 		case "d":
@@ -228,6 +228,21 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.main.viewport, cmd = m.main.viewport.Update(msg)
 	return m, cmd
+}
+
+// resetMainLogState clears all buffered log state and invalidates cached widths.
+func (m *Model) resetMainLogState() {
+	m.main.messages = nil
+	m.main.renderedLines = nil
+	m.main.totalRawBytes = 0
+	m.invalidateColumnWidthCache()
+}
+
+// invalidateColumnWidthCache clears memoized trace column widths.
+func (m *Model) invalidateColumnWidthCache() {
+	m.main.cachedLevelWidth = 0
+	m.main.cachedAPIWidth = 0
+	m.main.cachedWidthKey = 0
 }
 
 // ==========================================
@@ -323,15 +338,14 @@ func (m *Model) viewMain() string {
 // Log Rendering
 // ==========================================
 
-// renderLogContent returns the current rendered log content.
-// Uses the incrementally-built renderedContent when available,
-// rebuilding only when the buffer is empty.
-func (m *Model) renderLogContent() string {
+// viewportLines returns the lines to feed into the viewport. Empty state
+// surfaces a placeholder; otherwise the incrementally-built renderedLines slice
+// is returned directly (no string assembly on the hot path).
+func (m *Model) viewportLines() []string {
 	if len(m.main.messages) == 0 {
-		return styles.EmptyStateStyle.Render("Waiting for trace events from Oracle AQ...")
+		return []string{styles.EmptyStateStyle.Render("Waiting for trace events from Oracle AQ...")}
 	}
-	// Return incrementally built content to avoid O(n²) rebuild on every message
-	return m.main.renderedContent.String()
+	return m.main.renderedLines
 }
 
 // formatLogLine applies color styling based on log level and returns a plain
@@ -615,25 +629,26 @@ func (m *Model) resizeMainViewport() {
 func (m *Model) rebuildRenderedContent(viewportWidth int) {
 	// Preserve the empty-state content on rebuild.
 	if len(m.main.messages) == 0 {
-		m.main.renderedContent.Reset()
-		m.main.viewport.SetContent(m.renderLogContent())
+		m.main.renderedLines = nil
+		m.main.viewport.SetContentLines(m.viewportLines())
 		return
 	}
 
 	useColumns := viewportWidth >= colMinWidth
 	layout := m.traceColumnLayout(viewportWidth)
 
-	m.main.renderedContent.Reset()
-	for _, queuedMsg := range m.filterMessages(m.main.messages) {
+	filtered := m.filterMessages(m.main.messages)
+	rendered := make([]string, 0, len(filtered))
+	for _, queuedMsg := range filtered {
 		if useColumns {
-			m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(queuedMsg), layout))
+			rendered = append(rendered, renderTraceColumns(parseTraceLine(queuedMsg), layout))
 		} else {
-			m.main.renderedContent.WriteString(m.formatLogLine(queuedMsg))
+			rendered = append(rendered, m.formatLogLine(queuedMsg))
 		}
-		m.main.renderedContent.WriteString("\n")
 	}
+	m.main.renderedLines = rendered
 
-	m.main.viewport.SetContent(m.main.renderedContent.String())
+	m.main.viewport.SetContentLines(m.main.renderedLines)
 }
 
 func (m *Model) traceColumnLayout(availableWidth int) traceColumnLayout {
@@ -855,11 +870,10 @@ func (m *Model) appendSingleMessage(msg *domain.QueueMessage, viewportWidth int)
 			}
 		}
 
-		m.main.renderedContent.WriteString(renderTraceColumns(parseTraceLine(msg), layout))
+		m.main.renderedLines = append(m.main.renderedLines, renderTraceColumns(parseTraceLine(msg), layout))
 	} else {
-		m.main.renderedContent.WriteString(m.formatLogLine(msg))
+		m.main.renderedLines = append(m.main.renderedLines, m.formatLogLine(msg))
 	}
 
-	m.main.renderedContent.WriteString("\n")
-	m.main.viewport.SetContent(m.main.renderedContent.String())
+	m.main.viewport.SetContentLines(m.main.renderedLines)
 }

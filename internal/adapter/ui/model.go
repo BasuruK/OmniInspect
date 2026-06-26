@@ -69,11 +69,12 @@ type loadingState struct {
 }
 
 type mainState struct {
-	messages        []*domain.QueueMessage // Log messages to display (bounded ring buffer, max 1000)
-	renderedContent strings.Builder        // Incrementally built rendered content
-	viewport        viewport.Model         // Scrollable viewport for messages
-	autoScroll      bool                   // Whether to auto-scroll to the latest message
-	ready           bool                   // Whether the main screen is ready to display messages
+	messages      []*domain.QueueMessage // Log messages to display (bounded ring buffer, max 10000)
+	renderedLines []string               // Pre-rendered lines per filtered message at cachedWidthKey
+	viewport      viewport.Model         // Scrollable viewport for messages
+	autoScroll    bool                   // Whether to auto-scroll to the latest message
+	ready         bool                   // Whether the main screen is ready to display messages
+	totalRawBytes int                    // Sum of payload bytes across messages (drives maxRawBytes eviction)
 
 	// Cached column widths for trace layout optimization
 	// Avoids O(n) full scan of messages on each new message

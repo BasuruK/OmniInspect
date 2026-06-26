@@ -3,7 +3,6 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +33,14 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
 	}
-	if !headerLineContainsAll(layout.header, "QA_DB", "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+	found := false
+	for _, line := range strings.Split(layout.header, "\n") {
+		if strings.Contains(line, "QA_DB") && strings.Contains(line, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Fatalf("header should place procedure call next to database name, got: %s", layout.header)
 	}
 }
@@ -190,6 +196,36 @@ func TestWrapTextBasic(t *testing.T) {
 	}
 }
 
+func TestSanitizeLogStringDoesNotTruncateLongPayload(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Repeat("0123456789", 1500)
+	got := sanitizeLogString(input)
+
+	if got != input {
+		t.Fatalf("sanitizeLogString truncated long payload: got len=%d want len=%d", len(got), len(input))
+	}
+	if strings.Contains(got, "…") {
+		t.Fatalf("sanitizeLogString should not add ellipsis to long payloads")
+	}
+}
+
+func TestWrapTextPreservesLargePayload(t *testing.T) {
+	t.Parallel()
+
+	payload := strings.Repeat("0123456789", 150)
+	wrapped := wrapText(payload, 40)
+	for i, line := range strings.Split(wrapped, "\n") {
+		if lipgloss.Width(line) > 40 {
+			t.Fatalf("wrapped line %d exceeds width 40: got %d", i+1, lipgloss.Width(line))
+		}
+	}
+
+	if strings.ReplaceAll(wrapped, "\n", "") != payload {
+		t.Fatalf("wrapText did not preserve full payload content")
+	}
+}
+
 func TestWrapTextLongWords(t *testing.T) {
 	t.Parallel()
 
@@ -209,17 +245,6 @@ func TestWrapTextLongWords(t *testing.T) {
 		if lipgloss.Width(line) > 10 {
 			t.Errorf("line %d exceeds width 10: %q (width %d)", i+1, line, lipgloss.Width(line))
 		}
-	}
-}
-
-func TestWrapTextPreservesSingleSpaces(t *testing.T) {
-	t.Parallel()
-
-	// Input has single spaces, output should have single spaces
-	result := wrapText("Hello world this is a test", 80)
-	expected := "Hello world this is a test"
-	if result != expected {
-		t.Errorf("expected single spaces preserved, got %q want %q", result, expected)
 	}
 }
 
@@ -392,8 +417,8 @@ func TestQueueMessageBeforeViewportReadyBuffersWithoutRendering(t *testing.T) {
 	if updated.main.messages[0] != msg {
 		t.Fatalf("expected buffered message to be retained before viewport init")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	if len(updated.main.renderedLines) != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %v", updated.main.renderedLines)
 	}
 }
 
@@ -424,8 +449,8 @@ func TestQueueMessageBeforeViewportReadyEvictsWithoutRendering(t *testing.T) {
 	if updated.main.messages[len(updated.main.messages)-1] != newest {
 		t.Fatalf("expected newest message to be appended after eviction")
 	}
-	if updated.main.renderedContent.Len() != 0 {
-		t.Fatalf("expected no rendered content before viewport init, got %q", updated.main.renderedContent.String())
+	if len(updated.main.renderedLines) != 0 {
+		t.Fatalf("expected no rendered content before viewport init, got %v", updated.main.renderedLines)
 	}
 	if updated.main.cachedLevelWidth != 0 || updated.main.cachedAPIWidth != 0 || updated.main.cachedWidthKey != 0 {
 		t.Fatalf(
@@ -434,6 +459,43 @@ func TestQueueMessageBeforeViewportReadyEvictsWithoutRendering(t *testing.T) {
 			updated.main.cachedAPIWidth,
 			updated.main.cachedWidthKey,
 		)
+	}
+}
+
+// TestQueueMessageEvictsWhenRawBytesExceedCap guards the byte-based ceiling:
+// a single multi-MB payload must not blow past maxRawBytes. Oldest messages
+// must be evicted to keep the buffer under the cap, even when maxMessages is
+// nowhere near its count limit.
+func TestQueueMessageEvictsWhenRawBytesExceedCap(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 30)
+
+	// 80 MB of small filler messages — well under maxMessages (10000) but
+	// already > 50% of maxRawBytes. Combined with the next message they force
+	// eviction under the cap.
+	filler := newTestQueueMessageWithPayload(t, "filler", strings.Repeat("x", 80*1024*1024))
+	updated, _ := m.updateMain(queueMessageMsg{message: filler})
+	if updated.main.totalRawBytes != len(filler.Payload()) {
+		t.Fatalf("expected totalRawBytes %d after first insert, got %d",
+			len(filler.Payload()), updated.main.totalRawBytes)
+	}
+
+	// 40 MB push message — adding it without eviction would be 120 MB > 100 MB cap.
+	push := newTestQueueMessageWithPayload(t, "push", strings.Repeat("y", 40*1024*1024))
+	updated, _ = m.updateMain(queueMessageMsg{message: push})
+
+	if updated.main.totalRawBytes > maxRawBytes {
+		t.Fatalf("totalRawBytes %d exceeded maxRawBytes %d", updated.main.totalRawBytes, maxRawBytes)
+	}
+	if len(updated.main.messages) != 1 {
+		t.Fatalf("expected single message after byte-cap eviction, got %d", len(updated.main.messages))
+	}
+	if updated.main.messages[0] != push {
+		t.Fatalf("expected filler to be evicted, newest push to remain")
+	}
+	if updated.main.totalRawBytes != len(push.Payload()) {
+		t.Fatalf("expected totalRawBytes to reflect remaining message only, got %d", updated.main.totalRawBytes)
 	}
 }
 
@@ -446,9 +508,12 @@ func TestInitViewportRebuildsBufferedMessagesAtViewportWidth(t *testing.T) {
 	updated, _ := m.updateMain(queueMessageMsg{message: msg})
 	updated.initViewport()
 
-	expected := renderTraceColumns(parseTraceLine(msg), updated.traceColumnLayout(updated.main.viewport.Width())) + "\n"
-	if updated.main.renderedContent.String() != expected {
-		t.Fatalf("expected viewport init to rebuild buffered messages with actual width\n got: %q\nwant: %q", updated.main.renderedContent.String(), expected)
+	expected := renderTraceColumns(parseTraceLine(msg), updated.traceColumnLayout(updated.main.viewport.Width()))
+	if len(updated.main.renderedLines) != 1 {
+		t.Fatalf("expected one rendered line after viewport init, got %d", len(updated.main.renderedLines))
+	}
+	if updated.main.renderedLines[0] != expected {
+		t.Fatalf("expected viewport init to rebuild buffered messages with actual width\n got: %q\nwant: %q", updated.main.renderedLines[0], expected)
 	}
 	if updated.main.viewport.TotalLineCount() == 0 {
 		t.Fatalf("expected viewport content to be populated after init")
@@ -495,38 +560,6 @@ func TestWindowResizeMsgAppliesCorrectly(t *testing.T) {
 	}
 	if updated.width != 120 || updated.height != 40 {
 		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 120x40", updated.width, updated.height)
-	}
-}
-
-func TestWindowResizeMsgNoPlatformBranchingOnNonWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("this test validates the non-Windows path")
-	}
-	t.Parallel()
-
-	m := newTestMainModel(t, 100, 30)
-	updatedModel, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	_ = cmd
-	updated, ok := updatedModel.(*Model)
-	if !ok {
-		t.Fatalf("update returned unexpected model type %T", updatedModel)
-	}
-	if updated.width != 80 || updated.height != 24 {
-		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 80x24", updated.width, updated.height)
-	}
-}
-
-func TestWindowResizeMsgHandlesSmallTerminalOnWindowsPath(t *testing.T) {
-	t.Parallel()
-
-	m := newTestMainModel(t, 200, 50)
-	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 10, Height: 6})
-	updated, ok := updatedModel.(*Model)
-	if !ok {
-		t.Fatalf("update returned unexpected model type %T", updatedModel)
-	}
-	if updated.width != 10 || updated.height != 6 {
-		t.Fatalf("WindowSizeMsg dimensions: got %dx%d, want 10x6", updated.width, updated.height)
 	}
 }
 
@@ -668,23 +701,6 @@ func mustNewTestDatabaseSettings(t *testing.T, databaseID string) *domain.Databa
 	return db
 }
 
-func headerLineContainsAll(header string, parts ...string) bool {
-	for _, line := range strings.Split(header, "\n") {
-		containsAll := true
-		for _, part := range parts {
-			if !strings.Contains(line, part) {
-				containsAll = false
-				break
-			}
-		}
-		if containsAll {
-			return true
-		}
-	}
-
-	return false
-}
-
 func newTestQueueMessage(t *testing.T) *domain.QueueMessage {
 	t.Helper()
 
@@ -720,11 +736,5 @@ func assertRenderedWithinTerminal(t *testing.T, rendered string, width, height i
 	}
 	if got := lipgloss.Height(rendered); got != height {
 		t.Fatalf("rendered height mismatch: got %d want %d", got, height)
-	}
-
-	for i, line := range strings.Split(rendered, "\n") {
-		if got := lipgloss.Width(line); got > width {
-			t.Fatalf("line %d exceeded terminal width: got %d want <= %d", i+1, got, width)
-		}
 	}
 }

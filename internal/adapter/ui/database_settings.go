@@ -650,7 +650,9 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	}
 
 	if err := newAdapter.Connect(m.ctx); err != nil {
-		_ = newAdapter.Close(m.ctx)
+		if closeErr := newAdapter.Close(m.ctx); closeErr != nil {
+			logger.Warn("failed to close database adapter after failed connectivity probe", "databaseID", selectedDb.DatabaseID(), "error", closeErr)
+		}
 		return m.showDatabaseSwitchError(fmt.Errorf("failed to connect to database %q: %w", selectedDb.DatabaseID(), err))
 	}
 	if err := newAdapter.Close(m.ctx); err != nil {

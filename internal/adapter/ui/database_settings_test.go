@@ -29,6 +29,9 @@ type MockDatabaseRepository struct {
 	ConnectCalls []context.Context
 	CloseCalls   []context.Context
 
+	UnregisterSubscriberFunc  func(ctx context.Context, subscriber domain.Subscriber) error
+	UnregisterSubscriberCalls []string
+
 	connectError error
 	closeError   error
 }
@@ -104,6 +107,10 @@ func (m *MockDatabaseRepository) RegisterNewSubscriber(ctx context.Context, subs
 
 // UnregisterSubscriber implements ports.DatabaseRepository (no-op for mock).
 func (m *MockDatabaseRepository) UnregisterSubscriber(ctx context.Context, subscriber domain.Subscriber) error {
+	m.UnregisterSubscriberCalls = append(m.UnregisterSubscriberCalls, subscriber.Name())
+	if m.UnregisterSubscriberFunc != nil {
+		return m.UnregisterSubscriberFunc(ctx, subscriber)
+	}
 	return nil
 }
 
@@ -258,6 +265,17 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	// Setup existing services
 	m.dbAdapter = mockDB
 	m.tracerService = mustNewTracerService(t, mockDB, m.eventChannel)
+	defer m.tracerService.CancelConnectionListener()
+
+	// Activate a subscriber so CancelConnectionListener has an observable side
+	// effect: it must call db.UnregisterSubscriber before the service is nilled.
+	activeSubscriber, err := domain.NewSubscriberWithFunnyName("EXISTING_SUB", "BARNACLE", domain.DefaultBatchSize, domain.DefaultWaitTime)
+	if err != nil {
+		t.Fatalf("NewSubscriberWithFunnyName: %v", err)
+	}
+	if err := m.tracerService.StartEventListener(t.Context(), activeSubscriber, ""); err != nil {
+		t.Fatalf("StartEventListener: %v", err)
+	}
 
 	selected := newTestDatabaseSettings(t, "NEW-DB")
 
@@ -271,7 +289,7 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	// Execute
 	updated, cmd := m.handleSettingsSetAsMain(*selected)
 
-	// Assert services are nil after switch (observable effect of StopAll being called)
+	// Assert services are nil after switch (observable effect of StopAll being called).
 	if updated.tracerService != nil {
 		t.Error("expected tracerService to be nil after switch")
 	}
@@ -280,6 +298,11 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 	}
 	if updated.subscriberService != nil {
 		t.Error("expected subscriberService to be nil after switch")
+	}
+
+	// Assert the active subscriber was unregistered before the service was nilled.
+	if len(mockDB.UnregisterSubscriberCalls) == 0 {
+		t.Error("expected CancelConnectionListener to invoke UnregisterSubscriber on existing tracerService before nil assignment")
 	}
 
 	// Assert factory was called

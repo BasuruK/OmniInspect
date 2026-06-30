@@ -31,7 +31,16 @@ const (
 	mainGapAfterHeader  = 1
 	mainGapAfterStatus  = 0
 	mainGapAfterPanel   = 0
+	mainLogoMinGap      = 5
+	mainLogoMinWidth    = 40
 )
+
+var mainCornerLogoASCII = strings.Join([]string{
+	"               _     _",
+	" ___ _____ ___|_|_ _|_|___ _ _ _",
+	"| . |     |   | | | | | -_| | | |",
+	"|___|_|_|_|_|_|_|\\_/|_|___|_____|",
+}, "\n")
 
 // ==========================================
 // Trace Column Definitions
@@ -271,6 +280,7 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 		m.mainProcedureCall(),
 		m.mainConnectionMeta(),
 	)
+	header = renderMainHeaderWithLogo(contentWidth, header)
 	statusBar := renderInfoBar(contentWidth, m.mainStatusText())
 	footer := renderFooterBar(contentWidth, m.mainFooterText())
 
@@ -296,6 +306,21 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 		viewportWidth:  viewportWidth,
 		viewportHeight: viewportHeight,
 	}
+}
+
+func renderMainHeaderWithLogo(width int, header string) string {
+	if width < mainLogoMinWidth {
+		return header
+	}
+
+	logo := styles.LogoSubtleStyle.Bold(true).Render(mainCornerLogoASCII)
+	logoWidth := lipgloss.Width(logo)
+	if width < logoWidth+mainLogoMinGap {
+		return header
+	}
+
+	left := lipgloss.NewStyle().Width(max(width-logoWidth, 1)).Render(header)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, logo)
 }
 
 // repeatSectionGaps

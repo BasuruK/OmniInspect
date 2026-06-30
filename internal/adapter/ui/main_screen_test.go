@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
+
+var ansiEscapePatternForTest = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+
+func stripANSIForTest(value string) string {
+	return ansiEscapePatternForTest.ReplaceAllString(value, "")
+}
 
 // ==========================================
 // Procedure Call Display Tests
@@ -97,6 +104,36 @@ func TestMainViewWithProcedureCallStaysWithinTerminalAtNarrowWidth(t *testing.T)
 	rendered := m.viewMain()
 
 	assertRenderedWithinTerminal(t, rendered, m.width, m.height)
+}
+
+func TestComputeMainLayout_IncludesTopRightLogoOnWideScreens(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	layout := m.computeMainLayout()
+	expectedLogo := mainCornerLogoASCII
+	plainHeader := stripANSIForTest(layout.header)
+
+	for _, logoLine := range strings.Split(expectedLogo, "\n") {
+		if !strings.Contains(plainHeader, logoLine) {
+			t.Fatalf("expected header to include ASCII logo line %q, got: %s", logoLine, layout.header)
+		}
+	}
+}
+
+func TestComputeMainLayout_HidesTopRightLogoOnNarrowScreens(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 12, 24)
+	layout := m.computeMainLayout()
+	expectedLogo := mainCornerLogoASCII
+	plainHeader := stripANSIForTest(layout.header)
+
+	for _, logoLine := range strings.Split(expectedLogo, "\n") {
+		if strings.Contains(plainHeader, logoLine) {
+			t.Fatalf("expected header logo to be hidden on narrow screens, got: %s", layout.header)
+		}
+	}
 }
 
 // ==========================================

@@ -33,8 +33,9 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
 
 	layout := m.computeMainLayout()
+	plainHeader := stripANSIForTest(layout.header)
 
-	if !strings.Contains(layout.header, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+	if !strings.Contains(plainHeader, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
 		t.Fatalf("header should contain procedure call, got: %s", layout.header)
 	}
 	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
@@ -45,7 +46,7 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	// line immediately below the database name line instead of being on the
 	// same line. Either arrangement is acceptable as long as the procedure
 	// call appears in the header, close to the database name.
-	headerLines := strings.Split(layout.header, "\n")
+	headerLines := strings.Split(plainHeader, "\n")
 	dbLineIdx := -1
 	procLineIdx := -1
 	for i, line := range headerLines {

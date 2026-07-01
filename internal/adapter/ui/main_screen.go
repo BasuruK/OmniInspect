@@ -28,7 +28,7 @@ const (
 	maxMessages         = 10000
 	maxRawBytes         = 100 * 1024 * 1024
 	maxProcessNameWidth = 20
-	mainGapAfterHeader  = 1
+	mainGapAfterHeader  = 0
 	mainGapAfterStatus  = 0
 	mainGapAfterPanel   = 0
 	mainLogoMinGap      = 5
@@ -36,8 +36,7 @@ const (
 )
 
 var mainCornerLogoASCII = strings.Join([]string{
-	"               _     _",
-	" ___ _____ ___|_|_ _|_|___ _ _ _",
+	" ___ _____ ___|*|_ _|*|___ _ _ _",
 	"| . |     |   | | | | | -_| | | |",
 	"|___|_|_|_|_|_|_|\\_/|_|___|_____|",
 }, "\n")
@@ -320,7 +319,8 @@ func renderMainHeaderWithLogo(width int, header string) string {
 	}
 
 	left := lipgloss.NewStyle().Width(max(width-logoWidth, 1)).Render(header)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, logo)
+	joined := lipgloss.JoinHorizontal(lipgloss.Bottom, left, logo)
+	return joined
 }
 
 // repeatSectionGaps

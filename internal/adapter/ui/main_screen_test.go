@@ -40,15 +40,31 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
 	}
-	found := false
-	for _, line := range strings.Split(layout.header, "\n") {
-		if strings.Contains(line, "QA_DB") && strings.Contains(line, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
-			found = true
-			break
+
+	// With the logo in the top-right corner, the procedure call may wrap to a
+	// line immediately below the database name line instead of being on the
+	// same line. Either arrangement is acceptable as long as the procedure
+	// call appears in the header, close to the database name.
+	headerLines := strings.Split(layout.header, "\n")
+	dbLineIdx := -1
+	procLineIdx := -1
+	for i, line := range headerLines {
+		if dbLineIdx == -1 && strings.Contains(line, "QA_DB") {
+			dbLineIdx = i
+		}
+		if procLineIdx == -1 && strings.Contains(line, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+			procLineIdx = i
 		}
 	}
-	if !found {
-		t.Fatalf("header should place procedure call next to database name, got: %s", layout.header)
+	if dbLineIdx == -1 {
+		t.Fatalf("header should contain database name, got: %s", layout.header)
+	}
+	if procLineIdx == -1 {
+		t.Fatalf("header should contain procedure call, got: %s", layout.header)
+	}
+	// Procedure call should be on the same line or the line immediately after the database name.
+	if procLineIdx != dbLineIdx && procLineIdx != dbLineIdx+1 {
+		t.Fatalf("procedure call should be near database name (same line or next line), got dbLine=%d procLine=%d. Header:\n%s", dbLineIdx, procLineIdx, layout.header)
 	}
 }
 

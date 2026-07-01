@@ -136,6 +136,57 @@ func TestComputeMainLayout_HidesTopRightLogoOnNarrowScreens(t *testing.T) {
 	}
 }
 
+func TestComputeMainLayout_StatusBarFollowsHeaderWithNoGap(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+
+	// The layout calculation reserves mainGapAfterHeader blank spacer lines
+	// between the header and the status bar. With it set to 0, the status bar
+	// should immediately follow the header with no blank line between them.
+	// We verify this by checking that the status bar's top border line appears
+	// on the line right after the header's last content line, with no blank
+	// spacer in between.
+	m.initViewport()
+	rendered := m.viewMain()
+	plainRendered := stripANSIForTest(rendered)
+	allLines := strings.Split(plainRendered, "\n")
+
+	// Find the last line of the header (the line containing the subtitle text)
+	// and the first line of the status bar (the top border ╭─...─╮).
+	headerLastIdx := -1
+	statusBarFirstIdx := -1
+	for i, line := range allLines {
+		if strings.Contains(line, "Live Oracle trace viewer") {
+			headerLastIdx = i
+		}
+		if statusBarFirstIdx == -1 && strings.HasPrefix(strings.TrimSpace(line), "╭") {
+			statusBarFirstIdx = i
+		}
+	}
+
+	if headerLastIdx == -1 {
+		t.Fatalf("expected to find header subtitle line in rendered view")
+	}
+	if statusBarFirstIdx == -1 {
+		t.Fatalf("expected to find status bar top border in rendered view")
+	}
+
+	// With mainGapAfterHeader=0, the status bar's top border should be on the
+	// line immediately after the header's last line. If there's a gap, there
+	// will be a blank line between them.
+	if statusBarFirstIdx-headerLastIdx != 1 {
+		t.Fatalf("expected status bar to follow header directly (gap of 1), got gap of %d. headerLast=%d statusBarFirst=%d. Rendered:\n%s",
+			statusBarFirstIdx-headerLastIdx, headerLastIdx, statusBarFirstIdx, plainRendered)
+	}
+
+	// Also verify the line between them is not blank
+	betweenLine := allLines[headerLastIdx+1]
+	if betweenLine != allLines[statusBarFirstIdx] {
+		t.Fatalf("expected line between header and status bar to be the status bar itself")
+	}
+}
+
 // ==========================================
 // Helper Functions
 // ==========================================

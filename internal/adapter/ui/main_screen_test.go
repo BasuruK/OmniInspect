@@ -38,7 +38,8 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	if !strings.Contains(plainHeader, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
 		t.Fatalf("header should contain procedure call, got: %s", layout.header)
 	}
-	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
+	plainStatusBar := stripANSIForTest(layout.statusBar)
+	if strings.Contains(plainStatusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
 	}
 

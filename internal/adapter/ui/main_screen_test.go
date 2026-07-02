@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
+
+var ansiEscapePatternForTest = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+
+func stripANSIForTest(value string) string {
+	return ansiEscapePatternForTest.ReplaceAllString(value, "")
+}
 
 // ==========================================
 // Procedure Call Display Tests
@@ -26,22 +33,40 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
 
 	layout := m.computeMainLayout()
+	plainHeader := stripANSIForTest(layout.header)
 
-	if !strings.Contains(layout.header, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+	if !strings.Contains(plainHeader, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
 		t.Fatalf("header should contain procedure call, got: %s", layout.header)
 	}
-	if strings.Contains(layout.statusBar, "TRACE_MESSAGE_") {
+	plainStatusBar := stripANSIForTest(layout.statusBar)
+	if strings.Contains(plainStatusBar, "TRACE_MESSAGE_") {
 		t.Fatalf("status bar should not contain procedure call, got: %s", layout.statusBar)
 	}
-	found := false
-	for _, line := range strings.Split(layout.header, "\n") {
-		if strings.Contains(line, "QA_DB") && strings.Contains(line, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
-			found = true
-			break
+
+	// With the logo in the top-right corner, the procedure call may wrap to a
+	// line immediately below the database name line instead of being on the
+	// same line. Either arrangement is acceptable as long as the procedure
+	// call appears in the header, close to the database name.
+	headerLines := strings.Split(plainHeader, "\n")
+	dbLineIdx := -1
+	procLineIdx := -1
+	for i, line := range headerLines {
+		if dbLineIdx == -1 && strings.Contains(line, "QA_DB") {
+			dbLineIdx = i
+		}
+		if procLineIdx == -1 && strings.Contains(line, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+			procLineIdx = i
 		}
 	}
-	if !found {
-		t.Fatalf("header should place procedure call next to database name, got: %s", layout.header)
+	if dbLineIdx == -1 {
+		t.Fatalf("header should contain database name, got: %s", layout.header)
+	}
+	if procLineIdx == -1 {
+		t.Fatalf("header should contain procedure call, got: %s", layout.header)
+	}
+	// Procedure call should be on the same line or the line immediately after the database name.
+	if procLineIdx != dbLineIdx && procLineIdx != dbLineIdx+1 {
+		t.Fatalf("procedure call should be near database name (same line or next line), got dbLine=%d procLine=%d. Header:\n%s", dbLineIdx, procLineIdx, layout.header)
 	}
 }
 
@@ -97,6 +122,87 @@ func TestMainViewWithProcedureCallStaysWithinTerminalAtNarrowWidth(t *testing.T)
 	rendered := m.viewMain()
 
 	assertRenderedWithinTerminal(t, rendered, m.width, m.height)
+}
+
+func TestComputeMainLayout_IncludesTopRightLogoOnWideScreens(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+	layout := m.computeMainLayout()
+	expectedLogo := mainCornerLogoASCII
+	plainHeader := stripANSIForTest(layout.header)
+
+	for _, logoLine := range strings.Split(expectedLogo, "\n") {
+		if !strings.Contains(plainHeader, logoLine) {
+			t.Fatalf("expected header to include ASCII logo line %q, got: %s", logoLine, layout.header)
+		}
+	}
+}
+
+func TestComputeMainLayout_HidesTopRightLogoOnNarrowScreens(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 12, 24)
+	layout := m.computeMainLayout()
+	expectedLogo := mainCornerLogoASCII
+	plainHeader := stripANSIForTest(layout.header)
+
+	for _, logoLine := range strings.Split(expectedLogo, "\n") {
+		if strings.Contains(plainHeader, logoLine) {
+			t.Fatalf("expected header logo to be hidden on narrow screens, got: %s", layout.header)
+		}
+	}
+}
+
+func TestComputeMainLayout_StatusBarFollowsHeaderWithNoGap(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 120, 36)
+
+	// The layout calculation reserves mainGapAfterHeader blank spacer lines
+	// between the header and the status bar. With it set to 0, the status bar
+	// should immediately follow the header with no blank line between them.
+	// We verify this by checking that the status bar's top border line appears
+	// on the line right after the header's last content line, with no blank
+	// spacer in between.
+	m.initViewport()
+	rendered := m.viewMain()
+	plainRendered := stripANSIForTest(rendered)
+	allLines := strings.Split(plainRendered, "\n")
+
+	// Find the last line of the header (the line containing the subtitle text)
+	// and the first line of the status bar (the top border ╭─...─╮).
+	headerLastIdx := -1
+	statusBarFirstIdx := -1
+	for i, line := range allLines {
+		if strings.Contains(line, "Live Oracle trace viewer") {
+			headerLastIdx = i
+		}
+		if statusBarFirstIdx == -1 && strings.HasPrefix(strings.TrimSpace(line), "╭") {
+			statusBarFirstIdx = i
+		}
+	}
+
+	if headerLastIdx == -1 {
+		t.Fatalf("expected to find header subtitle line in rendered view")
+	}
+	if statusBarFirstIdx == -1 {
+		t.Fatalf("expected to find status bar top border in rendered view")
+	}
+
+	// With mainGapAfterHeader=0, the status bar's top border should be on the
+	// line immediately after the header's last line. If there's a gap, there
+	// will be a blank line between them.
+	if statusBarFirstIdx-headerLastIdx != 1 {
+		t.Fatalf("expected status bar to follow header directly (gap of 1), got gap of %d. headerLast=%d statusBarFirst=%d. Rendered:\n%s",
+			statusBarFirstIdx-headerLastIdx, headerLastIdx, statusBarFirstIdx, plainRendered)
+	}
+
+	// Also verify the line between them is not blank
+	betweenLine := allLines[headerLastIdx+1]
+	if betweenLine != allLines[statusBarFirstIdx] {
+		t.Fatalf("expected line between header and status bar to be the status bar itself")
+	}
 }
 
 // ==========================================

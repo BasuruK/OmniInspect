@@ -119,6 +119,15 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		}
 		return m, nil
 
+	// Easter Egg ball-physics animation tick — reschedules itself only while the
+	// overlay is open, so it naturally stops when the user closes it.
+	case easterEggTickMsg:
+		if !m.showEasterEgg {
+			return m, nil
+		}
+		m.stepEasterEggPhysics()
+		return m, easterEggTickCmd()
+
 	// New log message from event listener
 	case queueMessageMsg:
 		newPayload := len(msg.message.Payload())
@@ -177,6 +186,14 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		// Easter Egg overlay keyboard handling
+		if m.showEasterEgg {
+			switch msg.String() {
+			case "alt+m", "esc":
+				m.showEasterEgg = false
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "a":
 			// Toggle auto-scroll
@@ -216,6 +233,11 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			// Open help overlay
 			m.showHelp = true
 			return m, nil
+		case "alt+m":
+			// Open Easter Egg message box, reset pendulum physics, start animation ticks
+			m.showEasterEgg = true
+			m.resetEasterEggPhysics()
+			return m, easterEggTickCmd()
 		case "s":
 			// Open settings
 			webhookConfig, err := m.boltAdapter.GetWebhookConfig()

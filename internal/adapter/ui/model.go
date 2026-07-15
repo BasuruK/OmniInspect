@@ -163,6 +163,16 @@ type Model struct {
 
 	// showHelp controls whether the in-app help overlay is visible
 	showHelp bool
+
+	// showEasterEgg controls whether the Easter Egg message box is visible
+	showEasterEgg bool
+
+	// Easter Egg double-pendulum physics state (reset each time the overlay opens)
+	easterEggTheta1 float64    // inner arm angle from vertical (radians)
+	easterEggTheta2 float64    // outer arm angle from vertical (radians)
+	easterEggOmega1 float64    // inner angular velocity
+	easterEggOmega2 float64    // outer angular velocity
+	easterEggTrace  []eggPoint // recent inner-bob positions, oldest first
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -512,6 +522,8 @@ func (m *Model) View() tea.View {
 				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)
 			} else if m.showHelp {
 				content = renderCenteredOverlay(content, m.renderHelpOverlay(), m.width, m.height)
+			} else if m.showEasterEgg {
+				content = renderCenteredOverlay(content, m.renderEasterEggOverlay(), m.width, m.height)
 			}
 		}
 	case screenOnboarding:

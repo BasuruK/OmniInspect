@@ -163,6 +163,21 @@ type Model struct {
 
 	// showHelp controls whether the in-app help overlay is visible
 	showHelp bool
+
+	// showEasterEgg controls whether the Easter Egg message box is visible
+	showEasterEgg bool
+
+	// easterEggSession is incremented each time the overlay is opened, so tick
+	// messages from a previous (now-closed-and-reopened) animation loop are
+	// discarded instead of running concurrently with the current loop.
+	easterEggSession int
+
+	// Easter Egg double-pendulum physics state (reset each time the overlay opens)
+	easterEggTheta1 float64    // inner arm angle from vertical (radians)
+	easterEggTheta2 float64    // outer arm angle from vertical (radians)
+	easterEggOmega1 float64    // inner angular velocity
+	easterEggOmega2 float64    // outer angular velocity
+	easterEggTrace  []eggPoint // recent outer-bob positions, oldest first
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -417,7 +432,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			// Do NOT quit if an overlay is visible — consume the signal.
-			if !m.showHelp {
+			if !m.showHelp && !m.showEasterEgg {
 				if m.tracerService != nil {
 					m.tracerService.StopConnectionListener()
 				}
@@ -426,8 +441,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "q":
 			// Only quit from screens that don't need 'q' for navigation.
-			// Do NOT quit if an overlay (Help, DB, Webhook) is visible.
-			if !m.showHelp && ((m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible)) {
+			// Do NOT quit if an overlay (Help, DB, Webhook, Easter Egg) is visible.
+			if !m.showHelp && !m.showEasterEgg && ((m.screen == screenMain && !m.dbSettings.visible && !m.webhookSettings.visible) || m.screen == screenWelcome || (m.screen == screenLoading && !m.dbSettings.visible)) {
 				if m.tracerService != nil {
 					m.tracerService.StopConnectionListener()
 				}
@@ -512,6 +527,8 @@ func (m *Model) View() tea.View {
 				content = renderCenteredOverlay(content, m.viewWebhookSettings(), m.width, m.height)
 			} else if m.showHelp {
 				content = renderCenteredOverlay(content, m.renderHelpOverlay(), m.width, m.height)
+			} else if m.showEasterEgg {
+				content = renderCenteredOverlay(content, m.renderEasterEggOverlay(), m.width, m.height)
 			}
 		}
 	case screenOnboarding:

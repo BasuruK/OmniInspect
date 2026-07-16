@@ -120,13 +120,16 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 		return m, nil
 
 	// Easter Egg ball-physics animation tick — reschedules itself only while the
-	// overlay is open, so it naturally stops when the user closes it.
+	// overlay is open, so it naturally stops when the user closes it. The
+	// session ID guards against a stale tick chain (from a previous open) still
+	// being in flight when the overlay is reopened, which would otherwise start
+	// a second, concurrent animation loop.
 	case easterEggTickMsg:
-		if !m.showEasterEgg {
+		if !m.showEasterEgg || msg.session != m.easterEggSession {
 			return m, nil
 		}
 		m.stepEasterEggPhysics()
-		return m, easterEggTickCmd()
+		return m, easterEggTickCmd(m.easterEggSession)
 
 	// New log message from event listener
 	case queueMessageMsg:
@@ -234,10 +237,12 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 			m.showHelp = true
 			return m, nil
 		case "alt+m":
-			// Open Easter Egg message box, reset pendulum physics, start animation ticks
+			// Open Easter Egg message box, reset pendulum physics, start animation ticks.
+			// Bump the session so any stale tick chain from a previous open is ignored.
 			m.showEasterEgg = true
+			m.easterEggSession++
 			m.resetEasterEggPhysics()
-			return m, easterEggTickCmd()
+			return m, easterEggTickCmd(m.easterEggSession)
 		case "s":
 			// Open settings
 			webhookConfig, err := m.boltAdapter.GetWebhookConfig()

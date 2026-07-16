@@ -59,13 +59,19 @@ const (
 	easterEggGridRows     = 11 // rendered grid height, rows below the pivot
 )
 
-// easterEggTickMsg drives the pendulum animation frame-by-frame.
-type easterEggTickMsg time.Time
+// easterEggTickMsg drives the pendulum animation frame-by-frame. It carries
+// the session ID it was scheduled under so stale ticks from a previous
+// open-then-close-then-reopen cycle can be discarded instead of running a
+// second, concurrent animation loop.
+type easterEggTickMsg struct {
+	t       time.Time
+	session int
+}
 
-// easterEggTickCmd schedules the next animation frame.
-func easterEggTickCmd() tea.Cmd {
+// easterEggTickCmd schedules the next animation frame for the given session.
+func easterEggTickCmd(session int) tea.Cmd {
 	return tea.Tick(easterEggTickInterval, func(t time.Time) tea.Msg {
-		return easterEggTickMsg(t)
+		return easterEggTickMsg{t: t, session: session}
 	})
 }
 

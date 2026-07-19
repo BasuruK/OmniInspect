@@ -143,6 +143,7 @@ type Model struct {
 	dbSettingsRepo    ports.DatabaseSettingsRepository
 	dbAdapter         ports.DatabaseRepository
 	permissionService *permissions.PermissionService
+	traceAppender     ports.TraceAppender
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
 	updaterService    *updaterSvc.UpdaterService
@@ -193,7 +194,8 @@ type ModelOpts struct {
 	UpdaterService     *updaterSvc.UpdaterService
 	AppConfig          *domain.DatabaseSettings // Optional — onboarding screen populates this
 	EventChannel       chan *domain.QueueMessage
-	UpdateEventChannel chan tea.Msg // Optional - can be created by Model if not provided
+	UpdateEventChannel chan tea.Msg        // Optional - can be created by Model if not provided
+	TraceAppender      ports.TraceAppender // Optional — shared buffer for non-UI consumers (MCP server, tests)
 }
 
 func NewModel(opts ModelOpts) (*Model, error) {
@@ -250,6 +252,7 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		app:                opts.App,
 		dbAdapter:          opts.DBAdapter,
 		permissionService:  opts.PermissionService,
+		traceAppender:      opts.TraceAppender,
 		tracerService:      opts.TracerService,
 		subscriberService:  opts.SubscriberService,
 		updaterService:     opts.UpdaterService,
@@ -389,7 +392,7 @@ func (m *Model) initializeServices() error {
 	}
 	if m.tracerService == nil {
 		var err error
-		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel)
+		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel, m.traceAppender)
 		if err != nil {
 			return fmt.Errorf("initializeServices: failed to create tracer service: %w", err)
 		}

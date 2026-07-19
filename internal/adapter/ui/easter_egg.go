@@ -45,11 +45,11 @@ func (m *Model) renderEasterEggOverlay() string {
 // bright, live rig.
 
 const (
-	pendulumG         = 9.8  // gravity
-	pendulumL1        = 1.0  // inner arm length
-	pendulumL2        = 1.0  // outer arm length
-	pendulumM1        = 1.0  // inner bob mass
-	pendulumM2        = 1.0  // outer bob mass
+	pendulumG        = 9.8  // gravity
+	pendulumL1       = 1.0  // inner arm length
+	pendulumL2       = 1.0  // outer arm length
+	pendulumM1       = 1.0  // inner bob mass
+	pendulumM2       = 1.0  // outer bob mass
 	pendulumDT       = 0.02 // physics integration step (seconds)
 	pendulumSubsteps = 3    // integration steps per animation tick
 

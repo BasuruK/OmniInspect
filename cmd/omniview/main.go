@@ -5,6 +5,7 @@ import (
 	"OmniView/internal/adapter/security/credcipher"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
+	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/adapter/ui"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
@@ -20,6 +21,21 @@ import (
 
 func main() {
 	omniApp := app.New()
+
+	// Subcommand routing. `omniview mcp [--help]` starts the MCP server
+	// instead of the TUI.
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if len(os.Args) > 2 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printMCPUsage()
+			return
+		}
+		if err := runMCP(omniApp); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(omniApp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -94,6 +110,11 @@ func run(omniApp *app.App) error {
 	eventCh := make(chan *domain.QueueMessage, 100)
 	updaterService := updaterSvc.NewUpdaterService(omniApp.GetVersion())
 
+	// Shared trace buffer — single source of truth for both the TUI and any
+	// non-UI consumers (e.g. the MCP server). Capacity matches the bounded
+	// requirement from the M1 epic spec.
+	traceAppender := tracebuffer.New(10000)
+
 	// ── Phase 3: Start TUI ───────────────────────
 
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
@@ -111,6 +132,7 @@ func run(omniApp *app.App) error {
 		DBSettingsRepo: dbSettingsRepo,
 		EventChannel:   eventCh,
 		UpdaterService: updaterService,
+		TraceAppender:  traceAppender,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create UI model: %w", err)

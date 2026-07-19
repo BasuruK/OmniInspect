@@ -1,0 +1,398 @@
+package mcpserver
+
+import (
+	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// ==========================================
+// Helpers
+// ==========================================
+
+// fakeDBAdapter is a ports.DatabaseRepository stub used for connect_database
+// tests. Only Connect and Close are exercised.
+type fakeDBAdapter struct {
+	connectErr error
+	closeErr   error
+	connected  bool
+	closed     bool
+}
+
+func (f *fakeDBAdapter) Connect(ctx context.Context) error {
+	if f.connectErr != nil {
+		return f.connectErr
+	}
+	f.connected = true
+	return nil
+}
+
+func (f *fakeDBAdapter) Close(ctx context.Context) error {
+	f.closed = true
+	return f.closeErr
+}
+
+// Unused interface methods.
+func (f *fakeDBAdapter) RegisterNewSubscriber(context.Context, domain.Subscriber) error {
+	return nil
+}
+func (f *fakeDBAdapter) UnregisterSubscriber(context.Context, domain.Subscriber) error {
+	return nil
+}
+func (f *fakeDBAdapter) BulkDequeueTracerMessages(context.Context, domain.Subscriber) ([]string, [][]byte, int, error) {
+	return nil, nil, 0, nil
+}
+func (f *fakeDBAdapter) CheckQueueDepth(context.Context, string, string) (int, error) {
+	return 0, nil
+}
+func (f *fakeDBAdapter) Fetch(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+func (f *fakeDBAdapter) ExecuteStatement(context.Context, string) error { return nil }
+func (f *fakeDBAdapter) ExecuteWithParams(context.Context, string, map[string]interface{}) error {
+	return nil
+}
+func (f *fakeDBAdapter) FetchWithParams(context.Context, string, map[string]interface{}) ([]string, error) {
+	return nil, nil
+}
+func (f *fakeDBAdapter) PackageExists(context.Context, string) (bool, error) {
+	return true, nil
+}
+func (f *fakeDBAdapter) ProcedureExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (f *fakeDBAdapter) DeployPackages(context.Context, []string, []string, []string, []string) error {
+	return nil
+}
+func (f *fakeDBAdapter) DeployFile(context.Context, string) error { return nil }
+
+// Compile-time check.
+var _ ports.DatabaseRepository = (*fakeDBAdapter)(nil)
+
+// depsWithFakeDB returns Deps whose factory builds a fakeDBAdapter. The
+// returned helper lets tests pre-program the adapter's behaviour.
+func depsWithFakeDB(t *testing.T) (Deps, *fakeDBAdapter, func()) {
+	deps, cleanup := testDeps(t)
+	fake := &fakeDBAdapter{}
+	deps.DBAdapterFactory = func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+		return fake, nil
+	}
+	return deps, fake, cleanup
+}
+
+// callTool wraps session.CallTool and decodes a JSON payload from the
+// single TextContent.
+func callTool(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) mcp.CallToolResult {
+	t.Helper()
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      name,
+		Arguments: args,
+	})
+	if err != nil {
+		t.Fatalf("CallTool(%s): %v", name, err)
+	}
+	return *res
+}
+
+// ==========================================
+// list_databases
+// ==========================================
+
+func TestListDatabases_EmptyByDefault(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	res := callTool(t, session, "list_databases", map[string]any{})
+
+	if res.IsError {
+		t.Fatalf("expected success, got IsError: %+v", res.Content)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var out databaseListOutput
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Total != 0 || len(out.Databases) != 0 {
+		t.Fatalf("expected empty list, got %+v", out)
+	}
+}
+
+func TestListDatabases_SkipsPasswordAndFlagsActive(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	settings, err := domain.NewDatabaseSettings(
+		"prod-1", "FREEPDB1", "db.example.com",
+		domain.Port(1521), "admin", "supersecret",
+	)
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := deps.Connector.SetActive(context.Background(), settings.StorageKey()); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "list_databases", map[string]any{})
+	if res.IsError {
+		t.Fatalf("expected success, got IsError: %+v", res.Content)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	if got := tc.Text; contains(got, "supersecret") || contains(got, "Password") {
+		t.Fatalf("password leaked into response: %s", got)
+	}
+
+	var out databaseListOutput
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Total != 1 || len(out.Databases) != 1 {
+		t.Fatalf("expected 1 entry, got %+v", out)
+	}
+	row := out.Databases[0]
+	if row.DatabaseID != "prod-1" {
+		t.Fatalf("expected database_id=prod-1, got %q", row.DatabaseID)
+	}
+	if row.Port != 1521 {
+		t.Fatalf("expected port=1521, got %d", row.Port)
+	}
+	if !row.IsActive {
+		t.Fatalf("expected is_active=true")
+	}
+}
+
+// ==========================================
+// add_database
+// ==========================================
+
+func TestAddDatabase_RequiresConfirmationFirst(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	res := callTool(t, session, "add_database", map[string]any{
+		"id":       "prod-1",
+		"host":     "db.example.com",
+		"port":     1521,
+		"service":  "FREEPDB1",
+		"username": "admin",
+		"password": "secret",
+	})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true before confirmation, got %+v", res)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "password_in_plaintext" {
+		t.Fatalf("expected code=password_in_plaintext, got %v", payload["code"])
+	}
+	if payload["confirm_required"] != true {
+		t.Fatalf("expected confirm_required=true, got %v", payload["confirm_required"])
+	}
+
+	// Confirm no record was persisted.
+	all, err := deps.DBSettingsRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("expected nothing persisted, got %d", len(all))
+	}
+}
+
+func TestAddDatabase_PersistsAfterConfirmation(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "add_database",
+		Arguments: map[string]any{
+			"id":                            "prod-2",
+			"host":                          "db.example.com",
+			"port":                          1521,
+			"service":                       "FREEPDB1",
+			"username":                      "admin",
+			"password":                      "secret",
+			"confirm_password_in_plaintext": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if res.IsError {
+		var dump string
+		if len(res.Content) > 0 {
+			if tc, ok := res.Content[0].(*mcp.TextContent); ok {
+				dump = tc.Text
+			}
+		}
+		t.Fatalf("expected success, got IsError: %s", dump)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var out addDatabaseOutput
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !out.OK || out.ID == "" {
+		t.Fatalf("expected ok=true and non-empty id, got %+v", out)
+	}
+
+	// Verify persisted.
+	all, err := deps.DBSettingsRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(all))
+	}
+	if all[0].DatabaseID() != "prod-2" {
+		t.Fatalf("expected prod-2, got %s", all[0].DatabaseID())
+	}
+}
+
+func TestAddDatabase_RejectsInvalidInput(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "add_database",
+		Arguments: map[string]any{
+			"id":       "prod-3",
+			"host":     "db.example.com",
+			"port":     999999, // out of range
+			"service":  "FREEPDB1",
+			"username": "admin",
+			"password": "secret",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error from invalid port")
+	}
+}
+
+// ==========================================
+// connect_database
+// ==========================================
+
+func TestConnectDatabase_HappyPath(t *testing.T) {
+	deps, fake, cleanup := depsWithFakeDB(t)
+	defer cleanup()
+
+	settings, err := domain.NewDatabaseSettings(
+		"prod-1", "FREEPDB1", "db.example.com",
+		domain.Port(1521), "admin", "secret",
+	)
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "connect_database", map[string]any{
+		"id": settings.StorageKey(),
+	})
+	if res.IsError {
+		t.Fatalf("expected success, got IsError: %+v", res.Content)
+	}
+	if !fake.connected {
+		t.Fatal("expected adapter.Connect to be invoked")
+	}
+
+	tc := res.Content[0].(*mcp.TextContent)
+	var out connectDatabaseOutput
+	if err := json.Unmarshal([]byte(tc.Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !out.OK {
+		t.Fatalf("expected ok=true, got %+v", out)
+	}
+	if out.ActiveDatabase != settings.StorageKey() {
+		t.Fatalf("expected active=%q, got %q", settings.StorageKey(), out.ActiveDatabase)
+	}
+	if got := deps.Connector.Active(); got != settings.StorageKey() {
+		t.Fatalf("expected Connector.Active=%q, got %q", settings.StorageKey(), got)
+	}
+}
+
+func TestConnectDatabase_Unreachable(t *testing.T) {
+	deps, fake, cleanup := depsWithFakeDB(t)
+	defer cleanup()
+	fake.connectErr = errors.New("oracle unreachable")
+
+	settings, err := domain.NewDatabaseSettings(
+		"prod-1", "FREEPDB1", "db.example.com",
+		domain.Port(1521), "admin", "secret",
+	)
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "connect_database", map[string]any{
+		"id": settings.StorageKey(),
+	})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true on unreachable, got %+v", res)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "db_unreachable" {
+		t.Fatalf("expected code=db_unreachable, got %v", payload["code"])
+	}
+	// Active must NOT have changed.
+	if got := deps.Connector.Active(); got != "" {
+		t.Fatalf("active should remain empty after failure, got %q", got)
+	}
+}
+
+func TestConnectDatabase_UnknownID(t *testing.T) {
+	deps, _, cleanup := depsWithFakeDB(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "connect_database",
+		Arguments: map[string]any{"id": "DBconfig:nope"},
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown id")
+	}
+}
+
+// ==========================================
+// Helpers
+// ==========================================
+
+func contains(haystack, needle string) bool {
+	if len(needle) == 0 {
+		return true
+	}
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}

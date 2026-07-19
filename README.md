@@ -463,6 +463,63 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
                                         └─────────────┘
 ```
 
+## MCP Server (Model Context Protocol)
+
+OmniView ships with a built-in MCP server that exposes the trace buffer and database configuration to MCP-compatible clients (Claude Desktop, Claude Code, etc.). The server uses the same BoltDB, credential store, and Oracle connection as the TUI — both surfaces read from the shared `omniview.bolt` file.
+
+### Start the server
+
+```bash
+# After `make build` (or running a release binary):
+./omniview mcp
+```
+
+All log output is redirected to `omniview.log` so the stdio stream stays clean for MCP framing.
+
+### Tools exposed
+
+| Tool | Purpose |
+|------|---------|
+| `get_status` | App version, active database id, broadcast mode, trace buffer depth, uptime |
+| `set_broadcast_mode` | Switch broadcast filter (`global` / `subscriber` / `broadcast`) and persist |
+| `list_databases` | List every persisted database configuration (no passwords) |
+| `add_database` | Persist a new database config. Requires explicit `confirm_password_in_plaintext=true` due to the security risk of sending secrets over MCP |
+| `connect_database` | Open a live Oracle connection, mark it active, and persist the choice (5 s timeout) |
+| `list_traces` | List recent trace messages with optional `limit`, `since_id`, `level`, `process_name` filters |
+| `get_trace` | Fetch a single trace message by id |
+| `clear_traces` | Empty the trace buffer |
+
+### Claude Desktop
+
+Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent path on Windows/Linux:
+
+```json
+{
+  "mcpServers": {
+    "omniview": {
+      "command": "/absolute/path/to/omniview",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The `omniview` server should appear under the available MCP servers.
+
+### Claude Code
+
+Register the server from the CLI:
+
+```bash
+claude mcp add omniview -- /absolute/path/to/omniview mcp
+```
+
+To verify, run `/mcp` inside Claude Code — `omniview` should appear with the tools listed above.
+
+### Security note
+
+The `add_database` tool requires the caller to set `confirm_password_in_plaintext=true` on a second call. The first call returns a `password_in_plaintext` error explaining the risk. This is intentional: MCP traffic is visible to the host client and process listings, so the user must explicitly opt in before a credential crosses the boundary.
+
 ## Roadmap
   
 ### Completed
@@ -475,6 +532,7 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 - [x] Multiple database support with dynamic switching
 - [x] Multi-subscriber support with subscriber-specific procedure generation
 - [x] Dynamic subscription management and targeted message delivery
+- [x] MCP server: shared trace buffer, connector, and 8 tools (status, broadcast, databases, traces)
 
 ### Planned
 

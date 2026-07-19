@@ -217,8 +217,8 @@ var (
 				Bold(true)
 
 	DangerZoneStyle = lipgloss.NewStyle().
-				Foreground(ErrorColor).
-				Bold(true)
+			Foreground(ErrorColor).
+			Bold(true)
 
 	FieldBorderStyle = lipgloss.NewStyle().
 				Foreground(SurfaceColor)

@@ -128,10 +128,14 @@ func StopAll(tracerService *TracerService) {
 }
 
 // Service: Manages package deployments
-// Injects a DatabaseRepository and ConfigRepository to interact with the database
+// Injects a DatabaseRepository and ConfigRepository to interact with the database.
+// traceAppender is an optional sink for every dequeued message; when non-nil,
+// TracerService publishes into it so non-UI consumers (MCP server, tests) share
+// the same source of truth as the TUI.
 type TracerService struct {
 	db               ports.DatabaseRepository
 	bolt             ports.ConfigRepository
+	traceAppender    ports.TraceAppender
 	processMu        sync.Mutex
 	subscriberMu     sync.Mutex
 	eventChannel     chan *domain.QueueMessage
@@ -146,6 +150,7 @@ func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
+	traceAppender ports.TraceAppender,
 ) (*TracerService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
@@ -155,9 +160,10 @@ func NewTracerService(
 	}
 
 	return &TracerService{
-		db:           db,
-		bolt:         bolt,
-		eventChannel: eventChannel,
+		db:            db,
+		bolt:          bolt,
+		eventChannel:  eventChannel,
+		traceAppender: traceAppender,
 	}, nil
 }
 
@@ -318,6 +324,16 @@ func (ts *TracerService) processBatch(ctx context.Context, subscriber *domain.Su
 
 // handleTracerMessage processes a single tracer message and dispatches to UI and webhooks
 func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.QueueMessage) bool {
+	// Publish to the shared trace appender first so non-UI consumers (MCP
+	// server, tests) observe every dequeued message even if the TUI channel
+	// is full or closed. Best-effort: an append error must never break the
+	// TUI feed.
+	if ts.traceAppender != nil {
+		if err := ts.traceAppender.Append(ctx, msg); err != nil {
+			logger.Warn("trace appender append failed", "msgID", msg.MessageID(), "error", err)
+		}
+	}
+
 	// Always send to TUI if channel is available.
 	// Non-blocking: processMu is held by the caller (processBatch), so we must not
 	// block here — a full channel would stall the lock until the UI consumer catches up.

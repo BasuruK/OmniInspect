@@ -225,7 +225,7 @@ func newTestModelForSettings(t *testing.T) *Model {
 func mustNewTracerService(t *testing.T, db ports.DatabaseRepository, eventChannel chan *domain.QueueMessage) *tracer.TracerService {
 	t.Helper()
 
-	service, err := tracer.NewTracerService(db, stubConfigRepository{}, eventChannel)
+	service, err := tracer.NewTracerService(db, stubConfigRepository{}, eventChannel, nil)
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

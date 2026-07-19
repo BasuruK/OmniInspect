@@ -1,5 +1,12 @@
 # Agent Guidelines for OmniView/OmniInspect
 
+## Response Style
+
+- Concise. Short sentences, terse lists, tables over prose.
+- Trade grammar for brevity. Drop filler words.
+- No preamble, no restating the question.
+- Code references via clickable links, never bare line numbers.
+
 ## Project Overview
 
 OmniView is a Message Passing TUI application that connects to Oracle Database and displays real-time trace messages via Oracle Advanced Queuing (AQ). Built with Go, Bubble Tea v2, and ODPI-C for Oracle connectivity.

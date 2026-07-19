@@ -144,6 +144,35 @@ type ProcedureGeneratorRepository interface {
 }
 
 // ==========================================
+// Trace Store Port
+// ==========================================
+
+// TraceAppender is the shared, append-only trace buffer used by the TUI and
+// the MCP server. Implementations must be safe for concurrent use by
+// multiple readers and a single (or multiple) writer(s).
+type TraceAppender interface {
+	// Append adds a message to the store. Implementations may evict older
+	// entries when capacity is exceeded. Thread-safe.
+	Append(ctx context.Context, msg *domain.QueueMessage) error
+
+	// List returns up to `limit` messages, optionally starting after the
+	// message whose ID equals `sinceID` (exclusive). When sinceID is empty,
+	// the newest `limit` messages are returned in newest-first order.
+	// Thread-safe.
+	List(ctx context.Context, limit int, sinceID string) ([]*domain.QueueMessage, error)
+
+	// GetByID returns the message with the given ID or nil if not found.
+	// Thread-safe.
+	GetByID(ctx context.Context, id string) (*domain.QueueMessage, error)
+
+	// Clear removes all messages from the store. Thread-safe.
+	Clear(ctx context.Context) error
+
+	// Len returns the current number of stored messages. Thread-safe.
+	Len(ctx context.Context) int
+}
+
+// ==========================================
 // Config Repository Interface (BoltDB)
 // ==========================================
 
@@ -182,4 +211,13 @@ type ConfigRepository interface {
 
 	// SetBroadcastMode stores the broadcast mode.
 	SetBroadcastMode(mode domain.BroadcastMode) error
+
+	// GetActiveDatabaseID returns the storage key (storage-prefixed id) of the
+	// currently active database. Returns an empty string when no active database
+	// has been recorded. Thread-safe.
+	GetActiveDatabaseID() (string, error)
+
+	// SetActiveDatabaseID records the storage key of the active database.
+	// Passing an empty id clears the active pointer. Thread-safe.
+	SetActiveDatabaseID(id string) error
 }

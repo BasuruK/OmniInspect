@@ -83,6 +83,8 @@ func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
 	return domain.BroadcastModeGlobal, nil
 }
 func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
+func (stubConfigRepository) GetActiveDatabaseID() (string, error)        { return "", nil }
+func (stubConfigRepository) SetActiveDatabaseID(string) error            { return nil }
 
 func newLoadingTestModel(t *testing.T, validated bool) *Model {
 	t.Helper()
@@ -101,7 +103,7 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel)
+	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, nil)
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

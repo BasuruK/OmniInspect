@@ -65,4 +65,7 @@ var (
 
 	// Internal/Adapter sentinel errors
 	ErrEarlyAbort = errors.New("early return: encrypted credential found")
+
+	// Connector errors
+	ErrNilConnector = errors.New("connector: nil receiver")
 )

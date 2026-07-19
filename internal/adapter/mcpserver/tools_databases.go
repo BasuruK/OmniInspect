@@ -201,6 +201,11 @@ func connectDatabase(s *Server) mcp.ToolHandler {
 		if adapter == nil {
 			return nil, fmt.Errorf("connect_database: adapter factory returned nil")
 		}
+		// Connector only persists the storage key, not the live adapter, so
+		// the handle we just built would otherwise leak. Close it now; the
+		// caller's identity (the active storage key) is preserved in BoltDB
+		// and the Connector's in-memory cache.
+		defer func() { _ = adapter.Close(ctx) }()
 
 		connectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
@@ -214,16 +219,8 @@ func connectDatabase(s *Server) mcp.ToolHandler {
 		}
 
 		if err := s.deps.Connector.SetActive(ctx, settings.StorageKey()); err != nil {
-			// Roll back the connection — we don't want a stale handle left open.
-			_ = adapter.Close(ctx)
 			return nil, fmt.Errorf("connect_database: persist active id: %w", err)
 		}
-
-		// Connector only persists the storage key, not the live adapter, so
-		// the handle we just built would otherwise leak. Close it now; the
-		// caller's identity (the active storage key) is preserved in BoltDB
-		// and the Connector's in-memory cache.
-		_ = adapter.Close(ctx)
 
 		return jsonToolResult(connectDatabaseOutput{
 			OK:             true,

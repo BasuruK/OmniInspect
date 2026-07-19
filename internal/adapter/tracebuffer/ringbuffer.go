@@ -53,10 +53,8 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	var drop *domain.QueueMessage
 	if r.size == r.capacity {
 		// Buffer is full: overwrite the oldest slot and advance head.
-		drop = r.buf[r.head]
 		r.buf[r.head] = msg
 		r.head = (r.head + 1) % r.capacity
 	} else {
@@ -65,7 +63,6 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 		r.buf[tail] = msg
 		r.size++
 	}
-	_ = drop // help GC; we already replaced the slot, drop is just a local.
 	return nil
 }
 

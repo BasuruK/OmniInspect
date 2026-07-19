@@ -333,6 +333,3 @@ func mustStored(bolt *fakeBoltConfig) string {
 	}
 	return stored
 }
-
-// Sanity-check that the fake doesn't accidentally double-count writes.
-var _ = atomic.Int32{}

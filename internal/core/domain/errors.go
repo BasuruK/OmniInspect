@@ -64,7 +64,9 @@ var (
 	ErrWebhookConfigNotFound = errors.New("webhook config not found")
 
 	// Internal/Adapter sentinel errors
-	ErrEarlyAbort = errors.New("early return: encrypted credential found")
+	ErrEarlyAbort          = errors.New("early return: encrypted credential found")
+	ErrBoltAdapterNotReady = errors.New("bolt adapter not initialised")
+	ErrBoltBucketNotFound  = errors.New("bolt bucket not found")
 
 	// Connector errors
 	ErrNilConnector = errors.New("connector: nil receiver")

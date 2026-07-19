@@ -11,14 +11,17 @@ import (
 // Ring Buffer
 // ==========================================
 
-// RingBuffer is a bounded, FIFO-evicting trace store backed by a slice.
-// It is safe for concurrent use by multiple goroutines.
+// RingBuffer is a bounded, FIFO-evicting trace store backed by a fixed-size
+// circular array. It is safe for concurrent use by multiple goroutines.
 //
-// The buffer holds at most `capacity` messages; once full, the oldest entry
-// is evicted on Append.
+// The buffer holds at most `capacity` messages; once full, Append overwrites
+// the oldest entry. The backing slice is allocated once at construction so
+// Append never reallocates.
 type RingBuffer struct {
 	mu       sync.RWMutex
-	items    []*domain.QueueMessage
+	buf      []*domain.QueueMessage
+	head     int // index of the oldest entry
+	size     int // current number of entries (0 <= size <= capacity)
 	capacity int
 }
 
@@ -32,14 +35,14 @@ func New(capacity int) *RingBuffer {
 		capacity = 1
 	}
 	return &RingBuffer{
-		items:    make([]*domain.QueueMessage, 0, capacity),
+		buf:      make([]*domain.QueueMessage, capacity),
 		capacity: capacity,
 	}
 }
 
-// Append adds a message to the buffer, evicting the oldest entry when at
-// capacity. Nil messages are ignored. ctx is honored only for cancellation;
-// the underlying storage is in-memory and performs no I/O.
+// Append adds a message to the buffer. On a full buffer, the oldest entry
+// is overwritten. Nil messages are ignored. ctx is honored only for
+// cancellation; the underlying storage is in-memory and performs no I/O.
 func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -50,11 +53,19 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.items) >= r.capacity {
-		// FIFO eviction: drop the oldest.
-		r.items = r.items[1:]
+	var drop *domain.QueueMessage
+	if r.size == r.capacity {
+		// Buffer is full: overwrite the oldest slot and advance head.
+		drop = r.buf[r.head]
+		r.buf[r.head] = msg
+		r.head = (r.head + 1) % r.capacity
+	} else {
+		// Tail = position of the next free slot = (head + size) mod cap.
+		tail := (r.head + r.size) % r.capacity
+		r.buf[tail] = msg
+		r.size++
 	}
-	r.items = append(r.items, msg)
+	_ = drop // help GC; we already replaced the slot, drop is just a local.
 	return nil
 }
 
@@ -74,10 +85,12 @@ func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*do
 
 	// Walk newest → oldest.
 	out := make([]*domain.QueueMessage, 0, limit)
-	for i := len(r.items) - 1; i >= 0 && len(out) < limit; i-- {
-		m := r.items[i]
+	for i := r.size - 1; i >= 0 && len(out) < limit; i-- {
+		// Map logical index i (0 = oldest, size-1 = newest) to physical index.
+		idx := (r.head + i) % r.capacity
+		m := r.buf[idx]
 		if sinceID != "" && m.MessageID() <= sinceID {
-			break
+			continue
 		}
 		out = append(out, m)
 	}
@@ -91,7 +104,9 @@ func (r *RingBuffer) GetByID(ctx context.Context, id string) (*domain.QueueMessa
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, m := range r.items {
+	for i := 0; i < r.size; i++ {
+		idx := (r.head + i) % r.capacity
+		m := r.buf[idx]
 		if m.MessageID() == id {
 			return m, nil
 		}
@@ -99,14 +114,20 @@ func (r *RingBuffer) GetByID(ctx context.Context, id string) (*domain.QueueMessa
 	return nil, nil
 }
 
-// Clear removes all messages.
+// Clear removes all messages and releases the references held by the
+// backing array so the GC can reclaim trace payloads.
 func (r *RingBuffer) Clear(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.items = r.items[:0]
+	for i := 0; i < r.size; i++ {
+		idx := (r.head + i) % r.capacity
+		r.buf[idx] = nil
+	}
+	r.head = 0
+	r.size = 0
 	return nil
 }
 
@@ -117,5 +138,5 @@ func (r *RingBuffer) Len(ctx context.Context) int {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return len(r.items)
+	return r.size
 }

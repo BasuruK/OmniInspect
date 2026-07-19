@@ -510,14 +510,14 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 // connected to right now" marker used by both the TUI and the MCP server.
 func (ba *BoltAdapter) GetActiveDatabaseID() (string, error) {
 	if ba == nil || ba.db == nil {
-		return "", fmt.Errorf("boltAdapter not initialized")
+		return "", fmt.Errorf("GetActiveDatabaseID: %w", domain.ErrBoltAdapterNotReady)
 	}
 
 	var id string
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("GetActiveDatabaseID: bucket %q: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		raw := b.Get([]byte(DefaultDatabaseConfigKey))
 		if raw == nil {
@@ -536,13 +536,13 @@ func (ba *BoltAdapter) GetActiveDatabaseID() (string, error) {
 // empty id clears the pointer so callers can express "no active DB".
 func (ba *BoltAdapter) SetActiveDatabaseID(id string) error {
 	if ba == nil || ba.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
+		return fmt.Errorf("SetActiveDatabaseID: %w", domain.ErrBoltAdapterNotReady)
 	}
 
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("SetActiveDatabaseID: bucket %q: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		if id == "" {
 			return b.Delete([]byte(DefaultDatabaseConfigKey))

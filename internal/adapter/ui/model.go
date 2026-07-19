@@ -392,7 +392,7 @@ func (m *Model) initializeServices() error {
 	}
 	if m.tracerService == nil {
 		var err error
-		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel, m.traceAppender)
+		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel, tracer.TracerServiceOpts{TraceAppender: m.traceAppender})
 		if err != nil {
 			return fmt.Errorf("initializeServices: failed to create tracer service: %w", err)
 		}

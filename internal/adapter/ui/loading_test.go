@@ -103,7 +103,7 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, nil)
+	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, tracer.TracerServiceOpts{})
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

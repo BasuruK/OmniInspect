@@ -85,12 +85,15 @@ func (c *Connector) SetActive(ctx context.Context, id string) error {
 		return nil
 	}
 
+	// BoltDB write and cache update must happen under the same lock so
+	// concurrent Active() readers cannot observe BoltDB committed while the
+	// in-memory cache still holds the previous value.
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err := c.bolt.SetActiveDatabaseID(id); err != nil {
 		return fmt.Errorf("connector: persist active id: %w", err)
 	}
-	c.mu.Lock()
 	c.id = id
 	c.hydrated = true
-	c.mu.Unlock()
 	return nil
 }

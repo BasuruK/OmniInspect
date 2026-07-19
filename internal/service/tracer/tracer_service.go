@@ -145,12 +145,20 @@ type TracerService struct {
 	activeSubscriber *domain.Subscriber
 }
 
+// TracerServiceOpts bundles the optional dependencies accepted by
+// NewTracerService. Required dependencies (db, bolt, eventChannel) stay as
+// positional arguments; this struct only carries fields that may legitimately
+// be omitted (nil) by callers.
+type TracerServiceOpts struct {
+	TraceAppender ports.TraceAppender
+}
+
 // Constructor: NewTracerService Constructor for TracerService
 func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
-	traceAppender ports.TraceAppender,
+	opts TracerServiceOpts,
 ) (*TracerService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
@@ -163,7 +171,7 @@ func NewTracerService(
 		db:            db,
 		bolt:          bolt,
 		eventChannel:  eventChannel,
-		traceAppender: traceAppender,
+		traceAppender: opts.TraceAppender,
 	}, nil
 }
 

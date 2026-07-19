@@ -53,7 +53,12 @@ func listTraces(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in listTracesInput
 		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return nil, fmt.Errorf("list_traces: decode arguments: %w", err)
+			result, mcpErr := mcpToolError("invalid_arguments",
+				fmt.Sprintf("list_traces: decode arguments: %v", err), nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 
 		limit := in.Limit
@@ -75,7 +80,12 @@ func listTraces(s *Server) mcp.ToolHandler {
 
 		messages, err := s.deps.TraceAppender.List(ctx, fetch, in.SinceID)
 		if err != nil {
-			return nil, fmt.Errorf("list_traces: %w", err)
+			result, mcpErr := mcpToolError("trace_list_failed",
+				fmt.Sprintf("list_traces: %v", err), nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 
 		levelFilter := strings.ToUpper(strings.TrimSpace(in.Level))
@@ -128,15 +138,30 @@ func getTrace(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in getTraceInput
 		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return nil, fmt.Errorf("get_trace: decode arguments: %w", err)
+			result, mcpErr := mcpToolError("invalid_arguments",
+				fmt.Sprintf("get_trace: decode arguments: %v", err), nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 		if in.MessageID == "" {
-			return nil, fmt.Errorf("get_trace: message_id is required")
+			result, mcpErr := mcpToolError("invalid_arguments",
+				"get_trace: message_id is required", nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 
 		msg, err := s.deps.TraceAppender.GetByID(ctx, in.MessageID)
 		if err != nil {
-			return nil, fmt.Errorf("get_trace: %w", err)
+			result, mcpErr := mcpToolError("trace_lookup_failed",
+				fmt.Sprintf("get_trace: %v", err), nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 		if msg == nil {
 			result, mcpErr := mcpToolError("not_found",
@@ -164,7 +189,12 @@ type clearTracesOutput struct {
 func clearTraces(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := s.deps.TraceAppender.Clear(ctx); err != nil {
-			return nil, fmt.Errorf("clear_traces: %w", err)
+			result, mcpErr := mcpToolError("trace_clear_failed",
+				fmt.Sprintf("clear_traces: %v", err), nil)
+			if mcpErr != nil {
+				return nil, mcpErr
+			}
+			return &result, nil
 		}
 		return jsonToolResult(clearTracesOutput{OK: true}), nil
 	}

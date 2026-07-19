@@ -219,6 +219,12 @@ func connectDatabase(s *Server) mcp.ToolHandler {
 			return nil, fmt.Errorf("connect_database: persist active id: %w", err)
 		}
 
+		// Connector only persists the storage key, not the live adapter, so
+		// the handle we just built would otherwise leak. Close it now; the
+		// caller's identity (the active storage key) is preserved in BoltDB
+		// and the Connector's in-memory cache.
+		_ = adapter.Close(ctx)
+
 		return jsonToolResult(connectDatabaseOutput{
 			OK:             true,
 			ActiveDatabase: settings.StorageKey(),

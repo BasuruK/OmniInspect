@@ -185,12 +185,17 @@ func TestGetTrace_RequiresID(t *testing.T) {
 	defer cleanup()
 	session := connectClientServer(t, deps)
 
-	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "get_trace",
-		Arguments: map[string]any{},
-	})
-	if err == nil {
-		t.Fatal("expected error when message_id is missing")
+	res := callTool(t, session, "get_trace", map[string]any{})
+	if !res.IsError {
+		t.Fatalf("expected IsError when message_id is missing")
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "invalid_arguments" {
+		t.Fatalf("expected code=invalid_arguments, got %v", payload["code"])
 	}
 }
 

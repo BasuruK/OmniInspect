@@ -36,11 +36,12 @@ type databaseListOutput struct {
 
 // listDatabases returns every persisted database configuration, flagging
 // the one currently marked active by the Connector.
-func listDatabases(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func listDatabases(s *Server) mcp.ToolHandlerFor[emptyInput, databaseListOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, databaseListOutput, error) {
 		all, err := s.deps.DBSettingsRepo.GetAll(ctx)
 		if err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("list_databases: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("list_databases: %v", err), nil)
+			return res, databaseListOutput{}, nil
 		}
 		active := s.deps.Connector.Active()
 		out := databaseListOutput{Databases: make([]databaseListEntry, 0, len(all))}
@@ -57,7 +58,7 @@ func listDatabases(s *Server) mcp.ToolHandler {
 			})
 		}
 		out.Total = len(out.Databases)
-		return jsonToolResult(out), nil
+		return nil, out, nil
 	}
 }
 
@@ -84,11 +85,12 @@ type addDatabaseOutput struct {
 
 // addDatabaseConfirmRequired is returned when the caller must resend with
 // confirm_password_in_plaintext=true.
-func addDatabaseConfirmRequired() (*mcp.CallToolResult, error) {
-	return mcpToolError("password_in_plaintext",
+func addDatabaseConfirmRequired() *mcp.CallToolResult {
+	res, _ := mcpToolError("password_in_plaintext",
 		"Sending passwords over MCP exposes them in client logs and process listings. "+
 			"Confirm to proceed, or use the TUI onboarding form.",
 		map[string]any{"confirm_required": true})
+	return res
 }
 
 // mcpToolError serializes a structured error response. We piggyback on
@@ -122,20 +124,17 @@ func mcpToolError(code, message string, extra map[string]any) (*mcp.CallToolResu
 }
 
 // addDatabase validates, then either asks for confirmation or persists.
-func addDatabase(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var in addDatabaseInput
-		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return mcpToolError("invalid_input", fmt.Sprintf("add_database: decode arguments: %v", err), nil)
-		}
-
+func addDatabase(s *Server) mcp.ToolHandlerFor[addDatabaseInput, addDatabaseOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in addDatabaseInput) (*mcp.CallToolResult, addDatabaseOutput, error) {
 		// First, validate what we can without touching the password.
 		if in.ID == "" || in.Host == "" || in.Service == "" || in.Username == "" || in.Password == "" {
-			return mcpToolError("invalid_input",
+			res, _ := mcpToolError("invalid_input",
 				"add_database: id, host, service, username, and password are required", nil)
+			return res, addDatabaseOutput{}, nil
 		}
 		if in.Port <= 0 || in.Port > 65535 {
-			return mcpToolError("invalid_input", "add_database: port must be between 1 and 65535", nil)
+			res, _ := mcpToolError("invalid_input", "add_database: port must be between 1 and 65535", nil)
+			return res, addDatabaseOutput{}, nil
 		}
 
 		// Reject silent overwrite of an existing ID. GetByID returns a
@@ -146,12 +145,13 @@ func addDatabase(s *Server) mcp.ToolHandler {
 		// the create path, matching this repository's existing convention
 		// (see connect_database).
 		if existing, err := s.deps.DBSettingsRepo.GetByID(ctx, in.ID); err == nil && existing != nil {
-			return mcpToolError("already_exists",
+			res, _ := mcpToolError("already_exists",
 				fmt.Sprintf("add_database: a database with id %q already exists; use a different id", in.ID), nil)
+			return res, addDatabaseOutput{}, nil
 		}
 
 		if !in.ConfirmPasswordInPlaintext {
-			return addDatabaseConfirmRequired()
+			return addDatabaseConfirmRequired(), addDatabaseOutput{}, nil
 		}
 
 		settings, err := domain.NewDatabaseSettings(
@@ -159,13 +159,15 @@ func addDatabase(s *Server) mcp.ToolHandler {
 			domain.Port(in.Port), in.Username, in.Password,
 		)
 		if err != nil {
-			return mcpToolError("invalid_input", fmt.Sprintf("add_database: validate: %v", err), nil)
+			res, _ := mcpToolError("invalid_input", fmt.Sprintf("add_database: validate: %v", err), nil)
+			return res, addDatabaseOutput{}, nil
 		}
 
 		if err := s.deps.DBSettingsRepo.Save(ctx, *settings); err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("add_database: persist: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("add_database: persist: %v", err), nil)
+			return res, addDatabaseOutput{}, nil
 		}
-		return jsonToolResult(addDatabaseOutput{OK: true, ID: settings.StorageKey()}), nil
+		return nil, addDatabaseOutput{OK: true, ID: settings.StorageKey()}, nil
 	}
 }
 
@@ -188,30 +190,35 @@ type connectDatabaseOutput struct {
 // injected factory, and on success marks the database active via Connector.
 // It deliberately does NOT unregister the previously active database — the
 // spec calls for that only when the new connect succeeds.
-func connectDatabase(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var in connectDatabaseInput
-		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return mcpToolError("invalid_input", fmt.Sprintf("connect_database: decode arguments: %v", err), nil)
-		}
+func connectDatabase(s *Server) mcp.ToolHandlerFor[connectDatabaseInput, connectDatabaseOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in connectDatabaseInput) (*mcp.CallToolResult, connectDatabaseOutput, error) {
 		if in.ID == "" {
-			return mcpToolError("invalid_input", "connect_database: id is required", nil)
+			res, _ := mcpToolError("invalid_input", "connect_database: id is required", nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 
 		settings, err := s.deps.DBSettingsRepo.GetByID(ctx, in.ID)
 		if err != nil {
-			return mcpToolError("not_found", fmt.Sprintf("connect_database: database %q not found: %v", in.ID, err), nil)
+			res, _ := mcpToolError("not_found", fmt.Sprintf("connect_database: database %q not found: %v", in.ID, err), nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 		if settings == nil {
-			return mcpToolError("not_found", fmt.Sprintf("connect_database: database %q not found", in.ID), nil)
+			res, _ := mcpToolError("not_found", fmt.Sprintf("connect_database: database %q not found", in.ID), nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 
-		adapter, err := s.BuildDBAdapter(settings)
+		if s.deps.DBAdapterFactory == nil {
+			res, _ := mcpToolError("internal_error", "connect_database: DBAdapterFactory not configured", nil)
+			return res, connectDatabaseOutput{}, nil
+		}
+		adapter, err := s.deps.DBAdapterFactory(settings)
 		if err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("connect_database: build adapter: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("connect_database: build adapter: %v", err), nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 		if adapter == nil {
-			return mcpToolError("internal_error", "connect_database: adapter factory returned nil", nil)
+			res, _ := mcpToolError("internal_error", "connect_database: adapter factory returned nil", nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 		// Connector only persists the storage key, not the live adapter, so
 		// the handle we just built would otherwise leak. Close it now; the
@@ -226,16 +233,18 @@ func connectDatabase(s *Server) mcp.ToolHandler {
 		connectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		if err := adapter.Connect(connectCtx); err != nil {
-			return mcpToolError("db_unreachable", fmt.Sprintf("connect_database: connect: %v", err), nil)
+			res, _ := mcpToolError("db_unreachable", fmt.Sprintf("connect_database: connect: %v", err), nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 
 		if err := s.deps.Connector.SetActive(ctx, settings.StorageKey()); err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("connect_database: persist active id: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("connect_database: persist active id: %v", err), nil)
+			return res, connectDatabaseOutput{}, nil
 		}
 
-		return jsonToolResult(connectDatabaseOutput{
+		return nil, connectDatabaseOutput{
 			OK:             true,
 			ActiveDatabase: settings.StorageKey(),
-		}), nil
+		}, nil
 	}
 }

@@ -50,13 +50,8 @@ const (
 // since_id, level, and process_name filters are applied client-side on the
 // snapshot (acceptable for the 10k cap; a SQL-backed source would push
 // them down).
-func listTraces(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var in listTracesInput
-		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return mcpToolError("invalid_input", fmt.Sprintf("list_traces: decode arguments: %v", err), nil)
-		}
-
+func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in listTracesInput) (*mcp.CallToolResult, listTracesOutput, error) {
 		limit := in.Limit
 		if limit <= 0 {
 			limit = defaultListTracesLimit
@@ -76,7 +71,8 @@ func listTraces(s *Server) mcp.ToolHandler {
 
 		messages, err := s.deps.TraceAppender.List(ctx, fetch, in.SinceID)
 		if err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("list_traces: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("list_traces: %v", err), nil)
+			return res, listTracesOutput{}, nil
 		}
 
 		// If the buffer returned exactly as many messages as we asked for,
@@ -104,7 +100,7 @@ func listTraces(s *Server) mcp.ToolHandler {
 			}
 		}
 		out.Total = len(out.Messages)
-		return jsonToolResult(out), nil
+		return nil, out, nil
 	}
 }
 
@@ -128,29 +124,28 @@ func toTraceDTO(msg *domain.QueueMessage) traceDTO {
 
 // getTraceInput is the JSON input shape for get_trace.
 type getTraceInput struct {
-	MessageID string `json:"message_id" jsonschema:"the unique id of the trace message to fetch"`
+	MessageID string `json:"message_id,omitempty" jsonschema:"the unique id of the trace message to fetch"`
 }
 
 // getTrace is the handler for the "get_trace" tool. Returns the message or
 // a not_found error code when the id is unknown.
-func getTrace(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var in getTraceInput
-		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			return mcpToolError("invalid_input", fmt.Sprintf("get_trace: decode arguments: %v", err), nil)
-		}
+func getTrace(s *Server) mcp.ToolHandlerFor[getTraceInput, traceDTO] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in getTraceInput) (*mcp.CallToolResult, traceDTO, error) {
 		if in.MessageID == "" {
-			return mcpToolError("invalid_input", "get_trace: message_id is required", nil)
+			res, _ := mcpToolError("invalid_input", "get_trace: message_id is required", nil)
+			return res, traceDTO{}, nil
 		}
 
 		msg, err := s.deps.TraceAppender.GetByID(ctx, in.MessageID)
 		if err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("get_trace: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("get_trace: %v", err), nil)
+			return res, traceDTO{}, nil
 		}
 		if msg == nil {
-			return mcpToolError("not_found", fmt.Sprintf("trace %q not found", in.MessageID), nil)
+			res, _ := mcpToolError("not_found", fmt.Sprintf("trace %q not found", in.MessageID), nil)
+			return res, traceDTO{}, nil
 		}
-		return jsonToolResult(toTraceDTO(msg)), nil
+		return nil, toTraceDTO(msg), nil
 	}
 }
 
@@ -165,11 +160,12 @@ type clearTracesOutput struct {
 
 // clearTraces empties the trace buffer. There is no undo — callers should
 // confirm before invoking.
-func clearTraces(s *Server) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func clearTraces(s *Server) mcp.ToolHandlerFor[emptyInput, clearTracesOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, clearTracesOutput, error) {
 		if err := s.deps.TraceAppender.Clear(ctx); err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("clear_traces: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("clear_traces: %v", err), nil)
+			return res, clearTracesOutput{}, nil
 		}
-		return jsonToolResult(clearTracesOutput{OK: true}), nil
+		return nil, clearTracesOutput{OK: true}, nil
 	}
 }

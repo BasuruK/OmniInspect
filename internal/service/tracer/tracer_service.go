@@ -3,6 +3,7 @@ package tracer
 import (
 	"OmniView/assets"
 	"OmniView/internal/adapter/logger"
+	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/webhook"
@@ -135,7 +136,7 @@ func StopAll(tracerService *TracerService) {
 type TracerService struct {
 	db               ports.DatabaseRepository
 	bolt             ports.ConfigRepository
-	traceAppender    ports.TraceAppender
+	traceAppender    *tracebuffer.RingBuffer
 	processMu        sync.Mutex
 	subscriberMu     sync.Mutex
 	eventChannel     chan *domain.QueueMessage
@@ -145,20 +146,13 @@ type TracerService struct {
 	activeSubscriber *domain.Subscriber
 }
 
-// TracerServiceOpts bundles the optional dependencies accepted by
-// NewTracerService. Required dependencies (db, bolt, eventChannel) stay as
-// positional arguments; this struct only carries fields that may legitimately
-// be omitted (nil) by callers.
-type TracerServiceOpts struct {
-	TraceAppender ports.TraceAppender
-}
-
-// Constructor: NewTracerService Constructor for TracerService
+// Constructor: NewTracerService Constructor for TracerService. traceAppender
+// is optional (nil is fine) — see the TracerService doc comment.
 func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
-	opts TracerServiceOpts,
+	traceAppender *tracebuffer.RingBuffer,
 ) (*TracerService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
@@ -171,7 +165,7 @@ func NewTracerService(
 		db:            db,
 		bolt:          bolt,
 		eventChannel:  eventChannel,
-		traceAppender: opts.TraceAppender,
+		traceAppender: traceAppender,
 	}, nil
 }
 

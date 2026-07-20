@@ -2,7 +2,6 @@ package tracebuffer
 
 import (
 	"OmniView/internal/core/domain"
-	"OmniView/internal/core/ports"
 	"context"
 	"sync"
 )
@@ -35,9 +34,6 @@ type RingBuffer struct {
 	nextSeq  uint64 // monotonically increasing, assigned on Append
 	evicted  uint64 // count of entries overwritten by FIFO eviction
 }
-
-// Compile-time check that RingBuffer satisfies the TraceAppender port.
-var _ ports.TraceAppender = (*RingBuffer)(nil)
 
 // New returns a RingBuffer with the given capacity. A non-positive capacity
 // is treated as 1.
@@ -117,7 +113,7 @@ func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*do
 		idx := (r.head + i) % r.capacity
 		e := r.buf[idx]
 		if sinceID != "" && e.seq <= sinceSeq {
-			continue
+			break
 		}
 		out = append(out, e.msg)
 	}

@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"context"
 	"fmt"
@@ -17,10 +16,10 @@ import (
 // It holds an in-memory cache that is hydrated from BoltDB on first use and
 // updated on every SetActive. Safe for concurrent use.
 type Connector struct {
-	bolt     ports.ConfigRepository
-	mu       sync.RWMutex
-	id       string
-	hydrated bool
+	bolt    ports.ConfigRepository
+	mu      sync.RWMutex
+	id      string
+	hydrate sync.Once
 }
 
 // New constructs a Connector backed by the given BoltDB config repository.
@@ -35,30 +34,19 @@ func New(bolt ports.ConfigRepository) *Connector {
 // been recorded, either because the BoltDB pointer is unset or because the
 // call was made before initialization completed.
 func (c *Connector) Active() string {
-	if c == nil {
-		return ""
+	if c.bolt != nil {
+		c.hydrate.Do(func() {
+			// Persistence failures must not block reads; leave c.id at its
+			// zero value so callers fall back to "no active database".
+			if stored, err := c.bolt.GetActiveDatabaseID(); err == nil {
+				c.mu.Lock()
+				c.id = stored
+				c.mu.Unlock()
+			}
+		})
 	}
 	c.mu.RLock()
-	id := c.id
-	c.mu.RUnlock()
-	if id != "" || c.bolt == nil {
-		return id
-	}
-	// Cache miss: hydrate from BoltDB. We re-take the write lock because the
-	// read lock cannot be upgraded mid-flight in Go.
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.hydrated {
-		return c.id
-	}
-	stored, err := c.bolt.GetActiveDatabaseID()
-	if err != nil {
-		// Persistence failures must not block reads; surface via empty string
-		// so callers can fall back to "no active database".
-		return ""
-	}
-	c.id = stored
-	c.hydrated = true
+	defer c.mu.RUnlock()
 	return c.id
 }
 
@@ -68,19 +56,19 @@ func (c *Connector) Active() string {
 // untouched on failure (so callers can retry without an inconsistent
 // "in-memory says X, disk says Y" state).
 func (c *Connector) SetActive(ctx context.Context, id string) error {
-	if c == nil {
-		return domain.ErrNilConnector
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	id = strings.TrimSpace(id)
 
+	// Mark hydration done so a later Active() never overwrites this value
+	// with a stale read from BoltDB.
+	c.hydrate.Do(func() {})
+
 	if c.bolt == nil {
 		// In-memory only mode (used by tests); still record the change.
 		c.mu.Lock()
 		c.id = id
-		c.hydrated = true
 		c.mu.Unlock()
 		return nil
 	}
@@ -94,6 +82,5 @@ func (c *Connector) SetActive(ctx context.Context, id string) error {
 		return fmt.Errorf("connector: persist active id: %w", err)
 	}
 	c.id = id
-	c.hydrated = true
 	return nil
 }

@@ -67,7 +67,4 @@ var (
 	ErrEarlyAbort          = errors.New("early return: encrypted credential found")
 	ErrBoltAdapterNotReady = errors.New("bolt adapter not initialised")
 	ErrBoltBucketNotFound  = errors.New("bolt bucket not found")
-
-	// Connector errors
-	ErrNilConnector = errors.New("connector: nil receiver")
 )

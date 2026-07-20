@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"OmniView/internal/core/domain"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,33 +11,11 @@ import (
 )
 
 // ==========================================
-// Result helpers
+// Shared types
 // ==========================================
 
-// jsonToolResult encodes the value as JSON and wraps it in a single
-// TextContent. MCP tool results must carry Content, so this is the
-// canonical "return a JSON payload" wrapper for the untyped handler.
-func jsonToolResult(v any) *mcp.CallToolResult {
-	payload, err := json.Marshal(v)
-	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("encode error: %v", err)}},
-		}
-	}
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
-	}
-}
-
-// decodeArguments unmarshals the raw arguments blob into the given typed
-// struct. Both the SDK and tests pass raw JSON here.
-func decodeArguments(raw json.RawMessage, into any) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	return json.Unmarshal(raw, into)
-}
+// emptyInput is the input type for tools that take no arguments.
+type emptyInput struct{}
 
 // ==========================================
 // Status Tool
@@ -54,37 +31,27 @@ type statusOutput struct {
 	UptimeSeconds      int64  `json:"uptime_seconds"`
 }
 
-// traceEvictionCounter is implemented by trace appenders that track how many
-// entries have been overwritten by FIFO eviction (e.g. tracebuffer.RingBuffer).
-// It's checked via type assertion rather than added to ports.TraceAppender so
-// implementations that don't track eviction aren't forced to grow a no-op
-// method.
-type traceEvictionCounter interface {
-	Evicted(ctx context.Context) int
-}
-
 // getStatus is the handler for the "get_status" tool. It composes the
 // response from app version, Connector, BoltDB broadcast mode, trace buffer
 // length, and process uptime. trace_buffer_depth reports the in-memory
 // trace ring buffer's current size — NOT the Oracle AQ queue depth, which
 // requires an active database connection and is not surfaced by this tool.
-func getStatus(s *Server, startedAt time.Time) mcp.ToolHandler {
-	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getStatus(s *Server, startedAt time.Time) mcp.ToolHandlerFor[emptyInput, statusOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, statusOutput, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()
 		if err != nil {
-			return mcpToolError("internal_error", fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
+			return res, statusOutput{}, nil
 		}
 		out := statusOutput{
-			Version:          s.deps.App.GetVersion(),
-			ActiveDatabaseID: s.deps.Connector.Active(),
-			BroadcastMode:    mode.String(),
-			TraceBufferDepth: s.deps.TraceAppender.Len(ctx),
-			UptimeSeconds:    int64(time.Since(startedAt).Seconds()),
+			Version:            s.deps.App.GetVersion(),
+			ActiveDatabaseID:   s.deps.Connector.Active(),
+			BroadcastMode:      mode.String(),
+			TraceBufferDepth:   s.deps.TraceAppender.Len(ctx),
+			TraceBufferEvicted: s.deps.TraceAppender.Evicted(ctx),
+			UptimeSeconds:      int64(time.Since(startedAt).Seconds()),
 		}
-		if ev, ok := s.deps.TraceAppender.(traceEvictionCounter); ok {
-			out.TraceBufferEvicted = ev.Evicted(ctx)
-		}
-		return jsonToolResult(out), nil
+		return nil, out, nil
 	}
 }
 
@@ -136,6 +103,6 @@ func setBroadcastMode(s *Server) mcp.ToolHandlerFor[setBroadcastModeInput, setBr
 			return nil, setBroadcastModeOutput{}, fmt.Errorf("set_broadcast_mode: persist: %w", err)
 		}
 		out := setBroadcastModeOutput{OK: true, Mode: mode.String()}
-		return jsonToolResult(out), out, nil
+		return nil, out, nil
 	}
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
+	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
@@ -143,7 +144,7 @@ type Model struct {
 	dbSettingsRepo    ports.DatabaseSettingsRepository
 	dbAdapter         ports.DatabaseRepository
 	permissionService *permissions.PermissionService
-	traceAppender     ports.TraceAppender
+	traceAppender     *tracebuffer.RingBuffer
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
 	updaterService    *updaterSvc.UpdaterService
@@ -194,8 +195,8 @@ type ModelOpts struct {
 	UpdaterService     *updaterSvc.UpdaterService
 	AppConfig          *domain.DatabaseSettings // Optional — onboarding screen populates this
 	EventChannel       chan *domain.QueueMessage
-	UpdateEventChannel chan tea.Msg        // Optional - can be created by Model if not provided
-	TraceAppender      ports.TraceAppender // Optional — shared buffer for non-UI consumers (MCP server, tests)
+	UpdateEventChannel chan tea.Msg            // Optional - can be created by Model if not provided
+	TraceAppender      *tracebuffer.RingBuffer // Optional — shared buffer for non-UI consumers (MCP server, tests)
 }
 
 func NewModel(opts ModelOpts) (*Model, error) {
@@ -392,7 +393,7 @@ func (m *Model) initializeServices() error {
 	}
 	if m.tracerService == nil {
 		var err error
-		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel, tracer.TracerServiceOpts{TraceAppender: m.traceAppender})
+		m.tracerService, err = tracer.NewTracerService(m.dbAdapter, m.boltAdapter, m.eventChannel, m.traceAppender)
 		if err != nil {
 			return fmt.Errorf("initializeServices: failed to create tracer service: %w", err)
 		}

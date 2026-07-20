@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,22 +20,13 @@ func buildSDKServer(appName, appVersion string) *mcp.Server {
 // stdio transport. The caller is responsible for installing the logger (this
 // package's logger writes to omniview.log, never to stdout).
 func (s *Server) ServeStdio(ctx context.Context) error {
-	if s == nil {
-		return fmt.Errorf("mcpserver: nil server")
-	}
-	sdk := s.buildAndRegister(time.Now())
-	s.setMCP(sdk)
-	return sdk.Run(ctx, &mcp.StdioTransport{})
+	return s.ServeWithTransport(ctx, &mcp.StdioTransport{})
 }
 
 // ServeWithTransport blocks running the MCP server over the supplied SDK
 // transport. Exposed for tests (which use in-memory transports) so the
 // handshake test does not need to drive a real stdin/stdout pipe.
 func (s *Server) ServeWithTransport(ctx context.Context, t mcp.Transport) error {
-	if s == nil {
-		return fmt.Errorf("mcpserver: nil server")
-	}
 	sdk := s.buildAndRegister(time.Now())
-	s.setMCP(sdk)
 	return sdk.Run(ctx, t)
 }

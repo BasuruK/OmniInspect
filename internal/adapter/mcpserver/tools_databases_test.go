@@ -268,19 +268,67 @@ func TestAddDatabase_RejectsInvalidInput(t *testing.T) {
 	defer cleanup()
 	session := connectClientServer(t, deps)
 
-	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "add_database",
-		Arguments: map[string]any{
-			"id":       "prod-3",
-			"host":     "db.example.com",
-			"port":     999999, // out of range
-			"service":  "FREEPDB1",
-			"username": "admin",
-			"password": "secret",
-		},
+	res := callTool(t, session, "add_database", map[string]any{
+		"id":       "prod-3",
+		"host":     "db.example.com",
+		"port":     999999, // out of range
+		"service":  "FREEPDB1",
+		"username": "admin",
+		"password": "secret",
 	})
-	if err == nil {
-		t.Fatal("expected error from invalid port")
+	if !res.IsError {
+		t.Fatalf("expected IsError=true for invalid port, got %+v", res)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "invalid_input" {
+		t.Fatalf("expected code=invalid_input, got %v", payload["code"])
+	}
+}
+
+func TestAddDatabase_RejectsDuplicateID(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	session := connectClientServer(t, deps)
+
+	args := map[string]any{
+		"id":                            "prod-dup",
+		"host":                          "db.example.com",
+		"port":                          1521,
+		"service":                       "FREEPDB1",
+		"username":                      "admin",
+		"password":                      "secret",
+		"confirm_password_in_plaintext": true,
+	}
+
+	first := callTool(t, session, "add_database", args)
+	if first.IsError {
+		t.Fatalf("expected first add_database to succeed, got IsError: %+v", first.Content)
+	}
+
+	second := callTool(t, session, "add_database", args)
+	if !second.IsError {
+		t.Fatalf("expected second add_database with same id to fail, got %+v", second)
+	}
+	tc := second.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "already_exists" {
+		t.Fatalf("expected code=already_exists, got %v", payload["code"])
+	}
+
+	// Confirm only one record was persisted.
+	all, err := deps.DBSettingsRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 record persisted, got %d", len(all))
 	}
 }
 
@@ -372,12 +420,17 @@ func TestConnectDatabase_UnknownID(t *testing.T) {
 	defer cleanup()
 	session := connectClientServer(t, deps)
 
-	_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "connect_database",
-		Arguments: map[string]any{"id": "DBconfig:nope"},
-	})
-	if err == nil {
-		t.Fatal("expected error for unknown id")
+	res := callTool(t, session, "connect_database", map[string]any{"id": "DBconfig:nope"})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true for unknown id, got %+v", res)
+	}
+	tc := res.Content[0].(*mcp.TextContent)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["code"] != "not_found" {
+		t.Fatalf("expected code=not_found, got %v", payload["code"])
 	}
 }
 

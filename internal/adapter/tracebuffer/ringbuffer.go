@@ -11,6 +11,15 @@ import (
 // Ring Buffer
 // ==========================================
 
+// ringEntry pairs a stored message with a monotonically increasing sequence
+// number. The sequence number — not the message ID — is what since_id
+// filtering keys off of, so ID formats that don't sort lexicographically in
+// insertion order (UUIDs, unpadded counters, etc.) still filter correctly.
+type ringEntry struct {
+	msg *domain.QueueMessage
+	seq uint64
+}
+
 // RingBuffer is a bounded, FIFO-evicting trace store backed by a fixed-size
 // circular array. It is safe for concurrent use by multiple goroutines.
 //
@@ -19,10 +28,12 @@ import (
 // Append never reallocates.
 type RingBuffer struct {
 	mu       sync.RWMutex
-	buf      []*domain.QueueMessage
+	buf      []ringEntry
 	head     int // index of the oldest entry
 	size     int // current number of entries (0 <= size <= capacity)
 	capacity int
+	nextSeq  uint64 // monotonically increasing, assigned on Append
+	evicted  uint64 // count of entries overwritten by FIFO eviction
 }
 
 // Compile-time check that RingBuffer satisfies the TraceAppender port.
@@ -35,7 +46,7 @@ func New(capacity int) *RingBuffer {
 		capacity = 1
 	}
 	return &RingBuffer{
-		buf:      make([]*domain.QueueMessage, capacity),
+		buf:      make([]ringEntry, capacity),
 		capacity: capacity,
 	}
 }
@@ -53,22 +64,30 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.nextSeq++
+	entry := ringEntry{msg: msg, seq: r.nextSeq}
+
 	if r.size == r.capacity {
 		// Buffer is full: overwrite the oldest slot and advance head.
-		r.buf[r.head] = msg
+		r.buf[r.head] = entry
 		r.head = (r.head + 1) % r.capacity
+		r.evicted++
 	} else {
 		// Tail = position of the next free slot = (head + size) mod cap.
 		tail := (r.head + r.size) % r.capacity
-		r.buf[tail] = msg
+		r.buf[tail] = entry
 		r.size++
 	}
 	return nil
 }
 
 // List returns up to `limit` messages in newest-first order. When sinceID is
-// non-empty, only messages whose ID is strictly greater (lexicographically)
-// than sinceID are returned. A non-positive limit returns no entries.
+// non-empty, only messages appended strictly after the message with that ID
+// are returned (by insertion sequence, not string comparison of the ID
+// itself). If sinceID is non-empty but no longer present in the buffer
+// (already evicted, or unknown), List returns as if sinceID were empty — the
+// caller cannot distinguish "nothing new" from "your cursor expired" from
+// this API alone. A non-positive limit returns no entries.
 func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*domain.QueueMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -80,16 +99,27 @@ func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*do
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	var sinceSeq uint64
+	if sinceID != "" {
+		for i := 0; i < r.size; i++ {
+			idx := (r.head + i) % r.capacity
+			if r.buf[idx].msg.MessageID() == sinceID {
+				sinceSeq = r.buf[idx].seq
+				break
+			}
+		}
+	}
+
 	// Walk newest → oldest.
 	out := make([]*domain.QueueMessage, 0, limit)
 	for i := r.size - 1; i >= 0 && len(out) < limit; i-- {
 		// Map logical index i (0 = oldest, size-1 = newest) to physical index.
 		idx := (r.head + i) % r.capacity
-		m := r.buf[idx]
-		if sinceID != "" && m.MessageID() <= sinceID {
+		e := r.buf[idx]
+		if sinceID != "" && e.seq <= sinceSeq {
 			continue
 		}
-		out = append(out, m)
+		out = append(out, e.msg)
 	}
 	return out, nil
 }
@@ -103,7 +133,7 @@ func (r *RingBuffer) GetByID(ctx context.Context, id string) (*domain.QueueMessa
 	defer r.mu.RUnlock()
 	for i := 0; i < r.size; i++ {
 		idx := (r.head + i) % r.capacity
-		m := r.buf[idx]
+		m := r.buf[idx].msg
 		if m.MessageID() == id {
 			return m, nil
 		}
@@ -112,7 +142,9 @@ func (r *RingBuffer) GetByID(ctx context.Context, id string) (*domain.QueueMessa
 }
 
 // Clear removes all messages and releases the references held by the
-// backing array so the GC can reclaim trace payloads.
+// backing array so the GC can reclaim trace payloads. It does not reset the
+// eviction counter or sequence counter — those track lifetime activity, not
+// current contents.
 func (r *RingBuffer) Clear(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -121,7 +153,7 @@ func (r *RingBuffer) Clear(ctx context.Context) error {
 	defer r.mu.Unlock()
 	for i := 0; i < r.size; i++ {
 		idx := (r.head + i) % r.capacity
-		r.buf[idx] = nil
+		r.buf[idx] = ringEntry{}
 	}
 	r.head = 0
 	r.size = 0
@@ -136,4 +168,18 @@ func (r *RingBuffer) Len(ctx context.Context) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.size
+}
+
+// Evicted returns the lifetime count of messages overwritten by FIFO
+// eviction (i.e. messages appended while the buffer was already at
+// capacity). Callers can surface this to detect silent trace loss under
+// sustained load — Len alone cannot distinguish "buffer full" from "buffer
+// has been overwriting for a while."
+func (r *RingBuffer) Evicted(ctx context.Context) int {
+	if err := ctx.Err(); err != nil {
+		return 0
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return int(r.evicted)
 }

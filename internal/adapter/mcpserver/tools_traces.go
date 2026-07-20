@@ -36,8 +36,9 @@ type traceDTO struct {
 
 // listTracesOutput is the JSON output shape for list_traces.
 type listTracesOutput struct {
-	Messages []traceDTO `json:"messages"`
-	Total    int        `json:"total"`
+	Messages  []traceDTO `json:"messages"`
+	Total     int        `json:"total"`
+	Truncated bool       `json:"truncated"`
 }
 
 const (
@@ -53,12 +54,7 @@ func listTraces(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in listTracesInput
 		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			result, mcpErr := mcpToolError("invalid_arguments",
-				fmt.Sprintf("list_traces: decode arguments: %v", err), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("invalid_input", fmt.Sprintf("list_traces: decode arguments: %v", err), nil)
 		}
 
 		limit := in.Limit
@@ -80,18 +76,21 @@ func listTraces(s *Server) mcp.ToolHandler {
 
 		messages, err := s.deps.TraceAppender.List(ctx, fetch, in.SinceID)
 		if err != nil {
-			result, mcpErr := mcpToolError("trace_list_failed",
-				fmt.Sprintf("list_traces: %v", err), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("internal_error", fmt.Sprintf("list_traces: %v", err), nil)
 		}
+
+		// If the buffer returned exactly as many messages as we asked for,
+		// there may be additional matching entries beyond this window that
+		// we never examined for level/process_name filtering — the caller
+		// cannot otherwise tell "no more matches" from "we only scanned
+		// part of the buffer". Surface that explicitly instead of silently
+		// under-reporting.
+		truncated := len(messages) == fetch
 
 		levelFilter := strings.ToUpper(strings.TrimSpace(in.Level))
 		processFilter := strings.TrimSpace(in.ProcessName)
 
-		out := listTracesOutput{Messages: make([]traceDTO, 0, limit)}
+		out := listTracesOutput{Messages: make([]traceDTO, 0, limit), Truncated: truncated}
 		for _, msg := range messages {
 			if levelFilter != "" && string(msg.LogLevel()) != levelFilter {
 				continue
@@ -138,38 +137,18 @@ func getTrace(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var in getTraceInput
 		if err := decodeArguments(req.Params.Arguments, &in); err != nil {
-			result, mcpErr := mcpToolError("invalid_arguments",
-				fmt.Sprintf("get_trace: decode arguments: %v", err), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("invalid_input", fmt.Sprintf("get_trace: decode arguments: %v", err), nil)
 		}
 		if in.MessageID == "" {
-			result, mcpErr := mcpToolError("invalid_arguments",
-				"get_trace: message_id is required", nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("invalid_input", "get_trace: message_id is required", nil)
 		}
 
 		msg, err := s.deps.TraceAppender.GetByID(ctx, in.MessageID)
 		if err != nil {
-			result, mcpErr := mcpToolError("trace_lookup_failed",
-				fmt.Sprintf("get_trace: %v", err), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("internal_error", fmt.Sprintf("get_trace: %v", err), nil)
 		}
 		if msg == nil {
-			result, mcpErr := mcpToolError("not_found",
-				fmt.Sprintf("trace %q not found", in.MessageID), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("not_found", fmt.Sprintf("trace %q not found", in.MessageID), nil)
 		}
 		return jsonToolResult(toTraceDTO(msg)), nil
 	}
@@ -189,12 +168,7 @@ type clearTracesOutput struct {
 func clearTraces(s *Server) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if err := s.deps.TraceAppender.Clear(ctx); err != nil {
-			result, mcpErr := mcpToolError("trace_clear_failed",
-				fmt.Sprintf("clear_traces: %v", err), nil)
-			if mcpErr != nil {
-				return nil, mcpErr
-			}
-			return &result, nil
+			return mcpToolError("internal_error", fmt.Sprintf("clear_traces: %v", err), nil)
 		}
 		return jsonToolResult(clearTracesOutput{OK: true}), nil
 	}

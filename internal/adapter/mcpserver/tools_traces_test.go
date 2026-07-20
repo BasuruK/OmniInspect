@@ -136,6 +136,38 @@ func TestListTraces_SinceIDFilter(t *testing.T) {
 	}
 }
 
+func TestListTraces_TruncatedWhenFetchWindowExhausted(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	// limit=1 -> fetch window = 4. Seed more matching entries than the
+	// fetch window can cover so the handler can't tell whether additional
+	// matches exist beyond what it examined.
+	ids := make([]string, 10)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("m-%02d", i)
+	}
+	seedMessages(t, deps.TraceAppender, ids...)
+
+	session := connectClientServer(t, deps)
+	out := decodeListTraces(t, session, map[string]any{"limit": 1})
+	if !out.Truncated {
+		t.Fatalf("expected truncated=true when fetch window is exhausted, got %+v", out)
+	}
+}
+
+func TestListTraces_NotTruncatedWhenBufferExhausted(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedMessages(t, deps.TraceAppender, "a", "b", "c")
+
+	session := connectClientServer(t, deps)
+	out := decodeListTraces(t, session, map[string]any{"limit": 50})
+	if out.Truncated {
+		t.Fatalf("expected truncated=false when the whole buffer was scanned, got %+v", out)
+	}
+}
+
 // ==========================================
 // get_trace
 // ==========================================
@@ -194,8 +226,8 @@ func TestGetTrace_RequiresID(t *testing.T) {
 	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if payload["code"] != "invalid_arguments" {
-		t.Fatalf("expected code=invalid_arguments, got %v", payload["code"])
+	if payload["code"] != "invalid_input" {
+		t.Fatalf("expected code=invalid_input, got %v", payload["code"])
 	}
 }
 

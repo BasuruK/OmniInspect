@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,19 +19,61 @@ import (
 // Stdout Discipline Guard
 // ==========================================
 
-// safeBuffer is a goroutine-safe bytes.Buffer with a Closer.
+// safeBuffer is a goroutine-safe bytes.Buffer with a Closer. It also
+// notifies a channel whenever a complete newline-terminated line has been
+// written, so tests can deterministically wait for the server's response to
+// land on stdout instead of sleeping for an arbitrary duration.
 type safeBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	pending []byte
+	lines   chan string
+}
+
+func newSafeBuffer() *safeBuffer {
+	return &safeBuffer{lines: make(chan string, 16)}
 }
 
 func (b *safeBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	b.pending = append(b.pending, p...)
+	for {
+		idx := bytes.IndexByte(b.pending, '\n')
+		if idx < 0 {
+			break
+		}
+		line := string(b.pending[:idx])
+		b.pending = b.pending[idx+1:]
+		select {
+		case b.lines <- line:
+		default:
+			// Buffer full; the test isn't keeping up. Drop rather than
+			// block the server's write path.
+		}
+	}
+	return n, err
 }
 
 func (b *safeBuffer) Close() error { return nil }
+
+// waitLine blocks until the next complete stdout line is available (or the
+// timeout elapses) and decodes it as JSON.
+func (b *safeBuffer) waitLine(t *testing.T, timeout time.Duration) map[string]any {
+	t.Helper()
+	select {
+	case line := <-b.lines:
+		var out map[string]any
+		if err := json.Unmarshal([]byte(line), &out); err != nil {
+			t.Fatalf("decode stdout line %q: %v", line, err)
+		}
+		return out
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for a response line on stdout")
+		return nil
+	}
+}
 
 func (b *safeBuffer) Bytes() []byte {
 	b.mu.Lock()
@@ -41,13 +83,26 @@ func (b *safeBuffer) Bytes() []byte {
 	return out
 }
 
+// pipe bundles the two ends of an OS pipe so tests don't have to track them
+// separately. Backed by a real kernel pipe buffer (os.Pipe) instead of a
+// hand-rolled bytes.Buffer+sync.Cond: writes of these small JSON-RPC
+// messages never block (well under the OS pipe buffer size), and reads
+// block until data is available, exactly like real stdio.
+type pipe struct {
+	Writer *os.File
+	Reader *os.File
+}
+
 // runServerOverPipe starts the MCP server with an IOTransport whose writer
-// is the supplied safeBuffer and whose reader is the returned PipeReader.
-// Closing the server context terminates the server.
+// is the supplied safeBuffer and whose reader is the returned pipe's read
+// end. Closing the server context terminates the server.
 func runServerOverPipe(t *testing.T, s *Server, out *safeBuffer) (*pipe, func()) {
 	t.Helper()
 
-	pr, pw := newPipe()
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
 
 	serverTransport := &mcp.IOTransport{
 		Reader: pr,
@@ -71,79 +126,6 @@ func runServerOverPipe(t *testing.T, s *Server, out *safeBuffer) (*pipe, func())
 			t.Log("server did not exit within 2s")
 		}
 	}
-}
-
-// newPipe returns an in-memory, goroutine-safe pipe pair.
-func newPipe() (*pipeReader, *pipeWriter) {
-	pr, pw := newMemPipe()
-	return pr, pw
-}
-
-// minimal in-memory pipe using bytes.Buffer + sync.Cond
-type memPipe struct {
-	mu   sync.Mutex
-	cond *sync.Cond
-	buf  bytes.Buffer
-	open bool
-}
-
-func newMemPipe() (*pipeReader, *pipeWriter) {
-	mp := &memPipe{open: true}
-	mp.cond = sync.NewCond(&mp.mu)
-	r := &pipeReader{mp: mp}
-	w := &pipeWriter{mp: mp}
-	return r, w
-}
-
-type pipeReader struct {
-	mp *memPipe
-}
-
-func (r *pipeReader) Read(p []byte) (int, error) {
-	r.mp.mu.Lock()
-	defer r.mp.mu.Unlock()
-	for r.mp.buf.Len() == 0 && r.mp.open {
-		r.mp.cond.Wait()
-	}
-	if r.mp.buf.Len() == 0 && !r.mp.open {
-		return 0, fmt.Errorf("pipe closed")
-	}
-	return r.mp.buf.Read(p)
-}
-
-func (r *pipeReader) Close() error {
-	r.mp.mu.Lock()
-	defer r.mp.mu.Unlock()
-	r.mp.open = false
-	r.mp.cond.Broadcast()
-	return nil
-}
-
-type pipeWriter struct {
-	mp *memPipe
-}
-
-func (w *pipeWriter) Write(p []byte) (int, error) {
-	w.mp.mu.Lock()
-	defer w.mp.mu.Unlock()
-	if !w.mp.open {
-		return 0, fmt.Errorf("pipe closed")
-	}
-	return w.mp.buf.Write(p)
-}
-
-func (w *pipeWriter) Close() error {
-	w.mp.mu.Lock()
-	defer w.mp.mu.Unlock()
-	w.mp.open = false
-	w.mp.cond.Broadcast()
-	return nil
-}
-
-// pipe bundles the two ends so tests don't have to track them separately.
-type pipe struct {
-	Writer *pipeWriter
-	Reader *pipeReader
 }
 
 // ==========================================
@@ -171,7 +153,7 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 
 	srv := NewServer(deps)
 
-	stdout := &safeBuffer{}
+	stdout := newSafeBuffer()
 	p, stop := runServerOverPipe(t, srv, stdout)
 	defer stop()
 
@@ -192,8 +174,10 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if _, err := readFramedMessage(p.Reader); err != nil {
-		t.Fatalf("read initialize response: %v", err)
+	// Wait for the real response line on stdout — this is the channel the
+	// server actually writes to; p.Reader only carries the request stream.
+	if resp := stdout.waitLine(t, 2*time.Second); resp["id"] != float64(1) {
+		t.Fatalf("expected response id=1, got %v", resp["id"])
 	}
 
 	// 2. notifications/initialized
@@ -216,12 +200,9 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write tools/call: %v", err)
 	}
-	if _, err := readFramedMessage(p.Reader); err != nil {
-		t.Fatalf("read tools/call response: %v", err)
+	if resp := stdout.waitLine(t, 2*time.Second); resp["id"] != float64(2) {
+		t.Fatalf("expected response id=2, got %v", resp["id"])
 	}
-
-	// Drain anything that may still be in flight so the assert is stable.
-	time.Sleep(50 * time.Millisecond)
 
 	raw := stdout.Bytes()
 	if len(raw) == 0 {
@@ -252,7 +233,7 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 }
 
 // writeFramedMessage writes one newline-delimited JSON message.
-func writeFramedMessage(w *pipeWriter, payload map[string]any) error {
+func writeFramedMessage(w *os.File, payload map[string]any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -260,32 +241,4 @@ func writeFramedMessage(w *pipeWriter, payload map[string]any) error {
 	body = append(body, '\n')
 	_, err = w.Write(body)
 	return err
-}
-
-// readFramedMessage reads one newline-delimited JSON message. Returns the
-// decoded map plus the raw line for debugging.
-func readFramedMessage(r *pipeReader) (map[string]any, error) {
-	var buf bytes.Buffer
-	one := make([]byte, 1)
-	for {
-		n, err := r.Read(one)
-		if n > 0 {
-			if one[0] == '\n' {
-				break
-			}
-			buf.WriteByte(one[0])
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	line := strings.TrimSpace(buf.String())
-	if line == "" {
-		return nil, fmt.Errorf("empty line")
-	}
-	out := map[string]any{}
-	if err := json.Unmarshal([]byte(line), &out); err != nil {
-		return nil, fmt.Errorf("decode %q: %w", line, err)
-	}
-	return out, nil
 }

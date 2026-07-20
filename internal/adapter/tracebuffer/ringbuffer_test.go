@@ -129,7 +129,7 @@ func TestList_SinceIDFiltersOutOlder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	// Lexicographically > "b" → c, d (newest-first).
+	// Appended after "b" → c, d (newest-first).
 	want := []string{"d", "c"}
 	if len(got) != len(want) {
 		t.Fatalf("expected %d entries, got %d (%+v)", len(want), len(got), got)
@@ -138,6 +138,49 @@ func TestList_SinceIDFiltersOutOlder(t *testing.T) {
 		if m.MessageID() != want[i] {
 			t.Fatalf("position %d: got %s want %s", i, m.MessageID(), want[i])
 		}
+	}
+}
+
+func TestList_SinceIDWorksWithNonSortableIDs(t *testing.T) {
+	rb := New(10)
+	// IDs that do NOT sort lexicographically in insertion order — a
+	// lexicographic comparison would silently misfilter here (e.g. "9" > "10").
+	ids := []string{"msg-9", "msg-10", "msg-2", "msg-100"}
+	for _, id := range ids {
+		_ = rb.Append(context.Background(), makeMessage(t, id))
+	}
+
+	// since_id="msg-10" is the 2nd inserted; only entries appended AFTER it
+	// (by insertion sequence) should be returned, regardless of string order.
+	got, err := rb.List(context.Background(), 10, "msg-10")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []string{"msg-100", "msg-2"} // newest-first, by insertion sequence
+	if len(got) != len(want) {
+		t.Fatalf("expected %d entries, got %d (%+v)", len(want), len(got), got)
+	}
+	for i, m := range got {
+		if m.MessageID() != want[i] {
+			t.Fatalf("position %d: got %s want %s", i, m.MessageID(), want[i])
+		}
+	}
+}
+
+func TestList_SinceIDNotFoundReturnsAllCurrent(t *testing.T) {
+	rb := New(10)
+	for _, id := range []string{"a", "b", "c"} {
+		_ = rb.Append(context.Background(), makeMessage(t, id))
+	}
+
+	// Unknown/evicted sinceID: fall back to returning everything currently
+	// held rather than silently returning nothing.
+	got, err := rb.List(context.Background(), 10, "never-existed")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries for unknown sinceID, got %d", len(got))
 	}
 }
 
@@ -194,6 +237,29 @@ func TestClear_RemovesAll(t *testing.T) {
 	}
 	if got := rb.Len(context.Background()); got != 0 {
 		t.Fatalf("expected len=0 after clear, got %d", got)
+	}
+}
+
+// ==========================================
+// Eviction counter
+// ==========================================
+
+func TestEvicted_CountsOverwrittenEntries(t *testing.T) {
+	rb := New(3)
+	if got := rb.Evicted(context.Background()); got != 0 {
+		t.Fatalf("expected 0 evicted before any overwrite, got %d", got)
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		_ = rb.Append(context.Background(), makeMessage(t, id))
+	}
+	if got := rb.Evicted(context.Background()); got != 0 {
+		t.Fatalf("expected 0 evicted while under capacity, got %d", got)
+	}
+	for _, id := range []string{"d", "e"} {
+		_ = rb.Append(context.Background(), makeMessage(t, id))
+	}
+	if got := rb.Evicted(context.Background()); got != 2 {
+		t.Fatalf("expected 2 evicted after 2 overwrites, got %d", got)
 	}
 }
 

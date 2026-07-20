@@ -46,29 +46,43 @@ func decodeArguments(raw json.RawMessage, into any) error {
 
 // statusOutput is the JSON shape returned by the get_status tool.
 type statusOutput struct {
-	Version          string `json:"version"`
-	ActiveDatabaseID string `json:"active_database_id"`
-	BroadcastMode    string `json:"broadcast_mode"`
-	QueueDepth       int    `json:"queue_depth"`
-	UptimeSeconds    int64  `json:"uptime_seconds"`
+	Version            string `json:"version"`
+	ActiveDatabaseID   string `json:"active_database_id"`
+	BroadcastMode      string `json:"broadcast_mode"`
+	TraceBufferDepth   int    `json:"trace_buffer_depth"`
+	TraceBufferEvicted int    `json:"trace_buffer_evicted,omitempty"`
+	UptimeSeconds      int64  `json:"uptime_seconds"`
+}
+
+// traceEvictionCounter is implemented by trace appenders that track how many
+// entries have been overwritten by FIFO eviction (e.g. tracebuffer.RingBuffer).
+// It's checked via type assertion rather than added to ports.TraceAppender so
+// implementations that don't track eviction aren't forced to grow a no-op
+// method.
+type traceEvictionCounter interface {
+	Evicted(ctx context.Context) int
 }
 
 // getStatus is the handler for the "get_status" tool. It composes the
 // response from app version, Connector, BoltDB broadcast mode, trace buffer
-// length, and process uptime. The DB-queue depth is intentionally nil-safe:
-// when no DatabaseRepository has been injected, the field reports 0.
+// length, and process uptime. trace_buffer_depth reports the in-memory
+// trace ring buffer's current size — NOT the Oracle AQ queue depth, which
+// requires an active database connection and is not surfaced by this tool.
 func getStatus(s *Server, startedAt time.Time) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()
 		if err != nil {
-			return nil, fmt.Errorf("get_status: read broadcast mode: %w", err)
+			return mcpToolError("internal_error", fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
 		}
 		out := statusOutput{
 			Version:          s.deps.App.GetVersion(),
 			ActiveDatabaseID: s.deps.Connector.Active(),
 			BroadcastMode:    mode.String(),
-			QueueDepth:       s.deps.TraceAppender.Len(ctx),
+			TraceBufferDepth: s.deps.TraceAppender.Len(ctx),
 			UptimeSeconds:    int64(time.Since(startedAt).Seconds()),
+		}
+		if ev, ok := s.deps.TraceAppender.(traceEvictionCounter); ok {
+			out.TraceBufferEvicted = ev.Evicted(ctx)
 		}
 		return jsonToolResult(out), nil
 	}

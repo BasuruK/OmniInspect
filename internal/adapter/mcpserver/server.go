@@ -7,6 +7,7 @@ import (
 	"OmniView/internal/service/connector"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,7 +44,19 @@ type Deps struct {
 // configuration. It is the single composition point for MCP-side tools.
 type Server struct {
 	deps Deps
-	mcp  *mcp.Server
+
+	mcpMu sync.Mutex // guards mcp; Serve* may only run once per Server, but the
+	// field write and any future concurrent readers must still be race-free.
+	mcp *mcp.Server
+}
+
+// setMCP records the built SDK server under lock. Serve* calls this once at
+// startup; guarding it costs nothing and closes off a data race for any
+// future code path that reads s.mcp from another goroutine.
+func (s *Server) setMCP(sdk *mcp.Server) {
+	s.mcpMu.Lock()
+	defer s.mcpMu.Unlock()
+	s.mcp = sdk
 }
 
 // NewServer builds a Server with an empty tool list. Tools are added by
@@ -139,8 +152,10 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 
 	// ── connect_database ──────────────────────
 	sdk.AddTool(&mcp.Tool{
-		Name:        "connect_database",
-		Description: "Opens a live connection to the named database, marks it active, and persists the choice. Fails fast (5s timeout) when the database is unreachable.",
+		Name: "connect_database",
+		Description: "Verifies the named database is reachable (5s timeout), marks it active, and " +
+			"persists the choice. The verification connection itself is closed immediately after " +
+			"the check — no connection is held open by this call.",
 		InputSchema: json.RawMessage(`{
 			"type":"object",
 			"required":["id"],

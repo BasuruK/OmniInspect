@@ -58,8 +58,8 @@ func TestGetStatus_Defaults(t *testing.T) {
 	if out.BroadcastMode != domain.BroadcastModeGlobal.String() {
 		t.Fatalf("expected broadcast_mode=Global, got %q", out.BroadcastMode)
 	}
-	if out.QueueDepth != 0 {
-		t.Fatalf("expected queue_depth=0, got %d", out.QueueDepth)
+	if out.TraceBufferDepth != 0 {
+		t.Fatalf("expected trace_buffer_depth=0, got %d", out.TraceBufferDepth)
 	}
 	if out.UptimeSeconds < 0 {
 		t.Fatalf("expected uptime>=0, got %d", out.UptimeSeconds)

@@ -25,7 +25,7 @@ func (s *Server) ServeStdio(ctx context.Context) error {
 		return fmt.Errorf("mcpserver: nil server")
 	}
 	sdk := s.buildAndRegister(time.Now())
-	s.mcp = sdk
+	s.setMCP(sdk)
 	return sdk.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -37,6 +37,6 @@ func (s *Server) ServeWithTransport(ctx context.Context, t mcp.Transport) error 
 		return fmt.Errorf("mcpserver: nil server")
 	}
 	sdk := s.buildAndRegister(time.Now())
-	s.mcp = sdk
+	s.setMCP(sdk)
 	return sdk.Run(ctx, t)
 }

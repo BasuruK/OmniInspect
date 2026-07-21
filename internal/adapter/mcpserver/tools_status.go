@@ -97,10 +97,12 @@ func setBroadcastMode(s *Server) mcp.ToolHandlerFor[setBroadcastModeInput, setBr
 	return func(ctx context.Context, req *mcp.CallToolRequest, in setBroadcastModeInput) (*mcp.CallToolResult, setBroadcastModeOutput, error) {
 		mode, err := parseBroadcastMode(in.Mode)
 		if err != nil {
-			return nil, setBroadcastModeOutput{}, err
+			res, _ := mcpToolError("invalid_input", fmt.Sprintf("set_broadcast_mode: %v", err), nil)
+			return res, setBroadcastModeOutput{}, nil
 		}
 		if err := s.deps.Bolt.SetBroadcastMode(mode); err != nil {
-			return nil, setBroadcastModeOutput{}, fmt.Errorf("set_broadcast_mode: persist: %w", err)
+			res, _ := mcpToolError("internal_error", fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
+			return res, setBroadcastModeOutput{}, nil
 		}
 		out := setBroadcastModeOutput{OK: true, Mode: mode.String()}
 		return nil, out, nil

@@ -34,7 +34,7 @@ func newWelcomeTestModel(t *testing.T) *Model {
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerSvc, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, nil)
+	tracerSvc, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, tracer.TracerServiceOpts{})
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

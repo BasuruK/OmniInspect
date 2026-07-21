@@ -74,11 +74,11 @@ func (stubDatabaseRepository) DeployFile(context.Context, string) error { return
 func TestNewTracerService_RejectsNilDependencies(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewTracerService(nil, &stubConfigRepository{}, make(chan *domain.QueueMessage, 1), nil)
+	_, err := NewTracerService(nil, &stubConfigRepository{}, make(chan *domain.QueueMessage, 1), TracerServiceOpts{})
 	if !errors.Is(err, domain.ErrNilRepository) {
 		t.Fatalf("expected ErrNilRepository, got %v", err)
 	}
-	_, err = NewTracerService(stubDatabaseRepository{}, nil, make(chan *domain.QueueMessage, 1), nil)
+	_, err = NewTracerService(stubDatabaseRepository{}, nil, make(chan *domain.QueueMessage, 1), TracerServiceOpts{})
 	if !errors.Is(err, domain.ErrNilConfig) {
 		t.Fatalf("expected ErrNilConfig, got %v", err)
 	}

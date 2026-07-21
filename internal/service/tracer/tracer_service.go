@@ -146,13 +146,21 @@ type TracerService struct {
 	activeSubscriber *domain.Subscriber
 }
 
-// Constructor: NewTracerService Constructor for TracerService. traceAppender
-// is optional (nil is fine) — see the TracerService doc comment.
+// TracerServiceOpts holds optional dependencies for NewTracerService.
+type TracerServiceOpts struct {
+	// TraceAppender is an optional sink for every dequeued message; when
+	// non-nil, TracerService publishes into it so non-UI consumers (MCP
+	// server, tests) share the same source of truth as the TUI.
+	TraceAppender *tracebuffer.RingBuffer
+}
+
+// Constructor: NewTracerService Constructor for TracerService. opts.TraceAppender
+// is optional (zero value is fine) — see the TracerService doc comment.
 func NewTracerService(
 	db ports.DatabaseRepository,
 	bolt ports.ConfigRepository,
 	eventChannel chan *domain.QueueMessage,
-	traceAppender *tracebuffer.RingBuffer,
+	opts TracerServiceOpts,
 ) (*TracerService, error) {
 	if db == nil {
 		return nil, fmt.Errorf("NewTracerService: %w", domain.ErrNilRepository)
@@ -165,7 +173,7 @@ func NewTracerService(
 		db:            db,
 		bolt:          bolt,
 		eventChannel:  eventChannel,
-		traceAppender: traceAppender,
+		traceAppender: opts.TraceAppender,
 	}, nil
 }
 

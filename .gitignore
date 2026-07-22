@@ -6,9 +6,6 @@ omniview.key
 settings.json
 .vscode/launch.json
 omniview.exe
-.letta
-.kilocode
-.kilo
 skills-lock.json
 omniview.syso
 omniview
@@ -19,6 +16,7 @@ _bmad
 .cursor
 .github/skills
 .agents/skills
+.claude/skills
 .lean-ctx
 omniview.log
 

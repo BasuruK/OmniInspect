@@ -22,20 +22,6 @@ import (
 func main() {
 	omniApp := app.New()
 
-	// Subcommand routing. `omniview mcp [--help]` starts the MCP server
-	// instead of the TUI.
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		if len(os.Args) > 2 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printMCPUsage()
-			return
-		}
-		if err := runMCP(omniApp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
 	if err := run(omniApp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

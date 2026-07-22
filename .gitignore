@@ -16,6 +16,7 @@ _bmad
 .github
 .cursor
 .agents
+.cursor
 .github/skills
 .agents/skills
 .lean-ctx

@@ -119,6 +119,15 @@ func run(omniApp *app.App) error {
 
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
+	// Auto-start the MCP server so agents can drive OmniView without a
+	// separate `omniview mcp` invocation. It serves over HTTP rather than
+	// stdio here, since the TUI already owns stdin/stdout in this process.
+	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo)
+	if err != nil {
+		logger.Warn("MCP server disabled", "error", err)
+	}
+	defer stopMCP()
+
 	model, err := ui.NewModel(ui.ModelOpts{
 		App:         omniApp,
 		BoltAdapter: boltAdapter,

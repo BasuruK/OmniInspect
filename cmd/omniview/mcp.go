@@ -14,7 +14,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 )
+
+// mcpListenAddr is where the in-process MCP server listens when the TUI
+// starts it automatically (see startMCPServer). Loopback-only.
+//
+// ponytail: fixed port, add a flag/env override if a user ever needs two
+// instances running side by side.
+const mcpListenAddr = "127.0.0.1:7337"
 
 // mcpUsage is printed by `omniview mcp --help`.
 const mcpUsage = `omniview mcp — start the OmniView Model Context Protocol server.
@@ -110,4 +118,42 @@ func runMCP(omniApp *app.App) error {
 // `--help` short-circuit in main().
 func printMCPUsage() {
 	fmt.Print(mcpUsage)
+}
+
+// startMCPServer builds the MCP server on its own BoltAdapter-backed
+// Connector (the TUI never touches the active-database-id key, so this
+// doesn't race with anything) and serves it over streamable HTTP in a
+// background goroutine. The MCP subcommand's stdio path is unaffected —
+// this is only for the "TUI auto-starts MCP" case. Returns a stop func
+// that shuts the server down; on listen failure, MCP is skipped and the
+// TUI still starts (a busy port shouldn't block the whole app).
+func startMCPServer(
+	omniApp *app.App,
+	boltAdapter *boltdb.BoltAdapter,
+	traceAppender *tracebuffer.RingBuffer,
+	dbSettingsRepo *boltdb.DatabaseSettingsRepository,
+) (stop func(), _ error) {
+	ln, err := net.Listen("tcp", mcpListenAddr)
+	if err != nil {
+		return func() {}, fmt.Errorf("MCP server: listen on %s: %w", mcpListenAddr, err)
+	}
+
+	srv := mcpserver.NewServer(mcpserver.Deps{
+		App:              omniApp,
+		Bolt:             boltAdapter,
+		TraceAppender:    traceAppender,
+		Connector:        connector.New(boltAdapter),
+		DBSettingsRepo:   dbSettingsRepo,
+		DBAdapterFactory: oracleDBFactory,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		if err := srv.ServeStreamableHTTP(ctx, ln); err != nil {
+			logger.Warn("MCP server stopped", "error", err)
+		}
+	}()
+	logger.Info("MCP server listening", "addr", mcpListenAddr)
+
+	return cancel, nil
 }

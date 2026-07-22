@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__lean-ctx__ctx_shell",
+      "mcp__lean-ctx__ctx_patch",
+      "mcp__lean-ctx__ctx_glob"
+    ]
+  }
+}

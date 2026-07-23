@@ -16,8 +16,6 @@ import (
 )
 
 // mcpListenAddr is where the in-process MCP server listens when the TUI starts it automatically. Loopback-only.
-//
-// ponytail: fixed port, add a flag/env override if a user ever needs two instances running side by side.
 const mcpListenAddr = "127.0.0.1:7337"
 
 // oracleDBFactory builds the real Oracle adapter. It mirrors the closure

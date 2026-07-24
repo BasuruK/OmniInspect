@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,10 +17,15 @@ import (
 // ln. Used when stdio is already owned by the TUI, so the MCP server runs
 // alongside it in the same process instead of over stdin/stdout. Returns
 // nil once ctx is cancelled (graceful shutdown) or the listener is closed.
-func (s *Server) ServeStreamableHTTP(ctx context.Context, ln net.Listener) error {
+//
+// token must accompany every request as an HTTP Authorization header, scheme Bearer.
+// Loopback binding stops remote attackers but not other local accounts on a
+// shared/RDP machine, so callers must supply a per-process random token
+// (see cmd/omniview/mcp.go) instead of an empty one.
+func (s *Server) ServeStreamableHTTP(ctx context.Context, ln net.Listener, token string) error {
 	sdk := s.buildAndRegister(time.Now())
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return sdk }, nil)
-	httpSrv := &http.Server{Handler: handler}
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return sdk }, nil)
+	httpSrv := &http.Server{Handler: requireBearerToken(token, mcpHandler)}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpSrv.Serve(ln) }()
@@ -37,4 +44,18 @@ func (s *Server) ServeStreamableHTTP(ctx context.Context, ln net.Listener) error
 		}
 		return err
 	}
+}
+
+// requireBearerToken rejects any request whose Authorization header doesn't
+// match token via constant-time comparison, closing the gap where another
+// local account on the same machine could otherwise reach this loopback port.
+func requireBearerToken(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if len(token) == 0 || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

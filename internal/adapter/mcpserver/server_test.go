@@ -76,7 +76,7 @@ func TestNewServer_RequiresAllDeps(t *testing.T) {
 		{"App", func(d *Deps) { d.App = nil }},
 		{"Bolt", func(d *Deps) { d.Bolt = nil }},
 		{"TraceAppender", func(d *Deps) { d.TraceAppender = nil }},
-		{"Connector", func(d *Deps) { d.Connector = nil }},
+		{"PermissionsRepo", func(d *Deps) { d.PermissionsRepo = nil }},
 		{"DBSettingsRepo", func(d *Deps) { d.DBSettingsRepo = nil }},
 	}
 	for _, tc := range cases {

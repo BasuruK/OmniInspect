@@ -200,6 +200,7 @@ func newTestModelForSettings(t *testing.T) *Model {
 	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
 
 	return &Model{
+		boltAdapter:       newTestBoltAdapter(t),
 		screen:            screenMain,
 		width:             120,
 		height:            36,

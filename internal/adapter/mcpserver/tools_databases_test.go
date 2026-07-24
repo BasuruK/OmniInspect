@@ -16,7 +16,8 @@ import (
 // ==========================================
 
 // fakeDBAdapter is a ports.DatabaseRepository stub used for connect_database
-// tests. Only Connect and Close are exercised.
+// tests. Connect/Close, plus the PackageExists/FetchWithParams/ExecuteStatement
+// calls made by the permission-check and tracer-deploy steps, are exercised.
 type fakeDBAdapter struct {
 	connectErr error
 	closeErr   error
@@ -58,7 +59,8 @@ func (f *fakeDBAdapter) ExecuteWithParams(context.Context, string, map[string]in
 	return nil
 }
 func (f *fakeDBAdapter) FetchWithParams(context.Context, string, map[string]interface{}) ([]string, error) {
-	return nil, nil
+	const allGranted = `{"CreateSequence":true,"CreateProcedure":true,"CreateType":true,"AQAdministratorRole":true,"AQUserRole":true,"DBMSAQADMExecute":true,"DBMSAQExecute":true,"AQRecipientListT":true,"AQAgentType":true}`
+	return []string{allGranted}, nil
 }
 func (f *fakeDBAdapter) PackageExists(context.Context, string) (bool, error) {
 	return true, nil
@@ -137,8 +139,8 @@ func TestListDatabases_SkipsPasswordAndFlagsActive(t *testing.T) {
 	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if err := deps.Connector.SetActive(context.Background(), settings.StorageKey()); err != nil {
-		t.Fatalf("SetActive: %v", err)
+	if _, err := deps.DBSettingsRepo.SetDefault(context.Background(), *settings); err != nil {
+		t.Fatalf("SetDefault: %v", err)
 	}
 
 	session := connectClientServer(t, deps)
@@ -373,8 +375,9 @@ func TestConnectDatabase_HappyPath(t *testing.T) {
 	if out.ActiveDatabase != settings.StorageKey() {
 		t.Fatalf("expected active=%q, got %q", settings.StorageKey(), out.ActiveDatabase)
 	}
-	if got := deps.Connector.Active(); got != settings.StorageKey() {
-		t.Fatalf("expected Connector.Active=%q, got %q", settings.StorageKey(), got)
+	def, err := deps.DBSettingsRepo.GetDefault(context.Background())
+	if err != nil || def == nil || def.StorageKey() != settings.StorageKey() {
+		t.Fatalf("expected default database=%q, got err=%v def=%v", settings.StorageKey(), err, def)
 	}
 }
 
@@ -409,9 +412,9 @@ func TestConnectDatabase_Unreachable(t *testing.T) {
 	if payload["code"] != "db_unreachable" {
 		t.Fatalf("expected code=db_unreachable, got %v", payload["code"])
 	}
-	// Active must NOT have changed.
-	if got := deps.Connector.Active(); got != "" {
-		t.Fatalf("active should remain empty after failure, got %q", got)
+	// The default database must NOT have changed.
+	if _, err := deps.DBSettingsRepo.GetDefault(context.Background()); !errors.Is(err, domain.ErrDefaultSettingsNotFound) {
+		t.Fatalf("expected no default database to be set, got err=%v", err)
 	}
 }
 

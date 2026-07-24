@@ -66,12 +66,19 @@ func TestGetStatus_Defaults(t *testing.T) {
 	}
 }
 
-func TestGetStatus_ReflectsConnectorAndMode(t *testing.T) {
+func TestGetStatus_ReflectsDefaultDatabaseAndMode(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()
 
-	if err := deps.Connector.SetActive(context.Background(), "DBconfig:prod-42"); err != nil {
-		t.Fatalf("Connector.SetActive: %v", err)
+	settings, err := domain.NewDatabaseSettings("prod-42", "FREEPDB1", "db.example.com", domain.Port(1521), "admin", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := deps.DBSettingsRepo.SetDefault(context.Background(), *settings); err != nil {
+		t.Fatalf("SetDefault: %v", err)
 	}
 	if err := deps.Bolt.SetBroadcastMode(domain.BroadcastModeSubscriber); err != nil {
 		t.Fatalf("Bolt.SetBroadcastMode: %v", err)

@@ -31,21 +31,21 @@ type statusOutput struct {
 	UptimeSeconds      int64  `json:"uptime_seconds"`
 }
 
-// getStatus is the handler for the "get_status" tool. It composes the
-// response from app version, Connector, BoltDB broadcast mode, trace buffer
-// length, and process uptime. trace_buffer_depth reports the in-memory
-// trace ring buffer's current size — NOT the Oracle AQ queue depth, which
-// requires an active database connection and is not surfaced by this tool.
+// getStatus is the handler for the "get_status" tool. It composes the response from app version, the default-database repository, BoltDB broadcast mode, trace buffer length, and process uptime. trace_buffer_depth reports the in-memory trace ring buffer's current size — NOT the Oracle AQ queue depth, which requires an active database connection and is not surfaced by this tool.
 func getStatus(s *Server, startedAt time.Time) mcp.ToolHandlerFor[emptyInput, statusOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, statusOutput, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()
 		if err != nil {
-			res, _ := mcpToolError("internal_error", fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
-			return res, statusOutput{}, nil
+			res, mErr := mcpToolError("internal_error", fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
+			return res, statusOutput{}, mErr
+		}
+		activeDatabaseID := ""
+		if def, err := s.deps.DBSettingsRepo.GetDefault(ctx); err == nil && def != nil {
+			activeDatabaseID = def.StorageKey()
 		}
 		out := statusOutput{
 			Version:            s.deps.App.GetVersion(),
-			ActiveDatabaseID:   s.deps.Connector.Active(),
+			ActiveDatabaseID:   activeDatabaseID,
 			BroadcastMode:      mode.String(),
 			TraceBufferDepth:   s.deps.TraceAppender.Len(ctx),
 			TraceBufferEvicted: s.deps.TraceAppender.Evicted(ctx),
@@ -70,9 +70,7 @@ type setBroadcastModeOutput struct {
 	Mode string `json:"mode"`
 }
 
-// broadcastModes maps the MCP-facing string identifier to its domain value.
-// Unknown inputs are rejected loudly so callers cannot accidentally reset
-// their configuration via an unknown alias.
+// broadcastModes maps the MCP-facing string identifier to its domain value. Unknown inputs are rejected loudly so callers cannot accidentally reset their configuration via an unknown alias.
 var broadcastModes = map[string]domain.BroadcastMode{
 	"global":     domain.BroadcastModeGlobal,
 	"subscriber": domain.BroadcastModeSubscriber,
@@ -80,8 +78,7 @@ var broadcastModes = map[string]domain.BroadcastMode{
 }
 
 // parseBroadcastMode validates the input string and returns the
-// corresponding domain value. domain.NewBroadcastMode silently defaults to
-// Global for unknown inputs; the MCP surface must reject unknowns loudly.
+// corresponding domain value. domain.NewBroadcastMode silently defaults to Global for unknown inputs; the MCP surface must reject unknowns loudly.
 func parseBroadcastMode(raw string) (domain.BroadcastMode, error) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if mode, ok := broadcastModes[normalized]; ok {
@@ -90,19 +87,17 @@ func parseBroadcastMode(raw string) (domain.BroadcastMode, error) {
 	return 0, fmt.Errorf("unknown broadcast mode %q (expected global|subscriber|broadcast)", raw)
 }
 
-// setBroadcastMode is the handler for the "set_broadcast_mode" tool. It
-// validates the new mode (rejecting unknown values), persists the choice
-// through the BoltDB repository, and returns the resolved mode.
+// setBroadcastMode is the handler for the "set_broadcast_mode" tool. It validates the new mode (rejecting unknown values), persists the choice through the BoltDB repository, and returns the resolved mode.
 func setBroadcastMode(s *Server) mcp.ToolHandlerFor[setBroadcastModeInput, setBroadcastModeOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in setBroadcastModeInput) (*mcp.CallToolResult, setBroadcastModeOutput, error) {
 		mode, err := parseBroadcastMode(in.Mode)
 		if err != nil {
-			res, _ := mcpToolError("invalid_input", fmt.Sprintf("set_broadcast_mode: %v", err), nil)
-			return res, setBroadcastModeOutput{}, nil
+			res, mErr := mcpToolError("invalid_input", fmt.Sprintf("set_broadcast_mode: %v", err), nil)
+			return res, setBroadcastModeOutput{}, mErr
 		}
 		if err := s.deps.Bolt.SetBroadcastMode(mode); err != nil {
-			res, _ := mcpToolError("internal_error", fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
-			return res, setBroadcastModeOutput{}, nil
+			res, mErr := mcpToolError("internal_error", fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
+			return res, setBroadcastModeOutput{}, mErr
 		}
 		out := setBroadcastModeOutput{OK: true, Mode: mode.String()}
 		return nil, out, nil

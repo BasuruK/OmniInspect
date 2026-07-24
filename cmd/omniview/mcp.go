@@ -9,20 +9,23 @@ import (
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
-	"OmniView/internal/service/connector"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
 )
 
 // mcpListenAddr is where the in-process MCP server listens when the TUI starts it automatically. Loopback-only.
-const mcpListenAddr = "127.0.0.1:7337"
+const mcpListenAddr = "127.0.0.1:54332"
 
-// oracleDBFactory builds the real Oracle adapter. It mirrors the closure
-// passed to ui.NewModel in main() so the MCP path uses the same Oracle
-// instantiation rules as the TUI.
+// mcpAuthTokenFilename is where startMCPServer writes the bearer token so MCP
+// clients can read it without the token ever appearing in log output.
+const mcpAuthTokenFilename = "omniview-mcp.token"
+
+// oracleDBFactory builds the real Oracle adapter. It mirrors the closure passed to ui.NewModel in main() so the MCP path uses the same Oracle instantiation rules as the TUI.
 func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 	adapter := oracle.NewOracleAdapter(settings)
 	if adapter == nil {
@@ -31,8 +34,8 @@ func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepositor
 	return adapter, nil
 }
 
-// startMCPServer builds the MCP server on its own BoltAdapter-backed
-// Connector and serves it over streamable HTTP in a background goroutine. On listen failure, MCP is skipped and the TUI still starts (a busy port shouldn't block the whole app).
+// startMCPServer builds the MCP server, wired to the shared BoltAdapter,
+// and serves it over streamable HTTP in a background goroutine. On listen failure, MCP is skipped and the TUI still starts (a busy port shouldn't block the whole app).
 // The returned stop func cancels the server context and waits for ServeStreamableHTTP to return.
 func startMCPServer(
 	omniApp *app.App,
@@ -48,14 +51,19 @@ func startMCPServer(
 	authToken, err := newAuthToken()
 	if err != nil {
 		_ = ln.Close()
-		return func() {}, fmt.Errorf("MCP server startup failure (%w)", err)
+		return func() {}, fmt.Errorf("MCP server: generate auth token: %w", err)
+	}
+
+	if err := writeAuthTokenFile(authToken); err != nil {
+		_ = ln.Close()
+		return func() {}, fmt.Errorf("MCP server: persist auth token: %w", err)
 	}
 
 	srv := mcpserver.NewServer(mcpserver.Deps{
 		App:              omniApp,
 		Bolt:             boltAdapter,
 		TraceAppender:    traceAppender,
-		Connector:        connector.New(boltAdapter),
+		PermissionsRepo:  boltdb.NewPermissionsRepository(boltAdapter),
 		DBSettingsRepo:   dbSettingsRepo,
 		DBAdapterFactory: oracleDBFactory,
 	})
@@ -68,24 +76,39 @@ func startMCPServer(
 			logger.Warn("MCP server stopped", "error", err)
 		}
 	}()
-	logger.Info("MCP server listening", "addr", mcpListenAddr, "bearer", authToken)
+	logger.Info("MCP server listening", "addr", mcpListenAddr, "token_fingerprint", tokenFingerprint(authToken))
 
 	return func() {
 		cancel()
 		<-done
+		_ = os.Remove(mcpAuthTokenFilename)
 	}, nil
 }
 
-// newAuthToken returns a fresh random value the MCP HTTP transport requires
-// on every request. Loopback binding keeps remote attackers out but not
-// other local accounts on a shared machine, so each server run needs its
-// own per-process value rather than serving requests to anyone who can
-// reach the port; clients read it from the log line above to configure
-// their MCP HTTP headers.
+// newAuthToken returns a per-process random bearer token.
 func newAuthToken() (string, error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
-		return "", err
+		return "", fmt.Errorf("generate MCP auth token: %w", err)
 	}
 	return hex.EncodeToString(raw), nil
+}
+
+// writeAuthTokenFile persists the bearer token to a 0600 file next to the app's
+// other per-instance secrets (see omniview.key in main.go) so MCP clients can read it directly instead of parsing it out of logs.
+func writeAuthTokenFile(token string) error {
+	if err := os.WriteFile(mcpAuthTokenFilename, []byte(token), 0o600); err != nil {
+		return fmt.Errorf("write MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+	}
+	// os.WriteFile only applies the mode bits on creation; chmod covers the case where a file already sits at this path with looser permissions.
+	if err := os.Chmod(mcpAuthTokenFilename, 0o600); err != nil {
+		return fmt.Errorf("chmod MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+	}
+	return nil
+}
+
+// tokenFingerprint returns a short, non-reversible identifier for a token so log lines can be correlated to a running instance without ever exposing the bearer value itself.
+func tokenFingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:4])
 }

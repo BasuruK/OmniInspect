@@ -615,28 +615,14 @@ func (m *Model) syncDatabaseSettingsDefaults(selectedDb domain.DatabaseSettings)
 	}
 }
 
-// persistDefaultDatabaseSelection: updates the default database selection in the repository.
-func (m *Model) persistDefaultDatabaseSelection(previousDefault *domain.DatabaseSettings, selectedDb domain.DatabaseSettings) error {
-	if m.boltAdapter == nil {
-		return nil
-	}
-
+// markSelectedDatabaseAsDefault persists selectedDb as the default database via the repository.
+func (m *Model) markSelectedDatabaseAsDefault(selectedDb domain.DatabaseSettings) (domain.DatabaseSettings, error) {
 	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
-	var updatedPrevious *domain.DatabaseSettings
-
-	if previousDefault != nil && previousDefault.ID() != selectedDb.ID() && previousDefault.IsDefault() {
-		clearedPrevious, err := databaseSettingsWithDefaultState(*previousDefault, false)
-		if err != nil {
-			return fmt.Errorf("clear previous default %q: %w", previousDefault.DatabaseID(), err)
-		}
-		updatedPrevious = &clearedPrevious
+	updated, err := settingsRepo.SetDefault(m.ctx, selectedDb)
+	if err != nil {
+		return domain.DatabaseSettings{}, err
 	}
-
-	if err := settingsRepo.SwitchDefault(m.ctx, updatedPrevious, selectedDb); err != nil {
-		return fmt.Errorf("persist default database selection %q: %w", selectedDb.DatabaseID(), err)
-	}
-
-	return nil
+	return *updated, nil
 }
 
 // handleSettingsSetAsMain: updates the active database configuration and reinitializes dependent services.
@@ -659,12 +645,8 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		logger.Warn("failed to close validated database adapter", "databaseID", selectedDb.DatabaseID(), "error", err)
 	}
 
-	previousConfig := m.appConfig
-	updatedSelected, err := databaseSettingsWithDefaultState(selectedDb, true)
+	updatedSelected, err := m.markSelectedDatabaseAsDefault(selectedDb)
 	if err != nil {
-		return m.showDatabaseSwitchError(fmt.Errorf("failed to prepare database %q as default: %w", selectedDb.DatabaseID(), err))
-	}
-	if err := m.persistDefaultDatabaseSelection(previousConfig, updatedSelected); err != nil {
 		return m.showDatabaseSwitchError(fmt.Errorf("failed to persist database %q as default: %w", selectedDb.DatabaseID(), err))
 	}
 

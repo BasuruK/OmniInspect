@@ -6,7 +6,6 @@ import (
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
-	"OmniView/internal/service/connector"
 	"context"
 	"path/filepath"
 	"testing"
@@ -20,7 +19,7 @@ import (
 // ==========================================
 
 // testDeps wires a fully-usable Deps with the smallest possible real
-// dependencies: a tmp BoltDB, in-memory trace buffer, real Connector.
+// dependencies: a tmp BoltDB, in-memory trace buffer, real repositories.
 func testDeps(t *testing.T) (Deps, func()) {
 	t.Helper()
 
@@ -37,11 +36,11 @@ func testDeps(t *testing.T) (Deps, func()) {
 	}
 
 	return Deps{
-			App:            &app.App{Name: "omniview-test", Version: "test"},
-			Bolt:           bolt,
-			TraceAppender:  tracebuffer.New(maxListTracesLimit + 1),
-			Connector:      connector.New(bolt),
-			DBSettingsRepo: boltdb.NewDatabaseSettingsRepository(bolt),
+			App:             &app.App{Name: "omniview-test", Version: "test"},
+			Bolt:            bolt,
+			TraceAppender:   tracebuffer.New(maxListTracesLimit + 1),
+			PermissionsRepo: boltdb.NewPermissionsRepository(bolt),
+			DBSettingsRepo:  boltdb.NewDatabaseSettingsRepository(bolt),
 			DBAdapterFactory: func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 				return nil, nil // unused in this test
 			},

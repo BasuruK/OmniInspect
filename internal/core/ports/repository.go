@@ -34,11 +34,18 @@ type DatabaseSettingsRepository interface {
 	// Save stores database settings
 	Save(ctx context.Context, settings domain.DatabaseSettings) error
 
-	// GetByID retrieves database settings by ID
+	// GetByID retrieves database settings by ID. When no record exists, the
+	// returned error satisfies errors.Is(err, domain.ErrDatabaseSettingsNotFound).
 	GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error)
 
 	// GetDefault retrieves the default database settings
 	GetDefault(ctx context.Context) (*domain.DatabaseSettings, error)
+
+	// SetDefault marks settings as the default database, persisting it
+	// (creating the record if it doesn't already exist) and clearing the
+	// previous default (if different) in one call. This is the single entry
+	// point for changing "which database is current".
+	SetDefault(ctx context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error)
 
 	// GetAll retrieves all stored database settings
 	GetAll(ctx context.Context) ([]domain.DatabaseSettings, error)
@@ -182,13 +189,4 @@ type ConfigRepository interface {
 
 	// SetBroadcastMode stores the broadcast mode.
 	SetBroadcastMode(mode domain.BroadcastMode) error
-
-	// GetActiveDatabaseID returns the storage key (storage-prefixed id) of the
-	// currently active database. Returns an empty string when no active database
-	// has been recorded. Thread-safe.
-	GetActiveDatabaseID() (string, error)
-
-	// SetActiveDatabaseID records the storage key of the active database.
-	// Passing an empty id clears the active pointer. Thread-safe.
-	SetActiveDatabaseID(id string) error
 }

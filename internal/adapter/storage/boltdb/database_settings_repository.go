@@ -112,6 +112,26 @@ func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previo
 	})
 }
 
+// SetDefault marks settings as the default database, persisting it (creating
+// the record if it doesn't already exist) and clearing the previous default's
+// flag when it differs. It is the single entry point for changing "which
+// database is current" — every caller (TUI, MCP) should route through here
+// rather than manipulating IsDefault/SwitchDefault directly, so there is
+// exactly one persisted pointer instead of divergent copies.
+func (dsr *DatabaseSettingsRepository) SetDefault(ctx context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
+	var previous *domain.DatabaseSettings
+	if current, err := dsr.GetDefault(ctx); err == nil && current != nil && current.StorageKey() != settings.StorageKey() {
+		current.ClearAsDefault()
+		previous = current
+	}
+
+	settings.SetAsDefault()
+	if err := dsr.SwitchDefault(ctx, previous, settings); err != nil {
+		return nil, err
+	}
+	return &settings, nil
+}
+
 // GetByID retrieves database settings by ID
 func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
 	// Check for context cancellation before proceeding
@@ -133,7 +153,7 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 		resolvedKey := databaseSettingsStorageKey(id)
 		data := b.Get([]byte(resolvedKey))
 		if data == nil {
-			return fmt.Errorf("database settings not found for id: %s", id)
+			return fmt.Errorf("database settings not found for id %q: %w", id, domain.ErrDatabaseSettingsNotFound)
 		}
 
 		if err := json.Unmarshal(data, &settings); err != nil {

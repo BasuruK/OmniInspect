@@ -119,14 +119,58 @@ func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previo
 // rather than manipulating IsDefault/SwitchDefault directly, so there is
 // exactly one persisted pointer instead of divergent copies.
 func (dsr *DatabaseSettingsRepository) SetDefault(ctx context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
-	var previous *domain.DatabaseSettings
-	if current, err := dsr.GetDefault(ctx); err == nil && current != nil && current.StorageKey() != settings.StorageKey() {
-		current.ClearAsDefault()
-		previous = current
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return nil, ErrAdapterNotInitialized
 	}
 
 	settings.SetAsDefault()
-	if err := dsr.SwitchDefault(ctx, previous, settings); err != nil {
+	newKey := settings.StorageKey()
+
+	// Read-then-write happens inside one Update transaction (not a separate
+	// View+Update pair) so a concurrent SetDefault from another caller (TUI,
+	// MCP) can't interleave between the read and the write and leave two
+	// records both flagged isDefault=true.
+	err := dsr.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+		}
+
+		if previousKey := b.Get([]byte(DefaultDatabaseConfigKey)); previousKey != nil && string(previousKey) != newKey {
+			data := b.Get(previousKey)
+			if data == nil {
+				return fmt.Errorf("database settings not found for key: %s", string(previousKey))
+			}
+			var previous domain.DatabaseSettings
+			if err := json.Unmarshal(data, &previous); err != nil {
+				return fmt.Errorf("failed to unmarshal previous default database settings: %w", err)
+			}
+			previous.ClearAsDefault()
+			previousJSON, err := json.Marshal(&previous)
+			if err != nil {
+				return fmt.Errorf("failed to marshal previous default database settings: %w", err)
+			}
+			if err := b.Put(previousKey, previousJSON); err != nil {
+				return fmt.Errorf("failed to save previous default database settings: %w", err)
+			}
+		}
+
+		newJSON, err := json.Marshal(&settings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(newKey), newJSON); err != nil {
+			return fmt.Errorf("failed to save new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
+			return fmt.Errorf("failed to save default database settings key: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &settings, nil

@@ -3,6 +3,7 @@ package tracebuffer
 import (
 	"OmniView/internal/core/domain"
 	"context"
+	"errors"
 	"strconv"
 	"sync"
 	"testing"
@@ -28,7 +29,7 @@ func makeMessage(t *testing.T, id string) *domain.QueueMessage {
 // ==========================================
 
 func TestNew_DefaultsZeroCapacityToOne(t *testing.T) {
-	rb := New(0)
+	rb := New(0, 0)
 	if rb.Len(context.Background()) != 0 {
 		t.Fatalf("expected empty buffer, got len=%d", rb.Len(context.Background()))
 	}
@@ -53,7 +54,7 @@ func TestNew_DefaultsZeroCapacityToOne(t *testing.T) {
 // ==========================================
 
 func TestAppend_EvictsFIFOAtCapacity(t *testing.T) {
-	rb := New(3)
+	rb := New(3, 0)
 	for _, id := range []string{"a", "b", "c", "d", "e"} {
 		if err := rb.Append(context.Background(), makeMessage(t, id)); err != nil {
 			t.Fatalf("Append %s: %v", id, err)
@@ -85,7 +86,7 @@ func TestAppend_EvictsFIFOAtCapacity(t *testing.T) {
 }
 
 func TestAppend_NilIsIgnored(t *testing.T) {
-	rb := New(2)
+	rb := New(2, 0)
 	if err := rb.Append(context.Background(), nil); err != nil {
 		t.Fatalf("Append nil: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestAppend_NilIsIgnored(t *testing.T) {
 // ==========================================
 
 func TestList_NewestFirstRespectsLimit(t *testing.T) {
-	rb := New(10)
+	rb := New(10, 0)
 	for _, id := range []string{"a", "b", "c", "d"} {
 		_ = rb.Append(context.Background(), makeMessage(t, id))
 	}
@@ -120,7 +121,7 @@ func TestList_NewestFirstRespectsLimit(t *testing.T) {
 }
 
 func TestList_SinceIDFiltersOutOlder(t *testing.T) {
-	rb := New(10)
+	rb := New(10, 0)
 	for _, id := range []string{"a", "b", "c", "d"} {
 		_ = rb.Append(context.Background(), makeMessage(t, id))
 	}
@@ -142,7 +143,7 @@ func TestList_SinceIDFiltersOutOlder(t *testing.T) {
 }
 
 func TestList_SinceIDWorksWithNonSortableIDs(t *testing.T) {
-	rb := New(10)
+	rb := New(10, 0)
 	// IDs that do NOT sort lexicographically in insertion order — a
 	// lexicographic comparison would silently misfilter here (e.g. "9" > "10").
 	ids := []string{"msg-9", "msg-10", "msg-2", "msg-100"}
@@ -167,25 +168,22 @@ func TestList_SinceIDWorksWithNonSortableIDs(t *testing.T) {
 	}
 }
 
-func TestList_SinceIDNotFoundReturnsAllCurrent(t *testing.T) {
-	rb := New(10)
+func TestList_SinceIDNotFoundReturnsCursorExpired(t *testing.T) {
+	rb := New(10, 0)
 	for _, id := range []string{"a", "b", "c"} {
 		_ = rb.Append(context.Background(), makeMessage(t, id))
 	}
 
-	// Unknown/evicted sinceID: fall back to returning everything currently
-	// held rather than silently returning nothing.
-	got, err := rb.List(context.Background(), 10, "never-existed")
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 entries for unknown sinceID, got %d", len(got))
+	// Unknown/evicted sinceID: the caller must be able to tell "your cursor
+	// expired" apart from "nothing new".
+	_, err := rb.List(context.Background(), 10, "never-existed")
+	if !errors.Is(err, domain.ErrTraceCursorExpired) {
+		t.Fatalf("expected ErrTraceCursorExpired for unknown sinceID, got %v", err)
 	}
 }
 
 func TestList_NonPositiveLimitReturnsEmpty(t *testing.T) {
-	rb := New(5)
+	rb := New(5, 0)
 	_ = rb.Append(context.Background(), makeMessage(t, "x"))
 
 	got, err := rb.List(context.Background(), 0, "")
@@ -202,7 +200,7 @@ func TestList_NonPositiveLimitReturnsEmpty(t *testing.T) {
 // ==========================================
 
 func TestGetByID_HitAndMiss(t *testing.T) {
-	rb := New(5)
+	rb := New(5, 0)
 	_ = rb.Append(context.Background(), makeMessage(t, "alpha"))
 	_ = rb.Append(context.Background(), makeMessage(t, "beta"))
 
@@ -228,7 +226,7 @@ func TestGetByID_HitAndMiss(t *testing.T) {
 // ==========================================
 
 func TestClear_RemovesAll(t *testing.T) {
-	rb := New(5)
+	rb := New(5, 0)
 	for _, id := range []string{"a", "b", "c"} {
 		_ = rb.Append(context.Background(), makeMessage(t, id))
 	}
@@ -245,7 +243,7 @@ func TestClear_RemovesAll(t *testing.T) {
 // ==========================================
 
 func TestEvicted_CountsOverwrittenEntries(t *testing.T) {
-	rb := New(3)
+	rb := New(3, 0)
 	if got := rb.Evicted(context.Background()); got != 0 {
 		t.Fatalf("expected 0 evicted before any overwrite, got %d", got)
 	}
@@ -272,7 +270,7 @@ func TestConcurrentAppendReadClear(t *testing.T) {
 	const appends = 200
 	const capacity = 500
 
-	rb := New(capacity)
+	rb := New(capacity, 0)
 
 	var wg sync.WaitGroup
 	wg.Add(writers)

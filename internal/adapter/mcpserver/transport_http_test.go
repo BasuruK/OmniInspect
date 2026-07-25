@@ -22,6 +22,27 @@ func (h headerRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
+// startServe runs ServeStreamableHTTP in a goroutine and registers cleanup
+// that cancels ctx and joins the goroutine within a bounded timeout, so the
+// server never outlives the test.
+func startServe(t *testing.T, srv *Server, ctx context.Context, cancel context.CancelFunc, ln net.Listener, token string) chan error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- srv.ServeStreamableHTTP(ctx, ln, token) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("ServeStreamableHTTP: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("ServeStreamableHTTP did not shut down after context cancellation")
+		}
+	})
+	return done
+}
+
 func TestServeStreamableHTTP_HandshakeAndShutdown(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()
@@ -36,8 +57,7 @@ func TestServeStreamableHTTP_HandshakeAndShutdown(t *testing.T) {
 
 	const testToken = "test-secret"
 
-	done := make(chan error, 1)
-	go func() { done <- srv.ServeStreamableHTTP(serverCtx, ln, testToken) }()
+	startServe(t, srv, serverCtx, cancel, ln, testToken)
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -53,16 +73,9 @@ func TestServeStreamableHTTP_HandshakeAndShutdown(t *testing.T) {
 	if session.InitializeResult() == nil {
 		t.Fatal("expected InitializeResult, got nil")
 	}
-	_ = session.Close()
 
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("ServeStreamableHTTP: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("ServeStreamableHTTP did not shut down after context cancellation")
+	if err := session.Close(); err != nil {
+		t.Fatalf("session.Close: %v", err)
 	}
 }
 
@@ -77,17 +90,21 @@ func TestServeStreamableHTTP_RejectsWrongToken(t *testing.T) {
 
 	srv := NewServer(deps)
 	serverCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	done := make(chan error, 1)
-	go func() { done <- srv.ServeStreamableHTTP(serverCtx, ln, "right-token") }()
+	startServe(t, srv, serverCtx, cancel, ln, "right-token")
 
-	resp, err := http.Get("http://" + ln.Addr().String())
+	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String(), nil)
 	if err != nil {
-		t.Fatalf("http.Get: %v", err)
+		t.Fatalf("http.NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer wrong-token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("http.Do: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401 for missing token, got %d", resp.StatusCode)
+		t.Fatalf("expected 401 for wrong token, got %d", resp.StatusCode)
 	}
 }

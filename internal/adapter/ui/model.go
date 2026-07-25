@@ -3,7 +3,6 @@ package ui
 import (
 	"OmniView/internal/adapter/logger"
 	"OmniView/internal/adapter/storage/boltdb"
-	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/adapter/ui/animations"
 	"OmniView/internal/adapter/ui/styles"
 	"OmniView/internal/app"
@@ -144,7 +143,7 @@ type Model struct {
 	dbSettingsRepo    ports.DatabaseSettingsRepository
 	dbAdapter         ports.DatabaseRepository
 	permissionService *permissions.PermissionService
-	traceAppender     *tracebuffer.RingBuffer
+	traceAppender     ports.TraceAppender
 	tracerService     *tracer.TracerService
 	subscriberService *subscribers.SubscriberService
 	updaterService    *updaterSvc.UpdaterService
@@ -195,8 +194,8 @@ type ModelOpts struct {
 	UpdaterService     *updaterSvc.UpdaterService
 	AppConfig          *domain.DatabaseSettings // Optional — onboarding screen populates this
 	EventChannel       chan *domain.QueueMessage
-	UpdateEventChannel chan tea.Msg            // Optional - can be created by Model if not provided
-	TraceAppender      *tracebuffer.RingBuffer // Optional — shared buffer for non-UI consumers (MCP server, tests)
+	UpdateEventChannel chan tea.Msg        // Optional - can be created by Model if not provided
+	TraceAppender      ports.TraceAppender // Optional — shared buffer for non-UI consumers (MCP server, tests)
 }
 
 func NewModel(opts ModelOpts) (*Model, error) {

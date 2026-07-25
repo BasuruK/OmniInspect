@@ -38,7 +38,7 @@ func testDeps(t *testing.T) (Deps, func()) {
 	return Deps{
 			App:             &app.App{Name: "omniview-test", Version: "test"},
 			Bolt:            bolt,
-			TraceAppender:   tracebuffer.New(maxListTracesLimit + 1),
+			TraceAppender:   tracebuffer.New(maxListTracesLimit+1, 0),
 			PermissionsRepo: boltdb.NewPermissionsRepository(bolt),
 			DBSettingsRepo:  boltdb.NewDatabaseSettingsRepository(bolt),
 			DBAdapterFactory: func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {

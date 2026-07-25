@@ -363,6 +363,9 @@ func TestConnectDatabase_HappyPath(t *testing.T) {
 	if !fake.connected {
 		t.Fatal("expected adapter.Connect to be invoked")
 	}
+	if !fake.closed {
+		t.Fatal("expected adapter.Close to be invoked")
+	}
 
 	tc := res.Content[0].(*mcp.TextContent)
 	var out connectDatabaseOutput

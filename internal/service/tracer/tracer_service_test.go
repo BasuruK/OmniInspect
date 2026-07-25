@@ -11,10 +11,6 @@ import (
 
 type stubConfigRepository struct{}
 
-func (r *stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
-func (r *stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
-	return nil, nil
-}
 func (r *stubConfigRepository) IsApplicationFirstRun() (bool, error)               { return false, nil }
 func (r *stubConfigRepository) SetFirstRunCycleStatus(domain.RunCycleStatus) error { return nil }
 func (r *stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error      { return nil }

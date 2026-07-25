@@ -617,8 +617,7 @@ func (m *Model) syncDatabaseSettingsDefaults(selectedDb domain.DatabaseSettings)
 
 // markSelectedDatabaseAsDefault persists selectedDb as the default database via the repository.
 func (m *Model) markSelectedDatabaseAsDefault(selectedDb domain.DatabaseSettings) (domain.DatabaseSettings, error) {
-	settingsRepo := boltdb.NewDatabaseSettingsRepository(m.boltAdapter)
-	updated, err := settingsRepo.SetDefault(m.ctx, selectedDb)
+	updated, err := m.dbSettingsRepo.SetDefault(m.ctx, selectedDb)
 	if err != nil {
 		return domain.DatabaseSettings{}, err
 	}

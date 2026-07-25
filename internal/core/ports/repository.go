@@ -155,12 +155,6 @@ type ProcedureGeneratorRepository interface {
 // ==========================================
 
 type ConfigRepository interface {
-	// SaveDatabaseConfig saves database configuration
-	SaveDatabaseConfig(config *domain.DatabaseSettings) error
-
-	// GetDefaultDatabaseConfig retrieves the default database configuration
-	GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error)
-
 	// IsApplicationFirstRun checks if this is the first run
 	IsApplicationFirstRun() (bool, error)
 
@@ -189,4 +183,33 @@ type ConfigRepository interface {
 
 	// SetBroadcastMode stores the broadcast mode.
 	SetBroadcastMode(mode domain.BroadcastMode) error
+}
+
+// ==========================================
+// Trace Appender Interface (in-memory trace store)
+// ==========================================
+
+// TraceAppender is the shared, bounded store every dequeued trace message is
+// published to, so non-UI consumers (MCP server, tests) observe the same
+// stream as the TUI. Implementations must be safe for concurrent use.
+type TraceAppender interface {
+	// Append adds a message, evicting oldest entries when full. Nil messages are ignored.
+	Append(ctx context.Context, msg *domain.QueueMessage) error
+
+	// List returns up to limit messages newest-first. When sinceID is
+	// non-empty, only messages appended strictly after it are returned; an
+	// unknown or evicted sinceID yields domain.ErrTraceCursorExpired.
+	List(ctx context.Context, limit int, sinceID string) ([]*domain.QueueMessage, error)
+
+	// GetByID returns the message with the given ID, or nil if not found.
+	GetByID(ctx context.Context, id string) (*domain.QueueMessage, error)
+
+	// Clear removes all messages. Lifetime counters are not reset.
+	Clear(ctx context.Context) error
+
+	// Len returns the current number of stored messages.
+	Len(ctx context.Context) int
+
+	// Evicted returns the lifetime count of overwritten messages.
+	Evicted(ctx context.Context) int
 }

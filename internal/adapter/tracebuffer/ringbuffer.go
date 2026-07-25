@@ -2,9 +2,13 @@ package tracebuffer
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	"context"
 	"sync"
 )
+
+// Compile-time check.
+var _ ports.TraceAppender = (*RingBuffer)(nil)
 
 // ==========================================
 // Ring Buffer
@@ -15,35 +19,41 @@ import (
 // filtering keys off of, so ID formats that don't sort lexicographically in
 // insertion order (UUIDs, unpadded counters, etc.) still filter correctly.
 type ringEntry struct {
-	msg *domain.QueueMessage
-	seq uint64
+	msg   *domain.QueueMessage
+	seq   uint64
+	bytes int64 // payload size, drives maxBytes eviction
 }
 
 // RingBuffer is a bounded, FIFO-evicting trace store backed by a fixed-size
 // circular array. It is safe for concurrent use by multiple goroutines.
 //
 // The buffer holds at most `capacity` messages; once full, Append overwrites
-// the oldest entry. The backing slice is allocated once at construction so
-// Append never reallocates.
+// the oldest entry. When maxBytes > 0, the oldest entries are additionally
+// evicted whenever total payload bytes exceed maxBytes — a count ceiling
+// alone cannot stop a few multi-MB payloads from exhausting memory. The
+// backing slice is allocated once at construction so Append never reallocates.
 type RingBuffer struct {
-	mu       sync.RWMutex
-	buf      []ringEntry
-	head     int // index of the oldest entry
-	size     int // current number of entries (0 <= size <= capacity)
-	capacity int
-	nextSeq  uint64 // monotonically increasing, assigned on Append
-	evicted  uint64 // count of entries overwritten by FIFO eviction
+	mu         sync.RWMutex
+	buf        []ringEntry
+	head       int // index of the oldest entry
+	size       int // current number of entries (0 <= size <= capacity)
+	capacity   int
+	maxBytes   int64 // payload byte ceiling; <= 0 disables byte-based eviction
+	totalBytes int64
+	nextSeq    uint64 // monotonically increasing, assigned on Append
+	evicted    uint64 // count of entries overwritten by FIFO eviction
 }
 
 // New returns a RingBuffer with the given capacity. A non-positive capacity
-// is treated as 1.
-func New(capacity int) *RingBuffer {
+// is treated as 1. maxBytes <= 0 disables byte-based eviction.
+func New(capacity int, maxBytes int64) *RingBuffer {
 	if capacity <= 0 {
 		capacity = 1
 	}
 	return &RingBuffer{
 		buf:      make([]ringEntry, capacity),
 		capacity: capacity,
+		maxBytes: maxBytes,
 	}
 }
 
@@ -61,10 +71,11 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	defer r.mu.Unlock()
 
 	r.nextSeq++
-	entry := ringEntry{msg: msg, seq: r.nextSeq}
+	entry := ringEntry{msg: msg, seq: r.nextSeq, bytes: int64(len(msg.Payload()))}
 
 	if r.size == r.capacity {
 		// Buffer is full: overwrite the oldest slot and advance head.
+		r.totalBytes -= r.buf[r.head].bytes
 		r.buf[r.head] = entry
 		r.head = (r.head + 1) % r.capacity
 		r.evicted++
@@ -74,6 +85,17 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 		r.buf[tail] = entry
 		r.size++
 	}
+	r.totalBytes += entry.bytes
+
+	// Byte ceiling: evict oldest until back under maxBytes. The newest entry
+	// is always kept, even when it alone exceeds the ceiling.
+	for r.maxBytes > 0 && r.totalBytes > r.maxBytes && r.size > 1 {
+		r.totalBytes -= r.buf[r.head].bytes
+		r.buf[r.head] = ringEntry{}
+		r.head = (r.head + 1) % r.capacity
+		r.size--
+		r.evicted++
+	}
 	return nil
 }
 
@@ -81,9 +103,9 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 // non-empty, only messages appended strictly after the message with that ID
 // are returned (by insertion sequence, not string comparison of the ID
 // itself). If sinceID is non-empty but no longer present in the buffer
-// (already evicted, or unknown), List returns as if sinceID were empty — the
-// caller cannot distinguish "nothing new" from "your cursor expired" from
-// this API alone. A non-positive limit returns no entries.
+// (already evicted, or unknown), List returns domain.ErrTraceCursorExpired
+// so the caller can distinguish "nothing new" from "your cursor expired".
+// A non-positive limit returns no entries.
 func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*domain.QueueMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -97,12 +119,17 @@ func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*do
 
 	var sinceSeq uint64
 	if sinceID != "" {
+		found := false
 		for i := 0; i < r.size; i++ {
 			idx := (r.head + i) % r.capacity
 			if r.buf[idx].msg.MessageID() == sinceID {
 				sinceSeq = r.buf[idx].seq
+				found = true
 				break
 			}
+		}
+		if !found {
+			return nil, domain.ErrTraceCursorExpired
 		}
 	}
 
@@ -153,6 +180,7 @@ func (r *RingBuffer) Clear(ctx context.Context) error {
 	}
 	r.head = 0
 	r.size = 0
+	r.totalBytes = 0
 	return nil
 }
 

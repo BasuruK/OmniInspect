@@ -5,7 +5,6 @@ import (
 	"OmniView/internal/adapter/mcpserver"
 	"OmniView/internal/adapter/storage/boltdb"
 	"OmniView/internal/adapter/storage/oracle"
-	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/app"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
@@ -40,7 +39,7 @@ func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepositor
 func startMCPServer(
 	omniApp *app.App,
 	boltAdapter *boltdb.BoltAdapter,
-	traceAppender *tracebuffer.RingBuffer,
+	traceAppender ports.TraceAppender,
 	dbSettingsRepo *boltdb.DatabaseSettingsRepository,
 ) (stop func(), _ error) {
 	ln, err := net.Listen("tcp", mcpListenAddr)
@@ -102,6 +101,9 @@ func writeAuthTokenFile(token string) error {
 	}
 	// os.WriteFile only applies the mode bits on creation; chmod covers the case where a file already sits at this path with looser permissions.
 	if err := os.Chmod(mcpAuthTokenFilename, 0o600); err != nil {
+		// Don't leave a token file behind with looser-than-expected
+		// permissions if we can't confirm it's locked down.
+		_ = os.Remove(mcpAuthTokenFilename)
 		return fmt.Errorf("chmod MCP auth token file %s: %w", mcpAuthTokenFilename, err)
 	}
 	return nil

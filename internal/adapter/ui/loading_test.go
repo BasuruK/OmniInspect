@@ -68,10 +68,6 @@ func (stubPermissionsRepository) Exists(context.Context, string) (bool, error) {
 
 type stubConfigRepository struct{}
 
-func (stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
-func (stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
-	return nil, nil
-}
 func (stubConfigRepository) IsApplicationFirstRun() (bool, error) { return false, nil }
 func (stubConfigRepository) SetFirstRunCycleStatus(ports.RunCycleStatus) error {
 	return nil

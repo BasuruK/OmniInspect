@@ -1,8 +1,8 @@
 package mcpserver
 
 import (
-	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,7 +18,7 @@ import (
 
 // seedMessages appends the given messages to the trace store so list_traces
 // and friends have something to return.
-func seedMessages(t *testing.T, store *tracebuffer.RingBuffer, ids ...string) {
+func seedMessages(t *testing.T, store ports.TraceAppender, ids ...string) {
 	t.Helper()
 	ctx := context.Background()
 	base := time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC)

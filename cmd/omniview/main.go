@@ -98,8 +98,11 @@ func run(omniApp *app.App) error {
 
 	// Shared trace buffer — single source of truth for both the TUI and any
 	// non-UI consumers (e.g. the MCP server). Capacity matches the bounded
-	// requirement from the M1 epic spec.
-	traceAppender := tracebuffer.New(10000)
+	// requirement from the M1 epic spec. maxTraceBufferBytes mirrors the
+	// TUI's own maxRawBytes ceiling (see ui/main_screen.go) so a handful of
+	// oversized payloads can't exhaust memory even while under the count cap.
+	const maxTraceBufferBytes = 100 * 1024 * 1024
+	traceAppender := tracebuffer.New(10000, maxTraceBufferBytes)
 
 	// ── Phase 3: Start TUI ───────────────────────
 

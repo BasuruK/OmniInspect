@@ -3,22 +3,20 @@
 .codacy
 omniview.bolt
 omniview.key
+omniview.exe
+omniview.syso
+omniview.log
+omniview-mcp.token
 settings.json
 .vscode/launch.json
-omniview.exe
 skills-lock.json
-omniview.syso
-omniview
 _bmad
 .github
 .cursor
 .agents
-.cursor
-.github/skills
 .agents/skills
 .claude/skills
 .lean-ctx
-omniview.log
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

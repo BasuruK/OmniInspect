@@ -68,4 +68,5 @@ var (
 	ErrEarlyAbort          = errors.New("early return: encrypted credential found")
 	ErrBoltAdapterNotReady = errors.New("bolt adapter not initialised")
 	ErrBoltBucketNotFound  = errors.New("bolt bucket not found")
+	ErrTraceCursorExpired  = errors.New("trace cursor expired or unknown")
 )

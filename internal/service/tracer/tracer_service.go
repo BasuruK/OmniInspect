@@ -3,7 +3,6 @@ package tracer
 import (
 	"OmniView/assets"
 	"OmniView/internal/adapter/logger"
-	"OmniView/internal/adapter/tracebuffer"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/core/ports"
 	"OmniView/internal/service/webhook"
@@ -136,7 +135,7 @@ func StopAll(tracerService *TracerService) {
 type TracerService struct {
 	db               ports.DatabaseRepository
 	bolt             ports.ConfigRepository
-	traceAppender    *tracebuffer.RingBuffer
+	traceAppender    ports.TraceAppender
 	processMu        sync.Mutex
 	subscriberMu     sync.Mutex
 	eventChannel     chan *domain.QueueMessage
@@ -151,7 +150,7 @@ type TracerServiceOpts struct {
 	// TraceAppender is an optional sink for every dequeued message; when
 	// non-nil, TracerService publishes into it so non-UI consumers (MCP
 	// server, tests) share the same source of truth as the TUI.
-	TraceAppender *tracebuffer.RingBuffer
+	TraceAppender ports.TraceAppender
 }
 
 // Constructor: NewTracerService Constructor for TracerService. opts.TraceAppender

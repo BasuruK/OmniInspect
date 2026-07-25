@@ -60,10 +60,19 @@ func connectClientServer(t *testing.T, deps Deps) *mcp.ClientSession {
 	srv := NewServer(deps)
 
 	serverCtx, serverCancel := context.WithCancel(context.Background())
-	t.Cleanup(serverCancel)
+	serverDone := make(chan struct{})
+	t.Cleanup(func() {
+		serverCancel()
+		select {
+		case <-serverDone:
+		case <-time.After(2 * time.Second):
+			t.Logf("connectClientServer: server goroutine did not exit within 2s of cancellation")
+		}
+	})
 
 	// Run the server in a goroutine. Run blocks until the transport closes.
 	go func() {
+		defer close(serverDone)
 		_ = srv.ServeWithTransport(serverCtx, serverTransport)
 	}()
 

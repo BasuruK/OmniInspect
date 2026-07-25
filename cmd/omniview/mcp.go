@@ -20,8 +20,7 @@ import (
 // mcpListenAddr is where the in-process MCP server listens when the TUI starts it automatically. Loopback-only.
 const mcpListenAddr = "127.0.0.1:54332"
 
-// mcpAuthTokenFilename is where startMCPServer writes the bearer token so MCP
-// clients can read it without the token ever appearing in log output.
+// mcpAuthTokenFilename is the file startMCPServer writes the bearer token to.
 const mcpAuthTokenFilename = "omniview-mcp.token"
 
 // oracleDBFactory builds the real Oracle adapter. It mirrors the closure passed to ui.NewModel in main() so the MCP path uses the same Oracle instantiation rules as the TUI.
@@ -96,15 +95,14 @@ func newAuthToken() (string, error) {
 // writeAuthTokenFile persists the bearer token to a 0600 file next to the app's
 // other per-instance secrets (see omniview.key in main.go) so MCP clients can read it directly instead of parsing it out of logs.
 func writeAuthTokenFile(token string) error {
-	if err := os.WriteFile(mcpAuthTokenFilename, []byte(token), 0o600); err != nil {
-		return fmt.Errorf("write MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+	f, err := os.OpenFile(mcpAuthTokenFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open MCP auth token file %s: %w", mcpAuthTokenFilename, err)
 	}
-	// os.WriteFile only applies the mode bits on creation; chmod covers the case where a file already sits at this path with looser permissions.
-	if err := os.Chmod(mcpAuthTokenFilename, 0o600); err != nil {
-		// Don't leave a token file behind with looser-than-expected
-		// permissions if we can't confirm it's locked down.
+	defer f.Close()
+	if _, err := f.Write([]byte(token)); err != nil {
 		_ = os.Remove(mcpAuthTokenFilename)
-		return fmt.Errorf("chmod MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+		return fmt.Errorf("write MCP auth token file %s: %w", mcpAuthTokenFilename, err)
 	}
 	return nil
 }

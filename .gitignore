@@ -11,7 +11,7 @@ settings.json
 .vscode/launch.json
 skills-lock.json
 _bmad
-.github
+.github/skills
 .cursor
 .agents
 .agents/skills

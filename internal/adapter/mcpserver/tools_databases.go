@@ -87,9 +87,7 @@ func addDatabaseConfirmRequired() (*mcp.CallToolResult, error) {
 		map[string]any{"confirm_required": true})
 }
 
-// Stable error codes returned in mcpToolError's "code" field. "no_active_db"
-// and "db_locked" are reserved by the architecture spec for tools that gate
-// on connection state; no current v1 tool has that precondition.
+// Stable error codes returned in mcpToolError's "code" field.
 const (
 	errCodeInvalidInput          = "invalid_input"           // bad/missing arguments
 	errCodeNotFound              = "not_found"               // referenced entity does not exist
@@ -235,13 +233,20 @@ func connectDatabase(s *Server) mcp.ToolHandlerFor[connectDatabaseInput, connect
 			return res, connectDatabaseOutput{}, err
 		}
 
-		if _, err := permissions.NewPermissionService(adapter, s.deps.PermissionsRepo, s.deps.Bolt).DeployAndCheck(ctx, settings.Username()); err != nil {
+		deployCtx, deployCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer deployCancel()
+
+		if _, err := permissions.NewPermissionService(adapter, s.deps.PermissionsRepo, s.deps.Bolt).DeployAndCheck(deployCtx, settings.Username()); err != nil {
 			res, mErr := mcpToolError(errCodePermissionCheckFailed, fmt.Sprintf("connect_database: permission check: %v", err), nil)
 			return res, connectDatabaseOutput{}, mErr
 		}
 
-		tracerSvc, _ := tracer.NewTracerService(adapter, s.deps.Bolt, nil, tracer.TracerServiceOpts{})
-		if err := tracerSvc.DeployAndCheck(ctx); err != nil {
+		tracerSvc, err := tracer.NewTracerService(adapter, s.deps.Bolt, nil, tracer.TracerServiceOpts{})
+		if err != nil {
+			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("connect_database: build tracer service: %v", err), nil)
+			return res, connectDatabaseOutput{}, mErr
+		}
+		if err := tracerSvc.DeployAndCheck(deployCtx); err != nil {
 			res, mErr := mcpToolError(errCodeTracerDeployFailed, fmt.Sprintf("connect_database: tracer deploy: %v", err), nil)
 			return res, connectDatabaseOutput{}, mErr
 		}

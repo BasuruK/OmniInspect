@@ -140,21 +140,22 @@ func (dsr *DatabaseSettingsRepository) SetDefault(ctx context.Context, settings 
 		}
 
 		if previousKey := b.Get([]byte(DefaultDatabaseConfigKey)); previousKey != nil && string(previousKey) != newKey {
-			data := b.Get(previousKey)
-			if data == nil {
-				return fmt.Errorf("database settings not found for key: %s", string(previousKey))
-			}
-			var previous domain.DatabaseSettings
-			if err := json.Unmarshal(data, &previous); err != nil {
-				return fmt.Errorf("failed to unmarshal previous default database settings: %w", err)
-			}
-			previous.ClearAsDefault()
-			previousJSON, err := json.Marshal(&previous)
-			if err != nil {
-				return fmt.Errorf("failed to marshal previous default database settings: %w", err)
-			}
-			if err := b.Put(previousKey, previousJSON); err != nil {
-				return fmt.Errorf("failed to save previous default database settings: %w", err)
+			// If the previous default pointer is stale (its record was
+			// deleted or replaced elsewhere), there's nothing to clear —
+			// the Put below repairs the pointer instead of erroring out.
+			if data := b.Get(previousKey); data != nil {
+				var previous domain.DatabaseSettings
+				if err := json.Unmarshal(data, &previous); err != nil {
+					return fmt.Errorf("failed to unmarshal previous default database settings: %w", err)
+				}
+				previous.ClearAsDefault()
+				previousJSON, err := json.Marshal(&previous)
+				if err != nil {
+					return fmt.Errorf("failed to marshal previous default database settings: %w", err)
+				}
+				if err := b.Put(previousKey, previousJSON); err != nil {
+					return fmt.Errorf("failed to save previous default database settings: %w", err)
+				}
 			}
 		}
 

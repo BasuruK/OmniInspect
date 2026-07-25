@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,16 @@ func makeMessage(t *testing.T, id string) *domain.QueueMessage {
 	t.Helper()
 	ts := time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC)
 	msg, err := domain.NewQueueMessage(id, "proc", domain.LogLevelInfo, "payload", ts)
+	if err != nil {
+		t.Fatalf("NewQueueMessage(%q) failed: %v", id, err)
+	}
+	return msg
+}
+
+func makeMessageWithPayload(t *testing.T, id string, payload string) *domain.QueueMessage {
+	t.Helper()
+	ts := time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC)
+	msg, err := domain.NewQueueMessage(id, "proc", domain.LogLevelInfo, payload, ts)
 	if err != nil {
 		t.Fatalf("NewQueueMessage(%q) failed: %v", id, err)
 	}
@@ -258,6 +269,64 @@ func TestEvicted_CountsOverwrittenEntries(t *testing.T) {
 	}
 	if got := rb.Evicted(context.Background()); got != 2 {
 		t.Fatalf("expected 2 evicted after 2 overwrites, got %d", got)
+	}
+}
+
+// ==========================================
+// Byte ceiling
+// ==========================================
+
+func TestAppend_MaxBytesEvictsOldestUntilUnderCeiling(t *testing.T) {
+	rb := New(10, 15)
+	payload := strings.Repeat("a", 5) // 5 bytes per message
+	for _, id := range []string{"a", "b", "c"} {
+		if err := rb.Append(context.Background(), makeMessageWithPayload(t, id, payload)); err != nil {
+			t.Fatalf("Append(%q): %v", id, err)
+		}
+	}
+	if got := rb.Len(context.Background()); got != 3 {
+		t.Fatalf("expected 3 entries at the ceiling, got %d", got)
+	}
+	if got := rb.Evicted(context.Background()); got != 0 {
+		t.Fatalf("expected 0 evicted at the ceiling, got %d", got)
+	}
+
+	if err := rb.Append(context.Background(), makeMessageWithPayload(t, "d", payload)); err != nil {
+		t.Fatalf("Append(d): %v", err)
+	}
+	if got := rb.Len(context.Background()); got != 3 {
+		t.Fatalf("expected oldest entry evicted to stay under the byte ceiling, got len=%d", got)
+	}
+	if got := rb.Evicted(context.Background()); got != 1 {
+		t.Fatalf("expected 1 evicted after exceeding the byte ceiling, got %d", got)
+	}
+	if msg, _ := rb.GetByID(context.Background(), "a"); msg != nil {
+		t.Fatalf("expected oldest entry %q to have been evicted", "a")
+	}
+}
+
+func TestAppend_DropsEntryOverByteCeiling(t *testing.T) {
+	rb := New(10, 10)
+	if err := rb.Append(context.Background(), makeMessageWithPayload(t, "a", "small")); err != nil {
+		t.Fatalf("Append(a): %v", err)
+	}
+
+	oversized := strings.Repeat("x", 20)
+	if err := rb.Append(context.Background(), makeMessageWithPayload(t, "b", oversized)); err != nil {
+		t.Fatalf("Append(b): %v", err)
+	}
+
+	if got := rb.Len(context.Background()); got != 1 {
+		t.Fatalf("expected oversized entry to be dropped without touching retained history, got len=%d", got)
+	}
+	if got := rb.Evicted(context.Background()); got != 1 {
+		t.Fatalf("expected oversized entry to count as evicted, got %d", got)
+	}
+	if msg, err := rb.GetByID(context.Background(), "a"); err != nil || msg == nil {
+		t.Fatalf("expected retained history entry %q to survive, got msg=%v err=%v", "a", msg, err)
+	}
+	if msg, _ := rb.GetByID(context.Background(), "b"); msg != nil {
+		t.Fatalf("expected oversized entry %q to be absent", "b")
 	}
 }
 

@@ -1,10 +1,11 @@
 package tracebuffer
 
 import (
-	"OmniView/internal/core/domain"
-	"OmniView/internal/core/ports"
 	"context"
 	"sync"
+
+	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 )
 
 // Compile-time check.
@@ -70,8 +71,17 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	entryBytes := int64(len(msg.Payload()))
+	if r.maxBytes > 0 && entryBytes > r.maxBytes {
+		// A single payload over the ceiling can never fit even after
+		// evicting every other entry, so drop it instead of wiping out
+		// retained history for no benefit.
+		r.evicted++
+		return nil
+	}
+
 	r.nextSeq++
-	entry := ringEntry{msg: msg, seq: r.nextSeq, bytes: int64(len(msg.Payload()))}
+	entry := ringEntry{msg: msg, seq: r.nextSeq, bytes: entryBytes}
 
 	if r.size == r.capacity {
 		// Buffer is full: overwrite the oldest slot and advance head.
@@ -87,8 +97,9 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	}
 	r.totalBytes += entry.bytes
 
-	// Byte ceiling: evict oldest until back under maxBytes. The newest entry
-	// is always kept, even when it alone exceeds the ceiling.
+	// Byte ceiling: evict oldest until back under maxBytes. Since entries
+	// over the ceiling are rejected above, this always converges to <=
+	// maxBytes (the last entry standing is the newest, which fits alone).
 	for r.maxBytes > 0 && r.totalBytes > r.maxBytes && r.size > 1 {
 		r.totalBytes -= r.buf[r.head].bytes
 		r.buf[r.head] = ringEntry{}

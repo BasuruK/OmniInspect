@@ -32,7 +32,8 @@ type statusOutput struct {
 	UptimeSeconds      int64  `json:"uptime_seconds"`
 }
 
-// getStatus is the handler for the "get_status" tool. It composes the response from app version, the default-database repository, BoltDB broadcast mode, trace buffer length, and process uptime. trace_buffer_depth reports the in-memory trace ring buffer's current size — NOT the Oracle AQ queue depth, which requires an active database connection and is not surfaced by this tool.
+// getStatus is the handler for the "get_status" tool. It reports app version,
+// active database, broadcast mode, trace buffer depth, and process uptime.
 func getStatus(s *Server, startedAt time.Time) mcp.ToolHandlerFor[emptyInput, statusOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, statusOutput, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()

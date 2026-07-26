@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 )
 
 // mcpListenAddr is where the in-process MCP server listens when the TUI starts it automatically. Loopback-only.
@@ -95,14 +96,24 @@ func newAuthToken() (string, error) {
 // writeAuthTokenFile persists the bearer token to a 0600 file next to the app's
 // other per-instance secrets (see omniview.key in main.go) so MCP clients can read it directly instead of parsing it out of logs.
 func writeAuthTokenFile(token string) error {
-	f, err := os.OpenFile(mcpAuthTokenFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	tmpFile, err := os.CreateTemp(filepath.Dir(mcpAuthTokenFilename), "."+filepath.Base(mcpAuthTokenFilename)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("open MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+		return fmt.Errorf("create temporary MCP auth token file: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.Write([]byte(token)); err != nil {
-		_ = os.Remove(mcpAuthTokenFilename)
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := tmpFile.WriteString(token); err != nil {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return fmt.Errorf("write MCP auth token file %s: %w (close: %v)", mcpAuthTokenFilename, err, closeErr)
+		}
 		return fmt.Errorf("write MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close MCP auth token file %s: %w", mcpAuthTokenFilename, err)
+	}
+	if err := os.Rename(tmpPath, mcpAuthTokenFilename); err != nil {
+		return fmt.Errorf("replace MCP auth token file %s: %w", mcpAuthTokenFilename, err)
 	}
 	return nil
 }

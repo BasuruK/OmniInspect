@@ -45,8 +45,8 @@ const (
 	maxListTracesLimit     = 1000
 )
 
-// listTraces returns the most recent messages from the trace buffer. The since_id, level, and process_name filters are applied client-side on the
-// snapshot (acceptable for the 10k cap; a SQL-backed source would push them down).
+// listTraces returns the most recent messages from the trace buffer, filtered
+// client-side by since_id, level, and process_name.
 func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in listTracesInput) (*mcp.CallToolResult, listTracesOutput, error) {
 		limit := in.Limit

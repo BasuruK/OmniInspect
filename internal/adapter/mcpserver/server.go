@@ -17,8 +17,8 @@ import (
 // injected so tests can substitute fakes without depending on the real Oracle/ODPI-C adapter.
 type DBAdapterFactory func(*domain.DatabaseSettings) (ports.DatabaseRepository, error)
 
-// Deps groups the shared services a Server needs. Every field except DBAdapterFactory is required; NewServer panics when a critical
-// dependency is missing. DBAdapterFactory is optional: when nil, calls to it from later tool handlers return an error (it must be set by the composition root in cmd/).
+// Deps groups the shared services a Server needs. Every field except
+// DBAdapterFactory is required; NewServer panics if one is missing.
 type Deps struct {
 	App              *app.App
 	Bolt             ports.ConfigRepository

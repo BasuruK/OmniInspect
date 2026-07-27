@@ -12,6 +12,7 @@ settings.json
 skills-lock.json
 _bmad
 .github/skills
+.github/agents
 .cursor
 .agents
 .agents/skills

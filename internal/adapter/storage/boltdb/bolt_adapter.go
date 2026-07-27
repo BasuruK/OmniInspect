@@ -221,7 +221,7 @@ func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		v := b.Get([]byte(RunCycleStatusKey))
 		isFirstRun = v == nil
@@ -239,7 +239,7 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Save the first run status as a simple boolean
@@ -272,7 +272,7 @@ func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
 		b := tx.Bucket([]byte(WebhookConfigBucket))
 
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", WebhookConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Marshal the config to JSON
@@ -347,7 +347,7 @@ func (ba *BoltAdapter) GetTracerPackageVersion() (string, error) {
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		val := b.Get([]byte(TracerPackageVersionKey))
 		if val != nil {
@@ -370,7 +370,7 @@ func (ba *BoltAdapter) SetTracerPackageVersion(version string) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		return b.Put([]byte(TracerPackageVersionKey), []byte(version))
 	})
@@ -385,7 +385,7 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(WebhookConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", WebhookConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Check if DefaultWebhookKey points to this webhook and clear it
@@ -403,14 +403,14 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 // GetBroadcastMode retrieves the stored broadcast mode.
 func (ba *BoltAdapter) GetBroadcastMode() (domain.BroadcastMode, error) {
 	if ba.db == nil {
-		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", ErrAdapterNotInitialized)
+		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", domain.ErrBoltAdapterNotReady)
 	}
 
 	mode := domain.BroadcastModeGlobal
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		val := b.Get([]byte(BroadcastModeKey))
 		if val != nil {
@@ -433,7 +433,7 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
 	})

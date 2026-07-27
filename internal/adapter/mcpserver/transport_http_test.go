@@ -108,3 +108,64 @@ func TestServeStreamableHTTP_RejectsWrongToken(t *testing.T) {
 		t.Fatalf("expected 401 for wrong token, got %d", resp.StatusCode)
 	}
 }
+
+func TestServeStreamableHTTP_RejectsForeignOrigin(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+
+	srv := NewServer(deps)
+	serverCtx, cancel := context.WithCancel(context.Background())
+
+	startServe(t, srv, serverCtx, cancel, ln, "right-token")
+
+	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String(), nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer right-token")
+	req.Header.Set("Origin", "https://evil.example")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("http.Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for foreign origin, got %d", resp.StatusCode)
+	}
+}
+
+func TestServeStreamableHTTP_RejectsRawToken(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+
+	srv := NewServer(deps)
+	serverCtx, cancel := context.WithCancel(context.Background())
+
+	startServe(t, srv, serverCtx, cancel, ln, "right-token")
+
+	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String(), nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "right-token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("http.Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-Bearer Authorization, got %d", resp.StatusCode)
+	}
+}

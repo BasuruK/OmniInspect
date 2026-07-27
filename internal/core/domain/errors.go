@@ -69,4 +69,15 @@ var (
 	ErrBoltAdapterNotReady = errors.New("bolt adapter not initialised")
 	ErrBoltBucketNotFound  = errors.New("bolt bucket not found")
 	ErrTraceCursorExpired  = errors.New("trace cursor expired or unknown")
+
+	// MCP Tool Error Codes
+	ErrCodeInvalidInput          = errors.New("invalid_input")
+	ErrCodeNotFound              = errors.New("not_found")
+	ErrCodeAlreadyExists         = errors.New("already_exists")
+	ErrCodeInternalError         = errors.New("internal_error")
+	ErrCodeDBUnreachable         = errors.New("db_unreachable")
+	ErrCodePermissionCheckFailed = errors.New("permission_check_failed")
+	ErrCodeTracerDeployFailed    = errors.New("tracer_deploy_failed")
+	ErrCodePasswordInPlaintext   = errors.New("password_in_plaintext")
+	ErrCodeCursorExpired         = errors.New("cursor_expired")
 )

@@ -61,16 +61,38 @@ func (s *Server) ServeStreamableHTTP(ctx context.Context, ln net.Listener, token
 
 const bearerPrefix = "Bearer "
 
-// requireBearerToken rejects any request whose Authorization header doesn't
-// match token via constant-time comparison, closing the gap where another
-// local account on the same machine could otherwise reach this loopback port.
+// loopbackOrigins is the explicit allowlist of browser Origins permitted to
+// call this loopback-only MCP transport. A loopback bind stops remote
+// attackers but does nothing against a malicious page in a local browser
+// reaching 127.0.0.1 with the user's stored bearer token (it can attach
+// arbitrary headers to same-origin fetch-like requests), so we close that
+// gap by rejecting any Origin outside this list before doing anything else.
+var loopbackOrigins = map[string]struct{}{
+	"":                       {},
+	"null":                   {}, // sandboxed iframes / opaque-origin fetches
+	"http://localhost":       {},
+	"http://127.0.0.1":       {},
+	"http://localhost.local": {},
+	"http://127.0.0.1.local": {},
+}
+
+// requireBearerToken rejects any request whose Origin is outside the loopback
+// allowlist, then checks the Authorization header uses the Bearer scheme and
+// that the extracted token matches the configured token via constant-time
+// comparison. Together these close the gaps where another local account, or
+// a malicious local browser page, could otherwise reach this loopback port.
 func requireBearerToken(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		got := auth
-		if len(auth) >= len(bearerPrefix) && strings.EqualFold(auth[:len(bearerPrefix)], bearerPrefix) {
-			got = auth[len(bearerPrefix):]
+		if _, ok := loopbackOrigins[r.Header.Get("Origin")]; !ok {
+			http.Error(w, "forbidden origin", http.StatusForbidden)
+			return
 		}
+		auth := r.Header.Get("Authorization")
+		if len(auth) < len(bearerPrefix) || !strings.EqualFold(auth[:len(bearerPrefix)], bearerPrefix) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		got := auth[len(bearerPrefix):]
 		if len(token) == 0 || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

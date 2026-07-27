@@ -43,17 +43,14 @@ func run(omniApp *app.App) error {
 
 	updater.CleanupOldBinary()
 
-	// Enable at-rest encryption for credentials persisted in BoltDB. The master key
-	// is stored in a 0600 file alongside the database and generated on first run.
+	// Enable at-rest encryption for credentials persisted in BoltDB. The master key is stored in a 0600 file alongside the database and generated on first run.
 	const boltDBPath = "omniview.bolt"
 	const keyPath = "omniview.key"
 	if _, err := os.Stat(boltDBPath); err == nil {
 		if _, keyErr := os.Stat(keyPath); keyErr != nil {
 			if errors.Is(keyErr, os.ErrNotExist) {
-				// To provide zero-friction upgrades for existing customers, we only block
-				// startup if the database actively contains encrypted credentials that need
-				// a missing key. If no credentials are encrypted yet (i.e. legacy plaintext),
-				// we let database initialization automatically generate a new key file.
+				// To provide zero-friction upgrades for existing customers, we only block startup if the database actively contains encrypted credentials that need
+				// a missing key. If no credentials are encrypted yet (i.e. legacy plaintext), we let database initialization automatically generate a new key file.
 				tempBA, err := boltdb.NewBoltAdapter(boltDBPath)
 				if err != nil {
 					return fmt.Errorf("could not open BoltDB at %q to scan for encrypted credentials (key file: %q): %w", boltDBPath, keyPath, err)
@@ -96,11 +93,8 @@ func run(omniApp *app.App) error {
 	eventCh := make(chan *domain.QueueMessage, 100)
 	updaterService := updaterSvc.NewUpdaterService(omniApp.GetVersion())
 
-	// Shared trace buffer — single source of truth for both the TUI and any
-	// non-UI consumers (e.g. the MCP server). Capacity matches the bounded
-	// requirement from the M1 epic spec. maxTraceBufferBytes mirrors the
-	// TUI's own maxRawBytes ceiling (see ui/main_screen.go) so a handful of
-	// oversized payloads can't exhaust memory even while under the count cap.
+	// Shared trace buffer — single source of truth for both the TUI and any non-UI consumers (e.g. the MCP server). Capacity matches the bounded
+	// requirement from the M1 epic spec. maxTraceBufferBytes mirrors the TUI's own maxRawBytes ceiling (see ui/main_screen.go) so a handful of oversized payloads can't exhaust memory even while under the count cap.
 	const maxTraceBufferBytes = 100 * 1024 * 1024
 	traceAppender := tracebuffer.New(10000, maxTraceBufferBytes)
 
@@ -108,14 +102,12 @@ func run(omniApp *app.App) error {
 
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
-	// Auto-start the MCP server so agents can drive OmniView without a
-	// separate `omniview mcp` invocation. It serves over HTTP rather than
-	// stdio here, since the TUI already owns stdin/stdout in this process.
+	// Auto-start the MCP server so agents can drive OmniView without a separate `omniview mcp` invocation. It serves over HTTP rather than stdio here, since the TUI already owns stdin/stdout in this process. Only one instance can bind mcpListenAddr, so a second launch silently loses MCP rather than double-serving.
 	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo)
 	if err != nil {
 		logger.Warn("MCP server disabled", "error", err)
+		defer stopMCP()
 	}
-	defer stopMCP()
 
 	model, err := ui.NewModel(ui.ModelOpts{
 		App:         omniApp,

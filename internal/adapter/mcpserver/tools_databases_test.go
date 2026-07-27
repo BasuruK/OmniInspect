@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -59,8 +60,21 @@ func (f *fakeDBAdapter) ExecuteWithParams(context.Context, string, map[string]in
 	return nil
 }
 func (f *fakeDBAdapter) FetchWithParams(context.Context, string, map[string]interface{}) ([]string, error) {
-	const allGranted = `{"CreateSequence":true,"CreateProcedure":true,"CreateType":true,"AQAdministratorRole":true,"AQUserRole":true,"DBMSAQADMExecute":true,"DBMSAQExecute":true,"AQRecipientListT":true,"AQAgentType":true}`
-	return []string{allGranted}, nil
+	// Build the "all privileges granted" JSON from the domain type so any
+	// privilege added/renamed in domain.PermissionStatus is reflected here
+	// automatically.
+	status := domain.PermissionStatus{}
+	v := reflect.ValueOf(&status).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).Kind() == reflect.Bool {
+			v.Field(i).SetBool(true)
+		}
+	}
+	allGranted, err := json.Marshal(status)
+	if err != nil {
+		return nil, err
+	}
+	return []string{string(allGranted)}, nil
 }
 func (f *fakeDBAdapter) PackageExists(context.Context, string) (bool, error) {
 	return true, nil

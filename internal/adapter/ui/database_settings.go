@@ -621,6 +621,9 @@ func (m *Model) markSelectedDatabaseAsDefault(selectedDb domain.DatabaseSettings
 	if err != nil {
 		return domain.DatabaseSettings{}, err
 	}
+	if updated == nil {
+		return domain.DatabaseSettings{}, fmt.Errorf("set default database %q: repository returned no settings", selectedDb.DatabaseID())
+	}
 	return *updated, nil
 }
 

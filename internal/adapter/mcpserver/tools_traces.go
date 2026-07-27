@@ -61,7 +61,7 @@ func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput]
 		if trimmed := strings.TrimSpace(in.Level); trimmed != "" {
 			lvl, err := domain.NewLogLevel(trimmed)
 			if err != nil {
-				res, mErr := mcpToolError(errCodeInvalidInput, fmt.Sprintf("list_traces: %v", err), nil)
+				res, mErr := mcpToolError(domain.ErrCodeInvalidInput, fmt.Sprintf("list_traces: %v", err), nil)
 				return res, listTracesOutput{}, mErr
 			}
 			levelFilter = lvl
@@ -78,10 +78,10 @@ func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput]
 		messages, err := s.deps.TraceAppender.List(ctx, fetch, in.SinceID)
 		if err != nil {
 			if errors.Is(err, domain.ErrTraceCursorExpired) {
-				res, mErr := mcpToolError(errCodeCursorExpired, fmt.Sprintf("list_traces: since_id %q is unknown or has been evicted", in.SinceID), nil)
+				res, mErr := mcpToolError(domain.ErrCodeCursorExpired, fmt.Sprintf("list_traces: since_id %q is unknown or has been evicted", in.SinceID), nil)
 				return res, listTracesOutput{}, mErr
 			}
-			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("list_traces: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("list_traces: %v", err), nil)
 			return res, listTracesOutput{}, mErr
 		}
 
@@ -134,17 +134,17 @@ type getTraceInput struct {
 func getTrace(s *Server) mcp.ToolHandlerFor[getTraceInput, traceDTO] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in getTraceInput) (*mcp.CallToolResult, traceDTO, error) {
 		if in.MessageID == "" {
-			res, mErr := mcpToolError(errCodeInvalidInput, "get_trace: message_id is required", nil)
+			res, mErr := mcpToolError(domain.ErrCodeInvalidInput, "get_trace: message_id is required", nil)
 			return res, traceDTO{}, mErr
 		}
 
 		msg, err := s.deps.TraceAppender.GetByID(ctx, in.MessageID)
 		if err != nil {
-			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("get_trace: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_trace: %v", err), nil)
 			return res, traceDTO{}, mErr
 		}
 		if msg == nil {
-			res, mErr := mcpToolError(errCodeNotFound, fmt.Sprintf("trace %q not found", in.MessageID), nil)
+			res, mErr := mcpToolError(domain.ErrCodeNotFound, fmt.Sprintf("trace %q not found", in.MessageID), nil)
 			return res, traceDTO{}, mErr
 		}
 		return nil, toTraceDTO(msg), nil
@@ -164,7 +164,7 @@ type clearTracesOutput struct {
 func clearTraces(s *Server) mcp.ToolHandlerFor[emptyInput, clearTracesOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, clearTracesOutput, error) {
 		if err := s.deps.TraceAppender.Clear(ctx); err != nil {
-			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("clear_traces: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("clear_traces: %v", err), nil)
 			return res, clearTracesOutput{}, mErr
 		}
 		return nil, clearTracesOutput{OK: true}, nil

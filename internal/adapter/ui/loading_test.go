@@ -33,8 +33,9 @@ func (s stubDatabaseSettingsRepository) GetDefault(context.Context) (*domain.Dat
 	return nil, nil
 }
 
-func (s stubDatabaseSettingsRepository) SetDefault(context.Context, domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
-	return nil, nil
+func (s stubDatabaseSettingsRepository) SetDefault(_ context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
+	settings.SetAsDefault()
+	return &settings, nil
 }
 
 func (s stubDatabaseSettingsRepository) GetAll(context.Context) ([]domain.DatabaseSettings, error) {

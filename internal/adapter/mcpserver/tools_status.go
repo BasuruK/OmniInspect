@@ -38,13 +38,13 @@ func getStatus(s *Server, startedAt time.Time) mcp.ToolHandlerFor[emptyInput, st
 	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, statusOutput, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()
 		if err != nil {
-			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_status: read broadcast mode: %v", err), nil)
 			return res, statusOutput{}, mErr
 		}
 		activeDatabaseID := ""
 		if def, err := s.deps.DBSettingsRepo.GetDefault(ctx); err != nil {
 			if !errors.Is(err, domain.ErrDefaultSettingsNotFound) {
-				res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("get_status: read default database: %v", err), nil)
+				res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_status: read default database: %v", err), nil)
 				return res, statusOutput{}, mErr
 			}
 		} else if def != nil {
@@ -99,11 +99,11 @@ func setBroadcastMode(s *Server) mcp.ToolHandlerFor[setBroadcastModeInput, setBr
 	return func(ctx context.Context, req *mcp.CallToolRequest, in setBroadcastModeInput) (*mcp.CallToolResult, setBroadcastModeOutput, error) {
 		mode, err := parseBroadcastMode(in.Mode)
 		if err != nil {
-			res, mErr := mcpToolError(errCodeInvalidInput, fmt.Sprintf("set_broadcast_mode: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInvalidInput, fmt.Sprintf("set_broadcast_mode: %v", err), nil)
 			return res, setBroadcastModeOutput{}, mErr
 		}
 		if err := s.deps.Bolt.SetBroadcastMode(mode); err != nil {
-			res, mErr := mcpToolError(errCodeInternalError, fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
 			return res, setBroadcastModeOutput{}, mErr
 		}
 		out := setBroadcastModeOutput{OK: true, Mode: mode.String()}

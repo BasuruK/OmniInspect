@@ -13,12 +13,10 @@ import (
 // Dependencies
 // ==========================================
 
-// DBAdapterFactory builds a DatabaseRepository from DatabaseSettings. It is
-// injected so tests can substitute fakes without depending on the real Oracle/ODPI-C adapter.
+// DBAdapterFactory builds a DatabaseRepository from DatabaseSettings. It is injected so tests can substitute fakes without depending on the real Oracle/ODPI-C adapter.
 type DBAdapterFactory func(*domain.DatabaseSettings) (ports.DatabaseRepository, error)
 
-// Deps groups the shared services a Server needs. Every field except
-// DBAdapterFactory is required; NewServer panics if one is missing.
+// Deps groups the shared services a Server needs. Every field except DBAdapterFactory is required; NewServer panics if one is missing.
 type Deps struct {
 	App              *app.App
 	Bolt             ports.ConfigRepository
@@ -37,9 +35,7 @@ type Server struct {
 	deps Deps
 }
 
-// NewServer validates deps and returns a Server. The MCP SDK server itself
-// is created lazily on the first ServeStreamableHTTP call so dependency
-// wiring can stay in cmd/.
+// NewServer validates deps and returns a Server. The MCP SDK server itself is created lazily on the first ServeStreamableHTTP call so dependency wiring can stay in cmd/.
 func NewServer(deps Deps) *Server {
 	if deps.App == nil {
 		panic("mcpserver: App is required")
@@ -62,8 +58,7 @@ func NewServer(deps Deps) *Server {
 // boolPtr is a helper for the *bool fields on mcp.ToolAnnotations.
 func boolPtr(b bool) *bool { return &b }
 
-// buildAndRegister constructs the SDK server and registers every tool.
-// The startedAt timestamp is captured here so all uptime computations share the same origin.
+// buildAndRegister constructs the SDK server and registers every tool. The startedAt timestamp is captured here so all uptime computations share the same origin.
 func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	sdk := buildSDKServer(s.deps.App.Name, s.deps.App.GetVersion())
 
@@ -125,9 +120,7 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 		Name:        "clear_traces",
 		Description: "Empties the trace buffer. There is no undo.",
 		// No confirmation handshake (unlike add_database's password gate, which
-		// exists to stop plaintext-password leakage, not because deletion needs
-		// a second step) — DestructiveHint is the SDK-native signal clients use
-		// to decide whether to confirm before calling.
+		// exists to stop plaintext-password leakage, not because deletion needs a second step) — DestructiveHint is the SDK-native signal clients use to decide whether to confirm before calling.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, clearTraces(s))
 

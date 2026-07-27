@@ -173,6 +173,12 @@ type ConfigRepository interface {
 
 	// SetBroadcastMode stores the broadcast mode.
 	SetBroadcastMode(mode domain.BroadcastMode) error
+
+	// GetMCPAuthToken retrieves the stored MCP server bearer token. Returns empty string when no token has been generated yet.
+	GetMCPAuthToken() (string, error)
+
+	// SetMCPAuthToken stores the MCP server bearer token. Empty string clears the entry.
+	SetMCPAuthToken(token string) error
 }
 
 // ==========================================

@@ -43,19 +43,17 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 
 	ln, err := net.Listen("tcp", mcpListenAddr)
 	if err != nil {
-		_ = os.Remove(mcpAuthTokenFilename) // remove any existing token file so it survive a crash
 		return nil, fmt.Errorf("MCP server: listen on %s: %w", mcpListenAddr, err)
 	}
 
-	authToken, err := newAuthToken()
+	authToken, err := loadOrCreateMCPAuthToken(boltAdapter)
 	if err != nil {
 		_ = ln.Close()
-		return nil, fmt.Errorf("MCP server: generate auth token: %w", err)
+		return nil, fmt.Errorf("MCP server: auth token: %w", err)
 	}
 
 	if err := writeAuthTokenFile(authToken); err != nil {
 		_ = ln.Close()
-		_ = os.Remove(mcpAuthTokenFilename) // remove any existing token file so it survive a crash
 		return nil, fmt.Errorf("MCP server: persist auth token: %w", err)
 	}
 
@@ -81,17 +79,28 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 	return func() {
 		cancel()
 		<-done
-		_ = os.Remove(mcpAuthTokenFilename)
+		// ponytail: keep the token file on disk so MCP clients still see a valid token after the TUI exits; the token itself lives in BoltDB and persists across restarts.
 	}, nil
 }
 
-// newAuthToken returns a per-process random bearer token.
-func newAuthToken() (string, error) {
+// loadOrCreateMCPAuthToken returns the persisted bearer token from BoltDB, generating and storing a fresh one on first launch. The token survives OmniView restarts so MCP clients don't need to reconfigure after every launch.
+func loadOrCreateMCPAuthToken(boltAdapter *boltdb.BoltAdapter) (string, error) {
+	token, err := boltAdapter.GetMCPAuthToken()
+	if err != nil {
+		return "", fmt.Errorf("read MCP auth token: %w", err)
+	}
+	if token != "" {
+		return token, nil
+	}
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate MCP auth token: %w", err)
 	}
-	return hex.EncodeToString(raw), nil
+	token = hex.EncodeToString(raw)
+	if err := boltAdapter.SetMCPAuthToken(token); err != nil {
+		return "", fmt.Errorf("persist MCP auth token: %w", err)
+	}
+	return token, nil
 }
 
 // writeAuthTokenFile persists the bearer token to a 0600 file next to the app's other per-instance secrets (see omniview.key in main.go) so MCP clients can read it directly instead of parsing it out of logs.

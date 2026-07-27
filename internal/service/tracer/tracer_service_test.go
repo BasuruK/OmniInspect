@@ -24,6 +24,8 @@ func (r *stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) 
 func (r *stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
 func (r *stubConfigRepository) GetActiveDatabaseID() (string, error)        { return "", nil }
 func (r *stubConfigRepository) SetActiveDatabaseID(string) error            { return nil }
+func (r *stubConfigRepository) GetMCPAuthToken() (string, error)            { return "", nil }
+func (r *stubConfigRepository) SetMCPAuthToken(string) error                { return nil }
 
 type webhookConfigRepository struct {
 	stubConfigRepository

@@ -27,6 +27,7 @@ const (
 	DefaultWebhookKey          = "webhook:default"
 	TracerPackageVersionKey    = "tracer:package_version"
 	BroadcastModeKey           = "client:broadcast_mode"
+	MCPAuthTokenKey            = "client:mcp_auth_token"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -436,6 +437,48 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
+	})
+}
+
+// GetMCPAuthToken retrieves the stored MCP server bearer token. Returns empty string when no token has been generated yet.
+func (ba *BoltAdapter) GetMCPAuthToken() (string, error) {
+	if ba.db == nil {
+		return "", fmt.Errorf("GetMCPAuthToken: %w", domain.ErrBoltAdapterNotReady)
+	}
+
+	var token string
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+		val := b.Get([]byte(MCPAuthTokenKey))
+		if val != nil {
+			token = string(val)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("GetMCPAuthToken: %w", err)
+	}
+	return token, nil
+}
+
+// SetMCPAuthToken stores the MCP server bearer token. Empty string clears the entry.
+func (ba *BoltAdapter) SetMCPAuthToken(token string) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+		if token == "" {
+			return b.Delete([]byte(MCPAuthTokenKey))
+		}
+		return b.Put([]byte(MCPAuthTokenKey), []byte(token))
 	})
 }
 

@@ -315,15 +315,8 @@ func (m *Model) filterMessages(msgs []*domain.QueueMessage) []*domain.QueueMessa
 	}
 	filtered := make([]*domain.QueueMessage, 0, len(msgs))
 	for _, msg := range msgs {
-		switch m.broadcastMode {
-		case domain.BroadcastModeSubscriber:
-			if !msg.IsGlobalMessage() {
-				filtered = append(filtered, msg)
-			}
-		case domain.BroadcastModeBroadcast:
-			if msg.IsGlobalMessage() {
-				filtered = append(filtered, msg)
-			}
+		if m.broadcastMode.Includes(msg) {
+			filtered = append(filtered, msg)
 		}
 	}
 	return filtered

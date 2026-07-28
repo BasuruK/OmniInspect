@@ -104,16 +104,9 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	// ── list_traces ──────────────────────────
 	mcp.AddTool(sdk, &mcp.Tool{
 		Name:        "list_traces",
-		Description: "Returns the most recent trace messages from the in-memory buffer. Supports since_id, level, and process_name filters applied on the snapshot.",
+		Description: "Returns the most recent trace messages visible under the active broadcast mode from the in-memory buffer. Supports since_cursor, level, and process_name filters applied on the snapshot.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, listTraces(s))
-
-	// ── get_trace ────────────────────────────
-	mcp.AddTool(sdk, &mcp.Tool{
-		Name:        "get_trace",
-		Description: "Fetches a single trace message by id. Returns a not_found error code when the id is unknown.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)},
-	}, getTrace(s))
 
 	// ── clear_traces ─────────────────────────
 	mcp.AddTool(sdk, &mcp.Tool{

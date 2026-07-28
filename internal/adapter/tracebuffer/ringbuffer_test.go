@@ -54,8 +54,8 @@ func TestNew_DefaultsZeroCapacityToOne(t *testing.T) {
 	if got := rb.Len(context.Background()); got != 1 {
 		t.Fatalf("expected len=1, got %d", got)
 	}
-	m, err := rb.GetByID(context.Background(), "b")
-	if err != nil || m == nil || m.MessageID() != "b" {
+	m, err := rb.List(context.Background(), 1, "")
+	if err != nil || len(m) != 1 || m[0].MessageID() != "b" {
 		t.Fatalf("expected newest entry 'b', got %+v err=%v", m, err)
 	}
 }
@@ -75,23 +75,18 @@ func TestAppend_EvictsFIFOAtCapacity(t *testing.T) {
 	if got := rb.Len(context.Background()); got != 3 {
 		t.Fatalf("expected len=3, got %d", got)
 	}
-	// Oldest two must be evicted.
-	for _, gone := range []string{"a", "b"} {
-		m, err := rb.GetByID(context.Background(), gone)
-		if err != nil {
-			t.Fatalf("GetByID %s: %v", gone, err)
-		}
-		if m != nil {
-			t.Fatalf("expected %s evicted, got %+v", gone, m)
-		}
+	// Oldest two (a, b) must be evicted; what remains is e, d, c newest-first.
+	got, err := rb.List(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
 	}
-	for _, kept := range []string{"c", "d", "e"} {
-		m, err := rb.GetByID(context.Background(), kept)
-		if err != nil {
-			t.Fatalf("GetByID %s: %v", kept, err)
-		}
-		if m == nil || m.MessageID() != kept {
-			t.Fatalf("expected %s kept, got %+v", kept, m)
+	want := []string{"e", "d", "c"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d entries, got %d (%+v)", len(want), len(got), got)
+	}
+	for i, m := range got {
+		if m.MessageID() != want[i] {
+			t.Fatalf("position %d: got %s want %s", i, m.MessageID(), want[i])
 		}
 	}
 }
@@ -207,32 +202,6 @@ func TestList_NonPositiveLimitReturnsEmpty(t *testing.T) {
 }
 
 // ==========================================
-// GetByID hit / miss
-// ==========================================
-
-func TestGetByID_HitAndMiss(t *testing.T) {
-	rb := New(5, 0)
-	_ = rb.Append(context.Background(), makeMessage(t, "alpha"))
-	_ = rb.Append(context.Background(), makeMessage(t, "beta"))
-
-	m, err := rb.GetByID(context.Background(), "beta")
-	if err != nil {
-		t.Fatalf("GetByID hit: %v", err)
-	}
-	if m == nil || m.MessageID() != "beta" {
-		t.Fatalf("expected beta, got %+v", m)
-	}
-
-	m, err = rb.GetByID(context.Background(), "missing")
-	if err != nil {
-		t.Fatalf("GetByID miss: %v", err)
-	}
-	if m != nil {
-		t.Fatalf("expected nil for miss, got %+v", m)
-	}
-}
-
-// ==========================================
 // Clear
 // ==========================================
 
@@ -300,8 +269,14 @@ func TestAppend_MaxBytesEvictsOldestUntilUnderCeiling(t *testing.T) {
 	if got := rb.Evicted(context.Background()); got != 1 {
 		t.Fatalf("expected 1 evicted after exceeding the byte ceiling, got %d", got)
 	}
-	if msg, _ := rb.GetByID(context.Background(), "a"); msg != nil {
-		t.Fatalf("expected oldest entry %q to have been evicted", "a")
+	remaining, err := rb.List(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, m := range remaining {
+		if m.MessageID() == "a" {
+			t.Fatalf("expected oldest entry %q to have been evicted", "a")
+		}
 	}
 }
 
@@ -322,11 +297,12 @@ func TestAppend_DropsEntryOverByteCeiling(t *testing.T) {
 	if got := rb.Evicted(context.Background()); got != 1 {
 		t.Fatalf("expected oversized entry to count as evicted, got %d", got)
 	}
-	if msg, err := rb.GetByID(context.Background(), "a"); err != nil || msg == nil {
-		t.Fatalf("expected retained history entry %q to survive, got msg=%v err=%v", "a", msg, err)
+	remaining, err := rb.List(context.Background(), 10, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
 	}
-	if msg, _ := rb.GetByID(context.Background(), "b"); msg != nil {
-		t.Fatalf("expected oversized entry %q to be absent", "b")
+	if len(remaining) != 1 || remaining[0].MessageID() != "a" {
+		t.Fatalf("expected only retained entry %q, got %+v", "a", remaining)
 	}
 }
 
@@ -382,3 +358,4 @@ func TestConcurrentAppendReadClear(t *testing.T) {
 		t.Fatalf("len %d exceeds capacity %d", got, capacity)
 	}
 }
+

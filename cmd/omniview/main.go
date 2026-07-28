@@ -104,9 +104,11 @@ func run(omniApp *app.App) error {
 
 	// Auto-start the MCP server so agents can drive OmniView without a separate `omniview mcp` invocation. It serves over HTTP rather than stdio here, since the TUI already owns stdin/stdout in this process. Only one instance can bind mcpListenAddr, so a second launch silently loses MCP rather than double-serving.
 	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo)
+	if stopMCP != nil {
+		defer stopMCP()
+	}
 	if err != nil {
 		logger.Warn("MCP server disabled", "error", err)
-		defer stopMCP()
 	}
 
 	model, err := ui.NewModel(ui.ModelOpts{

@@ -79,7 +79,7 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 	return func() {
 		cancel()
 		<-done
-		// ponytail: keep the token file on disk so MCP clients still see a valid token after the TUI exits; the token itself lives in BoltDB and persists across restarts.
+		// ponytail: retain one 0600 token file across exits (the token persists in BoltDB regardless, so the file grants no extra access); upgrade: delete it on shutdown once token rotation/revocation exists, or stale files outlive valid tokens.
 	}, nil
 }
 

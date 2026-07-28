@@ -19,10 +19,7 @@ import (
 // Stdout Discipline Guard
 // ==========================================
 
-// safeBuffer is a goroutine-safe bytes.Buffer with a Closer. It also
-// notifies a channel whenever a complete newline-terminated line has been
-// written, so tests can deterministically wait for the server's response to
-// land on stdout instead of sleeping for an arbitrary duration.
+// safeBuffer is a goroutine-safe bytes.Buffer with a Closer. It also notifies a channel whenever a complete newline-terminated line has been written, so tests can deterministically wait for the server's response to land on stdout instead of sleeping for an arbitrary duration.
 type safeBuffer struct {
 	mu      sync.Mutex
 	buf     bytes.Buffer
@@ -49,8 +46,7 @@ func (b *safeBuffer) Write(p []byte) (int, error) {
 		select {
 		case b.lines <- line:
 		default:
-			// Buffer full; the test isn't keeping up. Drop rather than
-			// block the server's write path.
+			// Buffer full; the test isn't keeping up. Drop rather than block the server's write path.
 		}
 	}
 	return n, err
@@ -58,8 +54,7 @@ func (b *safeBuffer) Write(p []byte) (int, error) {
 
 func (b *safeBuffer) Close() error { return nil }
 
-// waitLine blocks until the next complete stdout line is available (or the
-// timeout elapses) and decodes it as JSON.
+// waitLine blocks until the next complete stdout line is available (or the timeout elapses) and decodes it as JSON.
 func (b *safeBuffer) waitLine(t *testing.T, timeout time.Duration) map[string]any {
 	t.Helper()
 	select {
@@ -83,19 +78,13 @@ func (b *safeBuffer) Bytes() []byte {
 	return out
 }
 
-// pipe bundles the two ends of an OS pipe so tests don't have to track them
-// separately. Backed by a real kernel pipe buffer (os.Pipe) instead of a
-// hand-rolled bytes.Buffer+sync.Cond: writes of these small JSON-RPC
-// messages never block (well under the OS pipe buffer size), and reads
-// block until data is available, exactly like real stdio.
+// pipe bundles the two ends of an OS pipe so tests don't have to track them separately. Backed by a real kernel pipe buffer (os.Pipe) instead of a hand-rolled bytes.Buffer+sync.Cond: writes of these small JSON-RPC messages never block (well under the OS pipe buffer size), and reads block until data is available, exactly like real stdio.
 type pipe struct {
 	Writer *os.File
 	Reader *os.File
 }
 
-// runServerOverPipe starts the MCP server with an IOTransport whose writer
-// is the supplied safeBuffer and whose reader is the returned pipe's read
-// end. Closing the server context terminates the server.
+// runServerOverPipe starts the MCP server with an IOTransport whose writer is the supplied safeBuffer and whose reader is the returned pipe's read end. Closing the server context terminates the server.
 func runServerOverPipe(t *testing.T, s *Server, out *safeBuffer) (*pipe, func()) {
 	t.Helper()
 
@@ -132,16 +121,12 @@ func runServerOverPipe(t *testing.T, s *Server, out *safeBuffer) (*pipe, func())
 // Test: every stdout byte is either empty or valid MCP JSON
 // ==========================================
 
-// TestStdoutDiscipline_NoForeignBytes drives one tool call through the
-// server's stdio transport and inspects every byte that crossed stdout.
-// Anything that isn't empty whitespace or a complete JSON line is a
-// violation of the MCP framing contract.
+// TestStdoutDiscipline_NoForeignBytes drives one tool call through the server's stdio transport and inspects every byte that crossed stdout. Anything that isn't empty whitespace or a complete JSON line is a violation of the MCP framing contract.
 func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()
 
-	// Seed at least one message so list_traces has something to emit —
-	// makes the test cover both the empty case and a real payload case.
+	// Seed at least one message so list_traces has something to emit — makes the test cover both the empty case and a real payload case.
 	ctx := context.Background()
 	msg, err := domain.NewQueueMessage("m1", "proc-A", domain.LogLevelInfo, "hello", time.Now())
 	if err != nil {
@@ -157,9 +142,7 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 	p, stop := runServerOverPipe(t, srv, stdout)
 	defer stop()
 
-	// Drive the server as a client. We don't use the SDK's high-level
-	// client here because we want raw control over the framing — exactly
-	// what an MCP host (Claude Code, Claude Desktop) does.
+	// Drive the server as a client. We don't use the SDK's high-level client here because we want raw control over the framing — exactly what an MCP host (Claude Code, Claude Desktop) does.
 
 	// 1. initialize
 	if err := writeFramedMessage(p.Writer, map[string]any{
@@ -174,8 +157,7 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	// Wait for the real response line on stdout — this is the channel the
-	// server actually writes to; p.Reader only carries the request stream.
+	// Wait for the real response line on stdout — this is the channel the server actually writes to; p.Reader only carries the request stream.
 	if resp := stdout.waitLine(t, 2*time.Second); resp["id"] != float64(1) {
 		t.Fatalf("expected response id=1, got %v", resp["id"])
 	}
@@ -209,8 +191,7 @@ func TestStdoutDiscipline_NoForeignBytes(t *testing.T) {
 		t.Fatal("expected at least one framed message on stdout")
 	}
 
-	// Every line must be a JSON object. Empty lines are tolerated (the
-	// framing is newline-delimited).
+	// Every line must be a JSON object. Empty lines are tolerated (the framing is newline-delimited).
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {

@@ -32,8 +32,7 @@ type statusOutput struct {
 	UptimeSeconds      int64  `json:"uptime_seconds"`
 }
 
-// getStatus is the handler for the "get_status" tool. It reports app version,
-// active database, broadcast mode, trace buffer depth, and process uptime.
+// getStatus is the handler for the "get_status" tool. It reports app version, active database, broadcast mode, trace buffer depth, and process uptime.
 func getStatus(s *Server, startedAt time.Time) mcp.ToolHandlerFor[emptyInput, statusOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, statusOutput, error) {
 		mode, err := s.deps.Bolt.GetBroadcastMode()
@@ -84,8 +83,7 @@ var broadcastModes = map[string]domain.BroadcastMode{
 	"broadcast":  domain.BroadcastModeBroadcast,
 }
 
-// parseBroadcastMode validates the input string and returns the
-// corresponding domain value. domain.NewBroadcastMode silently defaults to Global for unknown inputs; the MCP surface must reject unknowns loudly.
+// parseBroadcastMode validates the input string and returns the corresponding domain value. domain.NewBroadcastMode silently defaults to Global for unknown inputs; the MCP surface must reject unknowns loudly.
 func parseBroadcastMode(raw string) (domain.BroadcastMode, error) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if mode, ok := broadcastModes[normalized]; ok {

@@ -141,23 +141,6 @@ func (r *RingBuffer) List(ctx context.Context, limit int, sinceID string) ([]*do
 	return out, nil
 }
 
-// GetByID returns the message with the given ID, or nil if not found.
-func (r *RingBuffer) GetByID(ctx context.Context, id string) (*domain.QueueMessage, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for i := 0; i < r.size; i++ {
-		idx := (r.head + i) % r.capacity
-		m := r.buf[idx].msg
-		if m.MessageID() == id {
-			return m, nil
-		}
-	}
-	return nil, nil
-}
-
 // Clear removes all messages and releases the references held by the backing array so the GC can reclaim trace payloads. It does not reset the
 // eviction counter or sequence counter — those track lifetime activity, not current contents.
 func (r *RingBuffer) Clear(ctx context.Context) error {
@@ -197,3 +180,4 @@ func (r *RingBuffer) Evicted(ctx context.Context) int {
 	defer r.mu.RUnlock()
 	return int(r.evicted)
 }
+

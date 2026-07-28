@@ -75,7 +75,7 @@ func TestListTraces_DefaultLimit(t *testing.T) {
 		t.Fatalf("expected 3 messages, got %d", out.Total)
 	}
 	// newest first
-	if out.Messages[0].MessageID != "c" || out.Messages[2].MessageID != "a" {
+	if out.Messages[0].Cursor != "c" || out.Messages[2].Cursor != "a" {
 		t.Fatalf("expected newest-first ordering, got %+v", out.Messages)
 	}
 }
@@ -90,7 +90,7 @@ func TestListTraces_RespectsLimit(t *testing.T) {
 	if out.Total != 2 {
 		t.Fatalf("expected 2 messages, got %d", out.Total)
 	}
-	if out.Messages[0].MessageID != "e" || out.Messages[1].MessageID != "d" {
+	if out.Messages[0].Cursor != "e" || out.Messages[1].Cursor != "d" {
 		t.Fatalf("expected newest 2, got %+v", out.Messages)
 	}
 }
@@ -126,11 +126,11 @@ func TestListTraces_SinceIDFilter(t *testing.T) {
 	seedMessages(t, deps.TraceAppender, "a", "b", "c", "d")
 
 	session := connectClientServer(t, deps)
-	out := decodeListTraces(t, session, map[string]any{"since_id": "b"})
+	out := decodeListTraces(t, session, map[string]any{"since_cursor": "b"})
 	if out.Total != 2 {
 		t.Fatalf("expected 2 (>b), got %d (%v)", out.Total, out.Messages)
 	}
-	ids := []string{out.Messages[0].MessageID, out.Messages[1].MessageID}
+	ids := []string{out.Messages[0].Cursor, out.Messages[1].Cursor}
 	if ids[0] != "d" || ids[1] != "c" {
 		t.Fatalf("expected [d c], got %v", ids)
 	}
@@ -169,65 +169,56 @@ func TestListTraces_NotTruncatedWhenBufferExhausted(t *testing.T) {
 }
 
 // ==========================================
-// get_trace
+// list_traces broadcast-mode filtering
 // ==========================================
 
-func TestGetTrace_Hit(t *testing.T) {
-	deps, cleanup := testDeps(t)
-	defer cleanup()
-	seedMessages(t, deps.TraceAppender, "msg-1", "msg-2")
+// modeSeed pairs a message id with the wire mode it should carry.
+type modeSeed struct{ id, mode string }
 
-	session := connectClientServer(t, deps)
-	res := callTool(t, session, "get_trace", map[string]any{"message_id": "msg-1"})
-	if res.IsError {
-		t.Fatalf("expected success, got IsError")
-	}
-	tc := res.Content[0].(*mcp.TextContent)
-	var dto traceDTO
-	if err := json.Unmarshal([]byte(tc.Text), &dto); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if dto.MessageID != "msg-1" {
-		t.Fatalf("expected msg-1, got %q", dto.MessageID)
+// seedMessagesWithMode appends messages carrying explicit modes, built through the Oracle JSON wire shape because QueueMessage.mode has no exported setter.
+func seedMessagesWithMode(t *testing.T, store ports.TraceAppender, seeds ...modeSeed) {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC)
+	for i, s := range seeds {
+		raw := fmt.Sprintf(`{"message_id":%q,"process_name":"proc-A","log_level":"INFO","payload":"payload-%s","timestamp":%d,"send_to_webhook":"false","mode":%q}`,
+			s.id, s.id, base.Add(time.Duration(i)*time.Second).Unix(), s.mode)
+		var msg domain.QueueMessage
+		if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+			t.Fatalf("unmarshal %q: %v", s.id, err)
+		}
+		if err := store.Append(ctx, &msg); err != nil {
+			t.Fatalf("Append(%q): %v", s.id, err)
+		}
 	}
 }
 
-func TestGetTrace_Miss(t *testing.T) {
+func TestListTraces_FiltersByActiveBroadcastMode(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()
-	seedMessages(t, deps.TraceAppender, "msg-1")
+	// "Global" on the wire = broadcast-to-all message; "Subscriber" = subscriber-targeted.
+	seedMessagesWithMode(t, deps.TraceAppender,
+		modeSeed{"bcast-1", "Global"},
+		modeSeed{"sub-1", "Subscriber"},
+	)
 
 	session := connectClientServer(t, deps)
-	res := callTool(t, session, "get_trace", map[string]any{"message_id": "missing"})
-	if !res.IsError {
-		t.Fatalf("expected IsError for miss")
-	}
-	tc := res.Content[0].(*mcp.TextContent)
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload["code"] != "not_found" {
-		t.Fatalf("expected code=not_found, got %v", payload["code"])
-	}
-}
 
-func TestGetTrace_RequiresID(t *testing.T) {
-	deps, cleanup := testDeps(t)
-	defer cleanup()
-	session := connectClientServer(t, deps)
+	if err := deps.Bolt.SetBroadcastMode(domain.BroadcastModeSubscriber); err != nil {
+		t.Fatalf("SetBroadcastMode: %v", err)
+	}
+	out := decodeListTraces(t, session, map[string]any{})
+	if out.Total != 1 || out.Messages[0].Cursor != "sub-1" {
+		t.Fatalf("subscriber mode: expected only sub-1, got %+v", out.Messages)
+	}
 
-	res := callTool(t, session, "get_trace", map[string]any{})
-	if !res.IsError {
-		t.Fatalf("expected IsError when message_id is missing")
+	// Switching modes must be reflected on the very next call.
+	if err := deps.Bolt.SetBroadcastMode(domain.BroadcastModeBroadcast); err != nil {
+		t.Fatalf("SetBroadcastMode: %v", err)
 	}
-	tc := res.Content[0].(*mcp.TextContent)
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload["code"] != "invalid_input" {
-		t.Fatalf("expected code=invalid_input, got %v", payload["code"])
+	out = decodeListTraces(t, session, map[string]any{})
+	if out.Total != 1 || out.Messages[0].Cursor != "bcast-1" {
+		t.Fatalf("broadcast mode: expected only bcast-1, got %+v", out.Messages)
 	}
 }
 
@@ -260,3 +251,5 @@ func TestClearTraces_EmptiesBuffer(t *testing.T) {
 		t.Fatalf("expected len=0 after clear, got %d", got)
 	}
 }
+
+

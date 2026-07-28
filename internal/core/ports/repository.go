@@ -195,8 +195,7 @@ type TraceAppender interface {
 	Evicted(ctx context.Context) int
 	// List returns up to `limit` messages in newest-first order. When sinceID is non-empty, only messages appended strictly after the message with that ID are returned. A non-positive limit returns no entries.
 	List(ctx context.Context, limit int, sinceID string) ([]*domain.QueueMessage, error)
-	// GetByID returns the message with the given ID, or nil if not found.
-	GetByID(ctx context.Context, id string) (*domain.QueueMessage, error)
 	// Clear removes all messages and releases the references held by the backing array.
 	Clear(ctx context.Context) error
 }
+

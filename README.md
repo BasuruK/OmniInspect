@@ -485,8 +485,7 @@ All log output is redirected to `omniview.log` so the stdio stream stays clean f
 | `list_databases` | List every persisted database configuration (no passwords) |
 | `add_database` | Persist a new database config. Requires explicit `confirm_password_in_plaintext=true` due to the security risk of sending secrets over MCP |
 | `connect_database` | Open a live Oracle connection, mark it active, and persist the choice (5 s timeout) |
-| `list_traces` | List recent trace messages with optional `limit`, `since_id`, `level`, `process_name` filters |
-| `get_trace` | Fetch a single trace message by id |
+| `list_traces` | List recent trace messages visible under the active broadcast mode, with optional `limit`, `since_cursor`, `level`, `process_name` filters |
 | `clear_traces` | Empty the trace buffer |
 
 ### Claude Desktop
@@ -589,3 +588,5 @@ Balasuriya, Basuru. 2026. *OmniView: Oracle Database Message Passing TUI Applica
 <p align="center">
   Built with 💖, by Basuru Balasuriya
 </p>
+
+

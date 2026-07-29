@@ -465,16 +465,13 @@ OmniView uses a screen-based TUI architecture built with Bubble Tea v2 and Lipgl
 
 ## MCP Server (Model Context Protocol)
 
-OmniView ships with a built-in MCP server that exposes the trace buffer and database configuration to MCP-compatible clients (Claude Desktop, Claude Code, etc.). The server uses the same BoltDB, credential store, and Oracle connection as the TUI — both surfaces read from the shared `omniview.bolt` file.
+OmniView ships with a built-in MCP server that exposes the trace buffer and database configuration to MCP-compatible clients (Claude Desktop, Claude Code, etc.). It shares the TUI's BoltDB and credential store — both surfaces read from the shared `omniview.bolt` file — but not its live Oracle connection: `connect_database` opens a temporary verification connection, runs its checks, closes it, and persists the selected database.
 
 ### Start the server
 
-```bash
-# After `make build` (or running a release binary):
-./omniview mcp
-```
+No separate invocation needed: the MCP server starts automatically with the TUI (`./omniview` after `make build`, or any release binary) and listens on `127.0.0.1:54332` over streamable HTTP — loopback only. If a second OmniView instance can't bind the port, it simply runs without MCP.
 
-All log output is redirected to `omniview.log` so the stdio stream stays clean for MCP framing.
+Requests must carry an `Authorization: Bearer <token>` header. The token persists in BoltDB across restarts and is mirrored to `omniview-mcp.token` (0600) in the working directory.
 
 ### Tools exposed
 
@@ -484,20 +481,26 @@ All log output is redirected to `omniview.log` so the stdio stream stays clean f
 | `set_broadcast_mode` | Switch broadcast filter (`global` / `subscriber` / `broadcast`) and persist |
 | `list_databases` | List every persisted database configuration (no passwords) |
 | `add_database` | Persist a new database config. Requires explicit `confirm_password_in_plaintext=true` due to the security risk of sending secrets over MCP |
-| `connect_database` | Open a live Oracle connection, mark it active, and persist the choice (5 s timeout) |
-| `list_traces` | List recent trace messages visible under the active broadcast mode, with optional `limit`, `since_cursor`, `level`, `process_name` filters |
+| `connect_database` | Verify the database is reachable over a temporary connection (5 s timeout), deploy required permissions/tracer package, then set it active and persist the choice |
+| `list_traces` | List recent trace messages from the shared buffer, with optional `limit`, `since_id`, `level`, `process_name` filters |
+| `get_trace` | Fetch a single trace message by id (`not_found` when unknown) |
 | `clear_traces` | Empty the trace buffer |
 
 ### Claude Desktop
 
-Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent path on Windows/Linux:
+The server speaks streamable HTTP on `http://127.0.0.1:54332` and requires an `Authorization: Bearer <token>` header (token in `omniview-mcp.token`, 0600, next to the binary). For clients whose config-file setup only speaks stdio — such as Claude Desktop — bridge with `mcp-remote` by adding the following to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent path on Windows/Linux:
 
 ```json
 {
   "mcpServers": {
     "omniview": {
-      "command": "/absolute/path/to/omniview",
-      "args": ["mcp"]
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "http://127.0.0.1:54332",
+        "--header",
+        "Authorization: Bearer <token from omniview-mcp.token>"
+      ]
     }
   }
 }
@@ -510,14 +513,14 @@ Restart Claude Desktop. The `omniview` server should appear under the available 
 Register the server from the CLI:
 
 ```bash
-claude mcp add omniview -- /absolute/path/to/omniview mcp
+claude mcp add --transport http omniview http://127.0.0.1:54332 --header "Authorization: Bearer $(cat omniview-mcp.token)"
 ```
 
 To verify, run `/mcp` inside Claude Code — `omniview` should appear with the tools listed above.
 
 ### Security note
 
-The `add_database` tool requires the caller to set `confirm_password_in_plaintext=true` on a second call. The first call returns a `password_in_plaintext` error explaining the risk. This is intentional: MCP traffic is visible to the host client and process listings, so the user must explicitly opt in before a credential crosses the boundary.
+The `add_database` tool requires the caller to set `confirm_password_in_plaintext=true` on a second call. The first call returns a `password_in_plaintext` error explaining the risk. This is intentional: tool arguments are visible to the host client and its logs, so the user must explicitly opt in before a credential crosses the boundary.
 
 ## Roadmap
   

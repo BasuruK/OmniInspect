@@ -57,8 +57,7 @@ func (m BroadcastMode) String() string {
 // Navigation
 // ==========================================
 
-// Includes reports whether a message is visible under this mode. Global shows everything; Subscriber shows only subscriber-targeted messages;
-// Broadcast shows only broadcast-to-all messages (whose QueueMessage mode is "Global" — see IsGlobalMessage for that naming quirk).
+// Includes reports whether a message is visible under this mode.
 func (m BroadcastMode) Includes(msg *QueueMessage) bool {
 	if msg == nil {
 		return false

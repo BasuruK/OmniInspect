@@ -109,8 +109,8 @@ func (m *QueueMessage) Timestamp() time.Time { return m.timestamp }
 func (m *QueueMessage) SendToWebhook() bool  { return m.sendToWebhook }
 func (m *QueueMessage) Mode() string         { return m.mode }
 
-// IsGlobalMessage returns true when the message was broadcast to all subscribers (mode is "Global").
-// This is distinct from UI "Broadcast" filters.
+// IsGlobalMessage returns true when the message was broadcast to all subscribers (mode is "Global"). The name predates and collides with the
+// TUI's BroadcastModeGlobal filter — the two "Global"s are not the same concept.
 func (m *QueueMessage) IsGlobalMessage() bool { return m.mode == "Global" }
 
 // ==========================================

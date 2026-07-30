@@ -482,7 +482,7 @@ Requests must carry an `Authorization: Bearer <token>` header. The token persist
 | `list_databases` | List every persisted database configuration (no passwords) |
 | `add_database` | Persist a new database config. Requires explicit `confirm_password_in_plaintext=true` due to the security risk of sending secrets over MCP |
 | `connect_database` | Verify the database is reachable over a temporary connection (5 s timeout), deploy required permissions/tracer package, then set it active and persist the choice |
-| `list_traces` | List recent trace messages from the shared buffer, with optional `limit`, `since_id`, `level`, `process_name` filters |
+| `list_traces` | List recent trace messages from the shared buffer, with optional `limit`, `since_cursor`, `level`, `process_name` filters |
 | `clear_traces` | Empty the trace buffer |
 
 ### Claude Desktop

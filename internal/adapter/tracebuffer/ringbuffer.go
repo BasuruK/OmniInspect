@@ -15,7 +15,7 @@ var _ ports.TraceAppender = (*RingBuffer)(nil)
 // Ring Buffer
 // ==========================================
 
-// ringEntry pairs a stored message with a monotonically increasing sequence number. The sequence number — not the message ID — is what since_id
+// ringEntry pairs a stored message with a monotonically increasing sequence number. The sequence number — not the message ID — is what since_cursor
 // filtering keys off of, so ID formats that don't sort lexicographically in insertion order (UUIDs, unpadded counters, etc.) still filter correctly.
 type ringEntry struct {
 	msg   *domain.QueueMessage
@@ -72,18 +72,16 @@ func (r *RingBuffer) Append(ctx context.Context, msg *domain.QueueMessage) error
 	r.nextSeq++
 	entry := ringEntry{msg: msg, seq: r.nextSeq, bytes: entryBytes}
 
+	// One write path: tail is the next free slot; when the buffer is full, tail == head and the write overwrites the oldest entry.
+	tail := (r.head + r.size) % r.capacity
 	if r.size == r.capacity {
-		// Buffer is full: overwrite the oldest slot and advance head.
-		r.totalBytes -= r.buf[r.head].bytes
-		r.buf[r.head] = entry
+		r.totalBytes -= r.buf[tail].bytes
 		r.head = (r.head + 1) % r.capacity
 		r.evicted++
 	} else {
-		// Tail = position of the next free slot = (head + size) mod cap.
-		tail := (r.head + r.size) % r.capacity
-		r.buf[tail] = entry
 		r.size++
 	}
+	r.buf[tail] = entry
 	r.totalBytes += entry.bytes
 
 	// Byte ceiling: evict oldest until back under maxBytes. Since entries over the ceiling are rejected above, this always converges to <= maxBytes (the last entry standing is the newest, which fits alone).

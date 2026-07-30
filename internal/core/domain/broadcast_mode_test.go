@@ -144,4 +144,3 @@ func TestBroadcastMode_Includes_NilMessage(t *testing.T) {
 		}
 	}
 }
-

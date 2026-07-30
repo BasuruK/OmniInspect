@@ -483,7 +483,6 @@ Requests must carry an `Authorization: Bearer <token>` header. The token persist
 | `add_database` | Persist a new database config. Requires explicit `confirm_password_in_plaintext=true` due to the security risk of sending secrets over MCP |
 | `connect_database` | Verify the database is reachable over a temporary connection (5 s timeout), deploy required permissions/tracer package, then set it active and persist the choice |
 | `list_traces` | List recent trace messages from the shared buffer, with optional `limit`, `since_id`, `level`, `process_name` filters |
-| `get_trace` | Fetch a single trace message by id (`not_found` when unknown) |
 | `clear_traces` | Empty the trace buffer |
 
 ### Claude Desktop
@@ -534,7 +533,7 @@ The `add_database` tool requires the caller to set `confirm_password_in_plaintex
 - [x] Multiple database support with dynamic switching
 - [x] Multi-subscriber support with subscriber-specific procedure generation
 - [x] Dynamic subscription management and targeted message delivery
-- [x] MCP server: shared trace buffer, connector, and 8 tools (status, broadcast, databases, traces)
+- [x] MCP server: shared trace buffer, connector, and 7 tools (status, broadcast, databases, traces)
 
 ### Planned
 

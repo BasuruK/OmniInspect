@@ -46,7 +46,7 @@ const (
 	maxListTracesLimit     = 1000
 )
 
-// listTraces returns the most recent messages from the trace buffer, filtered client-side by since_id, level, and process_name.
+// listTraces returns the most recent messages from the trace buffer, filtered client-side by since_cursor, level, and process_name.
 func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in listTracesInput) (*mcp.CallToolResult, listTracesOutput, error) {
 		limit := in.Limit
@@ -68,13 +68,13 @@ func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput]
 		}
 		processFilter := strings.TrimSpace(in.ProcessName)
 
-	// Mirror the TUI viewport: the active broadcast mode decides which messages are visible. Read it per call so set_broadcast_mode takes
-	// effect immediately rather than on some future restart.
-	mode, err := s.deps.Bolt.GetBroadcastMode()
-	if err != nil {
-		res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("list_traces: broadcast mode: %v", err), nil)
-		return res, listTracesOutput{}, mErr
-	}
+		// Mirror the TUI viewport: the active broadcast mode decides which messages are visible. Read it per call so set_broadcast_mode takes
+		// effect immediately rather than on some future restart.
+		mode, err := s.deps.Bolt.GetBroadcastMode()
+		if err != nil {
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("list_traces: broadcast mode: %v", err), nil)
+			return res, listTracesOutput{}, mErr
+		}
 
 		// Ask the trace buffer for a generous window so client-side filters have something to work with. We over-fetch by a factor that covers realistic filter selectivity; the post-filter list is still capped to `limit` so the response size stays bounded.
 		fetch := limit * 4
@@ -96,14 +96,14 @@ func listTraces(s *Server) mcp.ToolHandlerFor[listTracesInput, listTracesOutput]
 		// we never examined for level/process_name filtering — the caller cannot otherwise tell "no more matches" from "we only scanned part of the buffer". Surface that explicitly instead of silently under-reporting.
 		truncated := len(messages) == fetch
 
-	out := listTracesOutput{Messages: make([]traceDTO, 0, limit), Truncated: truncated}
-	for _, msg := range messages {
-		if !mode.Includes(msg) {
-			continue
-		}
-		if levelFilter != "" && msg.LogLevel() != levelFilter {
-			continue
-		}
+		out := listTracesOutput{Messages: make([]traceDTO, 0, limit), Truncated: truncated}
+		for _, msg := range messages {
+			if !mode.Includes(msg) {
+				continue
+			}
+			if levelFilter != "" && msg.LogLevel() != levelFilter {
+				continue
+			}
 			if processFilter != "" && msg.ProcessName() != processFilter {
 				continue
 			}

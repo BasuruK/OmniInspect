@@ -251,5 +251,3 @@ func TestClearTraces_EmptiesBuffer(t *testing.T) {
 		t.Fatalf("expected len=0 after clear, got %d", got)
 	}
 }
-
-

@@ -198,4 +198,3 @@ type TraceAppender interface {
 	// Clear removes all messages and releases the references held by the backing array.
 	Clear(ctx context.Context) error
 }
-

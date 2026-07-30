@@ -358,4 +358,3 @@ func TestConcurrentAppendReadClear(t *testing.T) {
 		t.Fatalf("len %d exceeds capacity %d", got, capacity)
 	}
 }
-

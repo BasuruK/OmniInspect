@@ -180,4 +180,3 @@ func (r *RingBuffer) Evicted(ctx context.Context) int {
 	defer r.mu.RUnlock()
 	return int(r.evicted)
 }
-

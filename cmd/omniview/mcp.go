@@ -79,7 +79,7 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 	return func() {
 		cancel()
 		<-done
-		// ponytail: retain one 0600 token file across exits (the token persists in BoltDB regardless, so the file grants no extra access); upgrade: delete it on shutdown once token rotation/revocation exists, or stale files outlive valid tokens.
+		// ponytail: retain one 0600 token file across exits (token persists in BoltDB so the file grants no extra access), delete it on shutdown once token rotation/revocation exists - that is when a retained file turns stale.
 	}, nil
 }
 

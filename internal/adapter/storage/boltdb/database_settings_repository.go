@@ -5,15 +5,12 @@ import (
 	"OmniView/internal/core/domain"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
 )
-
-var ErrAdapterNotInitialized = errors.New("boltAdapter not initialized")
 
 // DatabaseSettingsRepository implements ports.DatabaseSettingsRepository
 type DatabaseSettingsRepository struct {
@@ -35,13 +32,13 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return ErrAdapterNotInitialized
+		return domain.ErrBoltAdapterNotReady
 	}
 
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		jsonData, err := json.Marshal(&settings)
@@ -78,13 +75,13 @@ func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previo
 		return err
 	}
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return ErrAdapterNotInitialized
+		return domain.ErrBoltAdapterNotReady
 	}
 
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		if previousDefault != nil && previousDefault.StorageKey() != newDefault.StorageKey() {
@@ -112,6 +109,71 @@ func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previo
 	})
 }
 
+// SetDefault marks settings as the default database, persisting it (creating
+// the record if it doesn't already exist) and clearing the previous default's
+// flag when it differs. It is the single entry point for changing "which
+// database is current" — every caller (TUI, MCP) should route through here
+// rather than manipulating IsDefault/SwitchDefault directly, so there is
+// exactly one persisted pointer instead of divergent copies.
+func (dsr *DatabaseSettingsRepository) SetDefault(ctx context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return nil, domain.ErrBoltAdapterNotReady
+	}
+
+	settings.SetAsDefault()
+	newKey := settings.StorageKey()
+
+	// Read-then-write happens inside one Update transaction (not a separate
+	// View+Update pair) so a concurrent SetDefault from another caller (TUI,
+	// MCP) can't interleave between the read and the write and leave two
+	// records both flagged isDefault=true.
+	err := dsr.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+
+		if previousKey := b.Get([]byte(DefaultDatabaseConfigKey)); previousKey != nil && string(previousKey) != newKey {
+			// If the previous default pointer is stale (its record was
+			// deleted or replaced elsewhere), there's nothing to clear —
+			// the Put below repairs the pointer instead of erroring out.
+			if data := b.Get(previousKey); data != nil {
+				var previous domain.DatabaseSettings
+				if err := json.Unmarshal(data, &previous); err != nil {
+					return fmt.Errorf("failed to unmarshal previous default database settings: %w", err)
+				}
+				previous.ClearAsDefault()
+				previousJSON, err := json.Marshal(&previous)
+				if err != nil {
+					return fmt.Errorf("failed to marshal previous default database settings: %w", err)
+				}
+				if err := b.Put(previousKey, previousJSON); err != nil {
+					return fmt.Errorf("failed to save previous default database settings: %w", err)
+				}
+			}
+		}
+
+		newJSON, err := json.Marshal(&settings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(newKey), newJSON); err != nil {
+			return fmt.Errorf("failed to save new default database settings: %w", err)
+		}
+		if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(newKey)); err != nil {
+			return fmt.Errorf("failed to save default database settings key: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("SetDefault: %w", err)
+	}
+	return &settings, nil
+}
+
 // GetByID retrieves database settings by ID
 func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error) {
 	// Check for context cancellation before proceeding
@@ -120,20 +182,20 @@ func (dsr *DatabaseSettingsRepository) GetByID(ctx context.Context, id string) (
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, ErrAdapterNotInitialized
+		return nil, domain.ErrBoltAdapterNotReady
 	}
 
 	var settings *domain.DatabaseSettings
 	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		resolvedKey := databaseSettingsStorageKey(id)
 		data := b.Get([]byte(resolvedKey))
 		if data == nil {
-			return fmt.Errorf("database settings not found for id: %s", id)
+			return fmt.Errorf("database settings not found for id %q: %w", id, domain.ErrDatabaseSettingsNotFound)
 		}
 
 		if err := json.Unmarshal(data, &settings); err != nil {
@@ -157,14 +219,14 @@ func (dsr *DatabaseSettingsRepository) GetDefault(ctx context.Context) (*domain.
 	}
 	// Validate adapter before accessing the database
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, ErrAdapterNotInitialized
+		return nil, domain.ErrBoltAdapterNotReady
 	}
 
 	var settings *domain.DatabaseSettings
 	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Get the default key
@@ -193,14 +255,14 @@ func (dsr *DatabaseSettingsRepository) GetAll(ctx context.Context) ([]domain.Dat
 		return nil, err
 	}
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return nil, ErrAdapterNotInitialized
+		return nil, domain.ErrBoltAdapterNotReady
 	}
 
 	var results []domain.DatabaseSettings
 	err := dsr.adapter.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		return b.ForEach(func(k, v []byte) error {
@@ -231,7 +293,7 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 		return err
 	}
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return ErrAdapterNotInitialized
+		return domain.ErrBoltAdapterNotReady
 	}
 
 	storageKey := databaseSettingsStorageKey(id)
@@ -239,7 +301,7 @@ func (dsr *DatabaseSettingsRepository) Delete(ctx context.Context, id string) er
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		if err := b.Delete([]byte(storageKey)); err != nil {
@@ -264,7 +326,7 @@ func (dsr *DatabaseSettingsRepository) Replace(ctx context.Context, oldKey strin
 		return err
 	}
 	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
-		return ErrAdapterNotInitialized
+		return domain.ErrBoltAdapterNotReady
 	}
 
 	normalizedOld := databaseSettingsStorageKey(oldKey)
@@ -273,7 +335,7 @@ func (dsr *DatabaseSettingsRepository) Replace(ctx context.Context, oldKey strin
 	return dsr.adapter.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(DatabaseConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Remove the old entry only when the key actually changed.

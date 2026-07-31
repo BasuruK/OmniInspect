@@ -198,6 +198,11 @@ func (dbs *DatabaseSettings) SetAsDefault() {
 	dbs.isDefault = true
 }
 
+// ClearAsDefault removes the default-database marker from this record.
+func (dbs *DatabaseSettings) ClearAsDefault() {
+	dbs.isDefault = false
+}
+
 // MarkPermissionsValidated records that permissions were successfully verified for this connection.
 func (dbs *DatabaseSettings) MarkPermissionsValidated() {
 	dbs.validated = true

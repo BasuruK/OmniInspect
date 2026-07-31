@@ -1,5 +1,12 @@
 # Agent Guidelines for OmniView/OmniInspect
 
+## Response Style
+
+- Concise. Short sentences, terse lists, tables over prose.
+- Trade grammar for brevity. Drop filler words.
+- No preamble, no restating the question.
+- Code references via clickable links, never bare line numbers.
+
 ## Project Overview
 
 OmniView is a Message Passing TUI application that connects to Oracle Database and displays real-time trace messages via Oracle Advanced Queuing (AQ). Built with Go, Bubble Tea v2, and ODPI-C for Oracle connectivity.
@@ -351,13 +358,10 @@ When the task is a code review, PR review, or iterative collaboration on a patch
 
 In Code Review / Collaboration Mode, reviewers may return inline diffs, multiple per-file comments, fuller explanations, and short code snippets or patch blocks when needed to make review feedback actionable. Large generated artifacts should still be written to files when practical, but review feedback should not be constrained in ways that weaken the quality or completeness of the review.
 
-## ctx commands
 
-| Command | Action |
-|---------|--------|
-| `ctx stats` | Call the `stats` MCP tool and display the full output verbatim |
-| `ctx doctor` | Call the `doctor` MCP tool, run the returned shell command, display as checklist |
-| `ctx upgrade` | Call the `upgrade` MCP tool, run the returned shell command, display as checklist |
-| `ctx purge` | Call the `purge` MCP tool with confirm: true. Warns before wiping the knowledge base. |
+<!-- lean-ctx -->
+## lean-ctx
 
-After /clear or /compact: knowledge base and session stats are preserved. Use `ctx purge` if you want to start fresh.
+lean-ctx is active — the MCP tools replace native equivalents.
+Full rules: LEAN-CTX.md (open on demand — do not auto-load).
+<!-- /lean-ctx -->

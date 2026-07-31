@@ -41,6 +41,7 @@ var (
 	ErrInvalidConnection          = errors.New("invalid connection string")
 	ErrHostUnreachable            = errors.New("host is unreachable")
 	ErrDefaultSettingsNotFound    = errors.New("default database settings not found")
+	ErrDatabaseSettingsNotFound   = errors.New("database settings not found")
 	ErrNilRepository              = errors.New("repository cannot be nil")
 	ErrNilConfig                  = errors.New("config repository cannot be nil")
 	ErrNilDatabase                = errors.New("database repository cannot be nil")
@@ -64,5 +65,19 @@ var (
 	ErrWebhookConfigNotFound = errors.New("webhook config not found")
 
 	// Internal/Adapter sentinel errors
-	ErrEarlyAbort = errors.New("early return: encrypted credential found")
+	ErrEarlyAbort          = errors.New("early return: encrypted credential found")
+	ErrBoltAdapterNotReady = errors.New("bolt adapter not initialised")
+	ErrBoltBucketNotFound  = errors.New("bolt bucket not found")
+	ErrTraceCursorExpired  = errors.New("trace cursor expired or unknown")
+
+	// MCP Tool Error Codes
+	ErrCodeInvalidInput          = errors.New("invalid_input")
+	ErrCodeNotFound              = errors.New("not_found")
+	ErrCodeAlreadyExists         = errors.New("already_exists")
+	ErrCodeInternalError         = errors.New("internal_error")
+	ErrCodeDBUnreachable         = errors.New("db_unreachable")
+	ErrCodePermissionCheckFailed = errors.New("permission_check_failed")
+	ErrCodeTracerDeployFailed    = errors.New("tracer_deploy_failed")
+	ErrCodePasswordInPlaintext   = errors.New("password_in_plaintext")
+	ErrCodeCursorExpired         = errors.New("cursor_expired")
 )

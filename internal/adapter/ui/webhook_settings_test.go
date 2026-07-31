@@ -30,7 +30,7 @@ func newTestModelForWebhookSettings(t *testing.T) *Model {
 	mockDB := NewMockDatabaseRepository()
 	eventChannel := make(chan *domain.QueueMessage, 16)
 
-	tracerService, err := tracer.NewTracerService(mockDB, boltAdapter, eventChannel)
+	tracerService, err := tracer.NewTracerService(mockDB, boltAdapter, eventChannel, tracer.TracerServiceOpts{})
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

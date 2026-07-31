@@ -27,6 +27,7 @@ const (
 	DefaultWebhookKey          = "webhook:default"
 	TracerPackageVersionKey    = "tracer:package_version"
 	BroadcastModeKey           = "client:broadcast_mode"
+	MCPAuthTokenKey            = "client:mcp_auth_token"
 )
 
 // BoltAdapter implements the ports.ConfigRepository
@@ -185,70 +186,6 @@ func (ba *BoltAdapter) Close() error {
 	return nil
 }
 
-func (ba *BoltAdapter) SaveDatabaseConfig(config *domain.DatabaseSettings) error {
-	if ba.db == nil {
-		return fmt.Errorf("boltAdapter not initialized")
-	}
-
-	if config == nil {
-		return fmt.Errorf("database config cannot be nil")
-	}
-
-	key := config.StorageKey()
-
-	return ba.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(DatabaseConfigBucket))
-
-		if b == nil {
-			return fmt.Errorf("bucket %s not found", DatabaseConfigBucket)
-		}
-
-		jsonData, err := json.Marshal(config)
-		if err != nil {
-			return fmt.Errorf("failed to marshal database config: %v", err)
-		}
-		if err := b.Put([]byte(key), jsonData); err != nil {
-			return fmt.Errorf("failed to save database config: %v", err)
-		}
-		if config.IsDefault() {
-			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
-				return fmt.Errorf("failed to set default database config: %v", err)
-			}
-		}
-
-		return nil
-	})
-}
-
-func (ba *BoltAdapter) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
-	if ba.db == nil {
-		return nil, fmt.Errorf("boltAdapter not initialized")
-	}
-
-	var config *domain.DatabaseSettings
-
-	// Get Default Key
-	err := ba.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(DatabaseConfigBucket))
-
-		defaultKey := b.Get([]byte(DefaultDatabaseConfigKey))
-		if defaultKey == nil {
-			return fmt.Errorf("default database config not found")
-		}
-		// Get Config JSON
-		configData := b.Get(defaultKey)
-		if configData == nil {
-			return fmt.Errorf("database config not found for key: %s", string(defaultKey))
-		}
-		return json.Unmarshal(configData, &config)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return config, nil
-}
-
 // DatabaseConfigExists checks if a database configuration exists for the given key.
 func (ba *BoltAdapter) DatabaseConfigExists(key string) (bool, error) {
 	return exists(ba, []byte(DatabaseConfigBucket), key)
@@ -285,7 +222,7 @@ func (ba *BoltAdapter) IsApplicationFirstRun() (bool, error) {
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		v := b.Get([]byte(RunCycleStatusKey))
 		isFirstRun = v == nil
@@ -303,7 +240,7 @@ func (ba *BoltAdapter) SetFirstRunCycleStatus(status ports.RunCycleStatus) error
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Save the first run status as a simple boolean
@@ -336,7 +273,7 @@ func (ba *BoltAdapter) SaveWebhookConfig(config *domain.WebhookConfig) error {
 		b := tx.Bucket([]byte(WebhookConfigBucket))
 
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", WebhookConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Marshal the config to JSON
@@ -411,7 +348,7 @@ func (ba *BoltAdapter) GetTracerPackageVersion() (string, error) {
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		val := b.Get([]byte(TracerPackageVersionKey))
 		if val != nil {
@@ -434,7 +371,7 @@ func (ba *BoltAdapter) SetTracerPackageVersion(version string) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		return b.Put([]byte(TracerPackageVersionKey), []byte(version))
 	})
@@ -449,7 +386,7 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(WebhookConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", WebhookConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", WebhookConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 
 		// Check if DefaultWebhookKey points to this webhook and clear it
@@ -467,14 +404,14 @@ func (ba *BoltAdapter) DeleteWebhookConfig(id string) error {
 // GetBroadcastMode retrieves the stored broadcast mode.
 func (ba *BoltAdapter) GetBroadcastMode() (domain.BroadcastMode, error) {
 	if ba.db == nil {
-		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", ErrAdapterNotInitialized)
+		return domain.BroadcastModeGlobal, fmt.Errorf("GetBroadcastMode: %w", domain.ErrBoltAdapterNotReady)
 	}
 
 	mode := domain.BroadcastModeGlobal
 	err := ba.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		val := b.Get([]byte(BroadcastModeKey))
 		if val != nil {
@@ -497,9 +434,51 @@ func (ba *BoltAdapter) SetBroadcastMode(mode domain.BroadcastMode) error {
 	return ba.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(ClientConfigBucket))
 		if b == nil {
-			return fmt.Errorf("bucket %s not found", ClientConfigBucket)
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
 		}
 		return b.Put([]byte(BroadcastModeKey), []byte(mode.String()))
+	})
+}
+
+// GetMCPAuthToken retrieves the stored MCP server bearer token. Returns empty string when no token has been generated yet.
+func (ba *BoltAdapter) GetMCPAuthToken() (string, error) {
+	if ba.db == nil {
+		return "", fmt.Errorf("GetMCPAuthToken: %w", domain.ErrBoltAdapterNotReady)
+	}
+
+	var token string
+	err := ba.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+		val := b.Get([]byte(MCPAuthTokenKey))
+		if val != nil {
+			token = string(val)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("GetMCPAuthToken: %w", err)
+	}
+	return token, nil
+}
+
+// SetMCPAuthToken stores the MCP server bearer token. Empty string clears the entry.
+func (ba *BoltAdapter) SetMCPAuthToken(token string) error {
+	if ba.db == nil {
+		return fmt.Errorf("boltAdapter not initialized")
+	}
+
+	return ba.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(ClientConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", ClientConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+		if token == "" {
+			return b.Delete([]byte(MCPAuthTokenKey))
+		}
+		return b.Put([]byte(MCPAuthTokenKey), []byte(token))
 	})
 }
 

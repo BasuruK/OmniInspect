@@ -33,6 +33,11 @@ func (s stubDatabaseSettingsRepository) GetDefault(context.Context) (*domain.Dat
 	return nil, nil
 }
 
+func (s stubDatabaseSettingsRepository) SetDefault(_ context.Context, settings domain.DatabaseSettings) (*domain.DatabaseSettings, error) {
+	settings.SetAsDefault()
+	return &settings, nil
+}
+
 func (s stubDatabaseSettingsRepository) GetAll(context.Context) ([]domain.DatabaseSettings, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -64,10 +69,6 @@ func (stubPermissionsRepository) Exists(context.Context, string) (bool, error) {
 
 type stubConfigRepository struct{}
 
-func (stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
-func (stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
-	return nil, nil
-}
 func (stubConfigRepository) IsApplicationFirstRun() (bool, error) { return false, nil }
 func (stubConfigRepository) SetFirstRunCycleStatus(ports.RunCycleStatus) error {
 	return nil
@@ -83,6 +84,10 @@ func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
 	return domain.BroadcastModeGlobal, nil
 }
 func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
+func (stubConfigRepository) GetActiveDatabaseID() (string, error)        { return "", nil }
+func (stubConfigRepository) SetActiveDatabaseID(string) error            { return nil }
+func (stubConfigRepository) GetMCPAuthToken() (string, error)            { return "", nil }
+func (stubConfigRepository) SetMCPAuthToken(string) error                { return nil }
 
 func newLoadingTestModel(t *testing.T, validated bool) *Model {
 	t.Helper()
@@ -101,7 +106,7 @@ func newLoadingTestModel(t *testing.T, validated bool) *Model {
 
 	mockDB := NewMockDatabaseRepository()
 	configRepo := stubConfigRepository{}
-	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel)
+	tracerService, err := tracer.NewTracerService(mockDB, configRepo, eventChannel, tracer.TracerServiceOpts{})
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}

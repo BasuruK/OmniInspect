@@ -468,6 +468,39 @@ func TestDatabaseSettingsRepository_Delete_DefaultKeyCleanup(t *testing.T) {
 	}
 }
 
+// TestDatabaseSettingsRepository_SetDefault_RepairsStaleDefaultPointer verifies
+// that SetDefault succeeds and repairs the default pointer when it refers to a
+// record that no longer exists, instead of failing the whole transaction.
+func TestDatabaseSettingsRepository_SetDefault_RepairsStaleDefaultPointer(t *testing.T) {
+	t.Parallel()
+
+	adapter := newTestBoltAdapter(t)
+	repo := NewDatabaseSettingsRepository(adapter)
+
+	setDefaultPointer(t, adapter, "DBconfig:missing")
+
+	port, err := domain.NewPort(1521)
+	if err != nil {
+		t.Fatalf("NewPort: %v", err)
+	}
+	settings, err := domain.NewDatabaseSettings("new-default", "FREEPDB1", "localhost", port, "system", "secret")
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+
+	result, err := repo.SetDefault(context.Background(), *settings)
+	if err != nil {
+		t.Fatalf("SetDefault: expected stale pointer to be repaired, got error: %v", err)
+	}
+	if !result.IsDefault() {
+		t.Fatalf("expected returned settings to be marked default")
+	}
+
+	if got := readBucketKey(t, adapter, DefaultDatabaseConfigKey); string(got) != settings.StorageKey() {
+		t.Fatalf("expected default pointer to be repaired to %q, got %q", settings.StorageKey(), string(got))
+	}
+}
+
 // ==========================================
 // Edit / Update Tests
 // ==========================================

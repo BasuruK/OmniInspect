@@ -11,10 +11,6 @@ import (
 
 type stubConfigRepository struct{}
 
-func (r *stubConfigRepository) SaveDatabaseConfig(*domain.DatabaseSettings) error { return nil }
-func (r *stubConfigRepository) GetDefaultDatabaseConfig() (*domain.DatabaseSettings, error) {
-	return nil, nil
-}
 func (r *stubConfigRepository) IsApplicationFirstRun() (bool, error)               { return false, nil }
 func (r *stubConfigRepository) SetFirstRunCycleStatus(domain.RunCycleStatus) error { return nil }
 func (r *stubConfigRepository) SaveWebhookConfig(*domain.WebhookConfig) error      { return nil }
@@ -26,6 +22,10 @@ func (r *stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) 
 	return domain.BroadcastModeGlobal, nil
 }
 func (r *stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
+func (r *stubConfigRepository) GetActiveDatabaseID() (string, error)        { return "", nil }
+func (r *stubConfigRepository) SetActiveDatabaseID(string) error            { return nil }
+func (r *stubConfigRepository) GetMCPAuthToken() (string, error)            { return "", nil }
+func (r *stubConfigRepository) SetMCPAuthToken(string) error                { return nil }
 
 type webhookConfigRepository struct {
 	stubConfigRepository
@@ -72,12 +72,11 @@ func (stubDatabaseRepository) DeployFile(context.Context, string) error { return
 func TestNewTracerService_RejectsNilDependencies(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewTracerService(nil, &stubConfigRepository{}, make(chan *domain.QueueMessage, 1))
+	_, err := NewTracerService(nil, &stubConfigRepository{}, make(chan *domain.QueueMessage, 1), TracerServiceOpts{})
 	if !errors.Is(err, domain.ErrNilRepository) {
 		t.Fatalf("expected ErrNilRepository, got %v", err)
 	}
-
-	_, err = NewTracerService(stubDatabaseRepository{}, nil, make(chan *domain.QueueMessage, 1))
+	_, err = NewTracerService(stubDatabaseRepository{}, nil, make(chan *domain.QueueMessage, 1), TracerServiceOpts{})
 	if !errors.Is(err, domain.ErrNilConfig) {
 		t.Fatalf("expected ErrNilConfig, got %v", err)
 	}

@@ -199,7 +199,11 @@ func newTestModelForSettings(t *testing.T) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	eventStreamCtx, eventStreamCancel := context.WithCancel(ctx)
 
+	boltAdapter := newTestBoltAdapter(t)
+
 	return &Model{
+		boltAdapter:       boltAdapter,
+		dbSettingsRepo:    boltdb.NewDatabaseSettingsRepository(boltAdapter),
 		screen:            screenMain,
 		width:             120,
 		height:            36,
@@ -225,7 +229,7 @@ func newTestModelForSettings(t *testing.T) *Model {
 func mustNewTracerService(t *testing.T, db ports.DatabaseRepository, eventChannel chan *domain.QueueMessage) *tracer.TracerService {
 	t.Helper()
 
-	service, err := tracer.NewTracerService(db, stubConfigRepository{}, eventChannel)
+	service, err := tracer.NewTracerService(db, stubConfigRepository{}, eventChannel, tracer.TracerServiceOpts{})
 	if err != nil {
 		t.Fatalf("NewTracerService: %v", err)
 	}
@@ -1084,6 +1088,7 @@ func TestSetAsMain_ThenValidate_PersistsDefault(t *testing.T) {
 	m.appConfig = defaultConfig
 	m.dbAdapter = mockDB
 	m.boltAdapter = boltAdapter
+	m.dbSettingsRepo = settingsRepo
 
 	m.dbFactory = func(cfg *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 		return mockDB, nil

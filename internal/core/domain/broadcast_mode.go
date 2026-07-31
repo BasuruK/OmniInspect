@@ -4,8 +4,7 @@ package domain
 // BroadcastMode
 // ==========================================
 
-// BroadcastMode represents the display filter mode for tracer messages.
-// Controls which messages are visible in the TUI viewport.
+// BroadcastMode represents the display filter mode for tracer messages. Controls which messages are visible in the TUI viewport.
 type BroadcastMode int
 
 // ==========================================
@@ -22,8 +21,7 @@ const (
 // Constructor
 // ==========================================
 
-// NewBroadcastMode creates a BroadcastMode from its string representation.
-// Returns BroadcastModeGlobal for unrecognized strings.
+// NewBroadcastMode creates a BroadcastMode from its string representation. Returns BroadcastModeGlobal for unrecognized strings.
 func NewBroadcastMode(mode string) BroadcastMode {
 	switch mode {
 	case "Global":
@@ -58,6 +56,21 @@ func (m BroadcastMode) String() string {
 // ==========================================
 // Navigation
 // ==========================================
+
+// Includes reports whether a message is visible under this mode.
+func (m BroadcastMode) Includes(msg *QueueMessage) bool {
+	if msg == nil {
+		return false
+	}
+	switch m {
+	case BroadcastModeSubscriber:
+		return !msg.IsGlobalMessage()
+	case BroadcastModeBroadcast:
+		return msg.IsGlobalMessage()
+	default:
+		return true
+	}
+}
 
 // Next returns the next mode in the cycle: Global -> Subscriber -> Broadcast -> Global.
 func (m BroadcastMode) Next() BroadcastMode {

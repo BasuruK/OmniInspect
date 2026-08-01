@@ -183,6 +183,9 @@ type Model struct {
 	// MCP server status shown in the main header next to the procedure call.
 	mcpActive bool
 	mcpAddr   string
+
+	// onProgramReady opens the BindMCPNotify send gate once Bubble Tea has started.
+	onProgramReady func()
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -279,6 +282,11 @@ func NewModel(opts ModelOpts) (*Model, error) {
 // SetMCPActive updates the status-bar MCP indicator after the in-process server starts.
 func (m *Model) SetMCPActive(active bool) {
 	m.mcpActive = active
+}
+
+// SetOnProgramReady registers a one-shot callback invoked from Init (after Run starts).
+func (m *Model) SetOnProgramReady(fn func()) {
+	m.onProgramReady = fn
 }
 
 func (m *Model) resetConnectionEventStream() {
@@ -421,6 +429,10 @@ func (m *Model) initializeServices() error {
 
 // Init starts the welcome screen animation and database initialization
 func (m *Model) Init() tea.Cmd {
+	if m.onProgramReady != nil {
+		m.onProgramReady()
+		m.onProgramReady = nil
+	}
 	m.welcome.animModel = animations.NewWithDefaults()
 	return tea.Batch(
 		m.welcome.animModel.Init(),
@@ -453,26 +465,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case mcpConnectDatabaseMsg:
-		if msg.id == "" {
-			return m, nil
-		}
-		if m.appConfig != nil && m.appConfig.StorageKey() == msg.id {
-			return m, nil
-		}
-		if m.dbSettingsRepo == nil {
-			logger.Warn("mcp connect: DBSettingsRepo missing")
-			return m, nil
-		}
-		settings, err := m.dbSettingsRepo.GetByID(m.ctx, msg.id)
-		if err != nil || settings == nil {
-			logger.Warn("mcp connect: lookup failed", "id", msg.id, "error", err)
-			return m, nil
-		}
-		return m.handleSettingsSetAsMain(*settings)
+		return m.handleMCPConnectDatabaseMsg(msg)
 
 	case mcpStoppedMsg:
-		m.mcpActive = false
-		return m, nil
+		return m.handleMCPStoppedMsg(msg)
 
 	case tea.KeyPressMsg:
 		switch msg.String() {

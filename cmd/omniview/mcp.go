@@ -86,7 +86,10 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 		}
 		// Intentional stop (cancel via returned stop func) runs after the TUI exits — skip Send.
 		// Unexpected Serve exit while the program is still running must clear the header indicator.
-		mcpserver.NotifyStoppedUnexpected(ctx, cbs.OnStopped)
+		// Async: never block Serve teardown / done on TUI Program.Send.
+		if ctx.Err() == nil && cbs.OnStopped != nil {
+			go cbs.OnStopped()
+		}
 	}()
 	logger.Info("MCP server listening", "addr", mcpListenAddr, "token_fingerprint", tokenFingerprint(authToken))
 

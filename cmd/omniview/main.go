@@ -135,15 +135,17 @@ func run(omniApp *app.App) error {
 	}
 
 	p := ui.NewProgram(model)
-	onClear, onMode, onConnect, onStopped := ui.BindMCPNotify(p)
+	hooks := ui.BindMCPNotify(p)
+	model.SetOnProgramReady(hooks.MarkReady)
 
 	// Auto-start the MCP server after the program exists so clear/mode/connect/stopped hooks can Program.Send into the TUI.
+	// Hooks stay gated until Init/MarkReady so MCP cannot block on an unstarted program.
 	// HTTP (not stdio) — TUI owns stdin/stdout. Busy port → MCP disabled, TUI still runs.
 	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo, MCPCallbacks{
-		OnTracesCleared:        onClear,
-		OnBroadcastModeChanged: onMode,
-		OnDatabaseConnected:    onConnect,
-		OnStopped:              onStopped,
+		OnTracesCleared:        hooks.OnTracesCleared,
+		OnBroadcastModeChanged: hooks.OnBroadcastModeChanged,
+		OnDatabaseConnected:    hooks.OnDatabaseConnected,
+		OnStopped:              hooks.OnStopped,
 	})
 	if stopMCP != nil {
 		defer stopMCP()

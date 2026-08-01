@@ -1,8 +1,12 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
 	"OmniView/internal/updater"
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // ==========================================
@@ -165,4 +169,80 @@ type updateCompleteMsg struct{}
 // updateErrorMsg signals an update-related error.
 type updateErrorMsg struct {
 	err error
+}
+
+// ==========================================
+// MCP → TUI message handlers
+// ==========================================
+
+func (m *Model) handleMCPStoppedMsg(_ mcpStoppedMsg) (*Model, tea.Cmd) {
+	m.mcpActive = false
+	return m, nil
+}
+
+// handleMCPConnectDatabaseMsg adopts a database MCP already probed + SetDefault'd.
+// Skips handleSettingsSetAsMain's blocking Connect probe; loading reconnect uses connectDBCmd.
+func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, tea.Cmd) {
+	if msg.id == "" {
+		return m, nil
+	}
+	if m.appConfig != nil && m.appConfig.StorageKey() == msg.id {
+		return m, nil
+	}
+	if m.screen == screenLoading && m.loading.started && !m.loading.complete {
+		logger.Warn("mcp connect: switch already in progress, dropping", "id", msg.id)
+		return m, nil
+	}
+	if m.dbSettingsRepo == nil {
+		logger.Warn("mcp connect: DBSettingsRepo missing")
+		return m, nil
+	}
+	settings, err := m.dbSettingsRepo.GetByID(m.ctx, msg.id)
+	if err != nil || settings == nil {
+		logger.Warn("mcp connect: lookup failed", "id", msg.id, "error", err)
+		return m, nil
+	}
+
+	newAdapter, err := m.dbFactory(settings)
+	if err != nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: %w", settings.DatabaseID(), err))
+	}
+	if newAdapter == nil {
+		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: adapter is nil", settings.DatabaseID()))
+	}
+
+	m.resetConnectionEventStream()
+	if m.tracerService != nil {
+		m.tracerService.CancelConnectionListener()
+	}
+	if m.dbAdapter != nil {
+		if err := m.dbAdapter.Close(m.ctx); err != nil {
+			dbID := ""
+			if m.appConfig != nil {
+				dbID = m.appConfig.DatabaseID()
+			}
+			logger.Warn("failed to close current database adapter", "databaseID", dbID, "error", err)
+		}
+	}
+
+	m.appConfig = settings
+	m.dbAdapter = newAdapter
+	m.dbSettings.activeID = settings.ID()
+	m.syncDatabaseSettingsDefaults(*m.appConfig)
+
+	m.permissionService = nil
+	m.tracerService = nil
+	m.subscriberService = nil
+	m.resetMainLogState()
+	m.main.ready = false
+	m.closeDatabaseSettings()
+	m.stopLoadingRetryTimer()
+	m.screen = screenLoading
+	m.loading.steps = nil
+	m.loading.err = nil
+	m.loading.started = true
+	m.loading.complete = false
+	m.loading.retryCount = 0
+	m.loading.current = "Connecting..."
+	return m, connectDBCmd(m, true)
 }

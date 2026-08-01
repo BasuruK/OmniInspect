@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/core/domain"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -21,23 +22,31 @@ func NewProgram(model *Model) *tea.Program {
 	return tea.NewProgram(model)
 }
 
-// BindMCPNotify sends MCP notifications to the TUI program.
-func BindMCPNotify(p *tea.Program) (onClear func(), onMode func(domain.BroadcastMode), onConnect func(string), onStopped func()) {
-	return func() {
-			if p != nil {
-				p.Send(tracesClearedMsg{})
-			}
-		}, func(mode domain.BroadcastMode) {
-			if p != nil {
-				p.Send(broadcastModeChangedMsg{mode: mode})
-			}
-		}, func(id string) {
-			if p != nil {
-				p.Send(mcpConnectDatabaseMsg{id: id})
-			}
-		}, func() {
-			if p != nil {
-				p.Send(mcpStoppedMsg{})
-			}
+// MCPNotifyHooks are fire-and-forget callbacks for in-process MCP → TUI sync.
+// Send is gated on MarkReady (call from Model.Init) so MCP cannot block on an unstarted Program.
+type MCPNotifyHooks struct {
+	OnTracesCleared        func()
+	OnBroadcastModeChanged func(domain.BroadcastMode)
+	OnDatabaseConnected    func(string)
+	OnStopped              func()
+	MarkReady              func()
+}
+
+// BindMCPNotify builds lifecycle-aware, non-blocking MCP→TUI notification hooks.
+func BindMCPNotify(p *tea.Program) MCPNotifyHooks {
+	var ready atomic.Bool
+	send := func(msg tea.Msg) {
+		if p == nil || !ready.Load() {
+			return
 		}
+		// Never block MCP HTTP handlers on the Bubble Tea mailbox.
+		go p.Send(msg)
+	}
+	return MCPNotifyHooks{
+		OnTracesCleared:        func() { send(tracesClearedMsg{}) },
+		OnBroadcastModeChanged: func(mode domain.BroadcastMode) { send(broadcastModeChangedMsg{mode: mode}) },
+		OnDatabaseConnected:    func(id string) { send(mcpConnectDatabaseMsg{id: id}) },
+		OnStopped:              func() { send(mcpStoppedMsg{}) },
+		MarkReady:              func() { ready.Store(true) },
+	}
 }

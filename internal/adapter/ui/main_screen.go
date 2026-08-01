@@ -310,7 +310,7 @@ func (m *Model) computeMainLayout() mainLayoutParts {
 		contentWidth,
 		"OmniView Trace Console",
 		m.mainSubtitle(),
-		m.mainProcedureCall(),
+		m.mainHeaderDetail(),
 		m.mainConnectionMeta(),
 	)
 	header = renderMainHeaderWithLogo(contentWidth, header)
@@ -850,6 +850,7 @@ func (m *Model) mainStatusText() string {
 	)
 }
 
+// mainProcedureCall returns the procedure call for the main header detail line.
 func (m *Model) mainProcedureCall() string {
 	if m.subscriber == nil {
 		return ""
@@ -865,6 +866,48 @@ func (m *Model) mainProcedureCall() string {
 	return styles.ProcedureCallStyle.Render(
 		fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg')", funnyName),
 	)
+}
+
+// mainMCPStatus returns the MCP listen status for the main header detail line.
+// Only the active/inactive token is colored; the surrounding label uses the muted header style.
+func (m *Model) mainMCPStatus() string {
+	if strings.TrimSpace(m.mcpAddr) == "" {
+		return ""
+	}
+
+	status := "inactive"
+	statusColor := styles.ErrorColor
+	if m.mcpActive {
+		status = "active"
+		statusColor = styles.SuccessColor
+	}
+
+	muted := styles.HeaderSubtitleStyle
+	statusStyle := lipgloss.NewStyle().Foreground(statusColor).Bold(true)
+	return lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		muted.Render("MCP ["),
+		statusStyle.Render(status),
+		muted.Render(fmt.Sprintf("] : %s", m.mcpAddr)),
+	)
+}
+
+// mainHeaderDetail joins the procedure call and MCP status for the header subtitle line.
+func (m *Model) mainHeaderDetail() string {
+	parts := make([]string, 0, 3)
+	if proc := m.mainProcedureCall(); proc != "" {
+		parts = append(parts, proc)
+	}
+	if mcp := m.mainMCPStatus(); mcp != "" {
+		if len(parts) > 0 {
+			parts = append(parts, styles.HeaderSubtitleStyle.Render("  •  "))
+		}
+		parts = append(parts, mcp)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, parts...)
 }
 
 // mainFooterText: returns the footer help text showing available keyboard shortcuts.

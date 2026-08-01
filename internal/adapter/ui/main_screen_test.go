@@ -70,6 +70,46 @@ func TestComputeMainLayout_WithFunnyNameRendersProcedureCallInHeader(t *testing.
 	}
 }
 
+func TestComputeMainLayout_WithMCPActiveRendersStatusNextToProcedureCall(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 140, 36)
+	m.appConfig = mustNewTestDatabaseSettings(t, "QA_DB")
+	m.subscriber = mustNewTestSubscriberWithFunnyName(t, "SUB_TEST", "BARNACLE")
+	m.mcpActive = true
+	m.mcpAddr = "127.0.0.1:54332"
+
+	layout := m.computeMainLayout()
+	plainHeader := stripANSIForTest(layout.header)
+	// Logo can wrap the address onto the next line, so assert the pieces separately.
+	compactHeader := strings.ReplaceAll(plainHeader, "\n", "")
+
+	if !strings.Contains(plainHeader, "Omni_Tracer_API.Trace_Message_Barnacle('msg')") {
+		t.Fatalf("header should contain procedure call, got: %s", plainHeader)
+	}
+	if !strings.Contains(compactHeader, "MCP [active]") {
+		t.Fatalf("header should contain active MCP status, got: %s", plainHeader)
+	}
+	if !strings.Contains(compactHeader, "127.0.0.1:54332") {
+		t.Fatalf("header should contain MCP listen addr, got: %s", plainHeader)
+	}
+}
+
+func TestComputeMainLayout_WithMCPInactiveRendersInactiveStatus(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 140, 36)
+	m.mcpActive = false
+	m.mcpAddr = "127.0.0.1:54332"
+
+	layout := m.computeMainLayout()
+	plainHeader := stripANSIForTest(layout.header)
+
+	if !strings.Contains(plainHeader, "MCP [inactive] : 127.0.0.1:54332") {
+		t.Fatalf("header should contain inactive MCP status, got: %s", plainHeader)
+	}
+}
+
 func TestComputeMainLayout_WithoutFunnyNameOmitsProcedureCall(t *testing.T) {
 	t.Parallel()
 

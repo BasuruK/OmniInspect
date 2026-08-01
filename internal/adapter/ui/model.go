@@ -179,6 +179,10 @@ type Model struct {
 	easterEggOmega1 float64    // inner angular velocity
 	easterEggOmega2 float64    // outer angular velocity
 	easterEggTrace  []eggPoint // recent outer-bob positions, oldest first
+
+	// MCP server status shown in the main header next to the procedure call.
+	mcpActive bool
+	mcpAddr   string
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -196,6 +200,8 @@ type ModelOpts struct {
 	EventChannel       chan *domain.QueueMessage
 	UpdateEventChannel chan tea.Msg        // Optional - can be created by Model if not provided
 	TraceAppender      ports.TraceAppender // Optional — shared buffer for non-UI consumers (MCP server, tests)
+	MCPActive          bool                // Optional — whether the in-process MCP server is listening
+	MCPAddr            string              // Optional — MCP listen address (e.g. 127.0.0.1:54332)
 }
 
 func NewModel(opts ModelOpts) (*Model, error) {
@@ -259,6 +265,8 @@ func NewModel(opts ModelOpts) (*Model, error) {
 		appConfig:          opts.AppConfig,
 		eventChannel:       eventChannel,
 		updateEventChannel: updateEventChannel,
+		mcpActive:          opts.MCPActive,
+		mcpAddr:            opts.MCPAddr,
 		loading: loadingState{
 			spinner: s,
 		},

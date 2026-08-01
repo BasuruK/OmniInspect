@@ -452,6 +452,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case mcpConnectDatabaseMsg:
+		// ponytail: MCP already probed+SetDefault; reuse Enter-key switch path (second connect). Split if switch latency hurts.
+		if msg.id == "" {
+			return m, nil
+		}
+		if m.appConfig != nil && m.appConfig.StorageKey() == msg.id {
+			return m, nil
+		}
+		if m.dbSettingsRepo == nil {
+			logger.Warn("mcp connect: DBSettingsRepo missing")
+			return m, nil
+		}
+		settings, err := m.dbSettingsRepo.GetByID(m.ctx, msg.id)
+		if err != nil || settings == nil {
+			logger.Warn("mcp connect: lookup failed", "id", msg.id, "error", err)
+			return m, nil
+		}
+		return m.handleSettingsSetAsMain(*settings)
+
 	case mcpStoppedMsg:
 		m.mcpActive = false
 		return m, nil

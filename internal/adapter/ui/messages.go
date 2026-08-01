@@ -76,6 +76,11 @@ type broadcastModeChangedMsg struct {
 // mcpStoppedMsg is sent when the in-process MCP HTTP server exits unexpectedly.
 type mcpStoppedMsg struct{}
 
+// mcpConnectDatabaseMsg asks the TUI to adopt a database MCP already set as default.
+type mcpConnectDatabaseMsg struct {
+	id string // storage key
+}
+
 // ==========================================
 // Onboarding Screen messages
 // ==========================================

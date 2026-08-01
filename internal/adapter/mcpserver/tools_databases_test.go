@@ -398,6 +398,34 @@ func TestConnectDatabase_HappyPath(t *testing.T) {
 	}
 }
 
+func TestConnectDatabase_NotifiesUI(t *testing.T) {
+	deps, _, cleanup := depsWithFakeDB(t)
+	defer cleanup()
+
+	settings, err := domain.NewDatabaseSettings(
+		"notify-1", "FREEPDB1", "db.example.com",
+		domain.Port(1521), "admin", "secret",
+	)
+	if err != nil {
+		t.Fatalf("NewDatabaseSettings: %v", err)
+	}
+	if err := deps.DBSettingsRepo.Save(context.Background(), *settings); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	var got string
+	deps.OnDatabaseConnected = func(id string) { got = id }
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "connect_database", map[string]any{"id": settings.StorageKey()})
+	if res.IsError {
+		t.Fatalf("expected success, got IsError: %+v", res.Content)
+	}
+	if got != settings.StorageKey() {
+		t.Fatalf("OnDatabaseConnected got %q, want %q", got, settings.StorageKey())
+	}
+}
+
 func TestConnectDatabase_Unreachable(t *testing.T) {
 	deps, fake, cleanup := depsWithFakeDB(t)
 	defer cleanup()

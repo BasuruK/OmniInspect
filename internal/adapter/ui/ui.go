@@ -21,8 +21,7 @@ func NewProgram(model *Model) *tea.Program {
 	return tea.NewProgram(model)
 }
 
-// BindMCPNotify returns optional MCP Deps hooks that push view-sync msgs into the program.
-// ponytail: no notifier interface — just closures around Program.Send.
+// BindMCPNotify sends MCP notifications to the TUI program.
 func BindMCPNotify(p *tea.Program) (onClear func(), onMode func(domain.BroadcastMode), onConnect func(string), onStopped func()) {
 	return func() {
 			if p != nil {

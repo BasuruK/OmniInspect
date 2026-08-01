@@ -24,6 +24,14 @@ const mcpListenAddr = "127.0.0.1:54332"
 // mcpAuthTokenFilename is the file startMCPServer writes the bearer token to.
 const mcpAuthTokenFilename = "omniview-mcp.token"
 
+// MCPCallbacks holds optional TUI notification hooks for in-process MCP mutations.
+type MCPCallbacks struct {
+	OnTracesCleared        func()
+	OnBroadcastModeChanged func(domain.BroadcastMode)
+	OnDatabaseConnected    func(string)
+	OnStopped              func()
+}
+
 // oracleDBFactory builds the real Oracle adapter. It mirrors the closure passed to ui.NewModel in main() so the MCP path uses the same Oracle instantiation rules as the TUI.
 func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 	adapter := oracle.NewOracleAdapter(settings)
@@ -35,7 +43,7 @@ func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepositor
 
 // startMCPServer builds the MCP server, wired to the shared BoltAdapter, and serves it over streamable HTTP in a background goroutine. On listen failure,
 // MCP is skipped and the TUI still starts (a busy port shouldn't block the whole app). The returned stop func cancels the server context and waits for ServeStreamableHTTP to return.
-func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppender ports.TraceAppender, dbSettingsRepo *boltdb.DatabaseSettingsRepository, onTracesCleared func(), onBroadcastModeChanged func(domain.BroadcastMode), onDatabaseConnected func(string), onStopped func()) (stop func(), _ error) {
+func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppender ports.TraceAppender, dbSettingsRepo *boltdb.DatabaseSettingsRepository, cbs MCPCallbacks) (stop func(), _ error) {
 	// validate before NewServer so a nil dep becomes a clean disabled-MCP log line instead of a panic. mcpserver.NewServer panics on missing required deps; mirror its required set here.
 	if omniApp == nil || boltAdapter == nil || traceAppender == nil || dbSettingsRepo == nil {
 		return nil, fmt.Errorf("MCP server: missing required dependency (App=%v Bolt=%v TraceAppender=%v DBSettingsRepo=%v)", omniApp, boltAdapter, traceAppender, dbSettingsRepo)
@@ -64,9 +72,9 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 		PermissionsRepo:        boltdb.NewPermissionsRepository(boltAdapter),
 		DBSettingsRepo:         dbSettingsRepo,
 		DBAdapterFactory:       oracleDBFactory,
-		OnTracesCleared:        onTracesCleared,
-		OnBroadcastModeChanged: onBroadcastModeChanged,
-		OnDatabaseConnected:    onDatabaseConnected,
+		OnTracesCleared:        cbs.OnTracesCleared,
+		OnBroadcastModeChanged: cbs.OnBroadcastModeChanged,
+		OnDatabaseConnected:    cbs.OnDatabaseConnected,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -78,9 +86,7 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 		}
 		// Intentional stop (cancel via returned stop func) runs after the TUI exits — skip Send.
 		// Unexpected Serve exit while the program is still running must clear the header indicator.
-		if ctx.Err() == nil && onStopped != nil {
-			onStopped()
-		}
+		mcpserver.NotifyStoppedUnexpected(ctx, cbs.OnStopped)
 	}()
 	logger.Info("MCP server listening", "addr", mcpListenAddr, "token_fingerprint", tokenFingerprint(authToken))
 

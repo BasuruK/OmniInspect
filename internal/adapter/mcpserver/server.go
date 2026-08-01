@@ -25,10 +25,10 @@ type Deps struct {
 	DBSettingsRepo   ports.DatabaseSettingsRepository
 	DBAdapterFactory DBAdapterFactory // optional — see field doc
 
-	// ponytail: optional fire-and-forget hooks so the TUI can mirror MCP mutations without a notifier interface. Nil is fine (tests, headless).
+	// Optional hooks invoked after a successful MCP mutation. Nil is fine (tests, headless).
 	OnTracesCleared        func()
 	OnBroadcastModeChanged func(domain.BroadcastMode)
-	OnDatabaseConnected    func(id string) // storage key; TUI runs its switch path
+	OnDatabaseConnected    func(id string) // storage key of the newly active database
 }
 
 // ==========================================

@@ -65,6 +65,17 @@ type queueMessageMsg struct {
 	message *domain.QueueMessage
 }
 
+// tracesClearedMsg is sent when MCP (or another non-UI consumer) empties the shared trace buffer.
+type tracesClearedMsg struct{}
+
+// broadcastModeChangedMsg is sent when MCP persists a new broadcast mode.
+type broadcastModeChangedMsg struct {
+	mode domain.BroadcastMode
+}
+
+// mcpStoppedMsg is sent when the in-process MCP HTTP server exits unexpectedly.
+type mcpStoppedMsg struct{}
+
 // ==========================================
 // Onboarding Screen messages
 // ==========================================

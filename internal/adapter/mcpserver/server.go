@@ -24,6 +24,10 @@ type Deps struct {
 	PermissionsRepo  ports.PermissionsRepository
 	DBSettingsRepo   ports.DatabaseSettingsRepository
 	DBAdapterFactory DBAdapterFactory // optional — see field doc
+
+	// ponytail: optional fire-and-forget hooks so the TUI can mirror MCP mutations without a notifier interface. Nil is fine (tests, headless).
+	OnTracesCleared        func()
+	OnBroadcastModeChanged func(domain.BroadcastMode)
 }
 
 // ==========================================

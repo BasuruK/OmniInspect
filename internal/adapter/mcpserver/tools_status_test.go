@@ -97,6 +97,28 @@ func TestGetStatus_ReflectsDefaultDatabaseAndMode(t *testing.T) {
 // set_broadcast_mode
 // ==========================================
 
+func TestSetBroadcastMode_NotifiesUI(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	var got domain.BroadcastMode
+	deps.OnBroadcastModeChanged = func(mode domain.BroadcastMode) { got = mode }
+
+	session := connectClientServer(t, deps)
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "set_broadcast_mode",
+		Arguments: map[string]any{"mode": "subscriber"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("set_broadcast_mode IsError: %+v", res.Content)
+	}
+	if got != domain.BroadcastModeSubscriber {
+		t.Fatalf("OnBroadcastModeChanged got %v, want subscriber", got)
+	}
+}
+
 func TestSetBroadcastMode_PersistsAndReturns(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()

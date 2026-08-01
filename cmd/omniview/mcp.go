@@ -35,7 +35,7 @@ func oracleDBFactory(settings *domain.DatabaseSettings) (ports.DatabaseRepositor
 
 // startMCPServer builds the MCP server, wired to the shared BoltAdapter, and serves it over streamable HTTP in a background goroutine. On listen failure,
 // MCP is skipped and the TUI still starts (a busy port shouldn't block the whole app). The returned stop func cancels the server context and waits for ServeStreamableHTTP to return.
-func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppender ports.TraceAppender, dbSettingsRepo *boltdb.DatabaseSettingsRepository) (stop func(), _ error) {
+func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppender ports.TraceAppender, dbSettingsRepo *boltdb.DatabaseSettingsRepository, onTracesCleared func(), onBroadcastModeChanged func(domain.BroadcastMode), onStopped func()) (stop func(), _ error) {
 	// validate before NewServer so a nil dep becomes a clean disabled-MCP log line instead of a panic. mcpserver.NewServer panics on missing required deps; mirror its required set here.
 	if omniApp == nil || boltAdapter == nil || traceAppender == nil || dbSettingsRepo == nil {
 		return nil, fmt.Errorf("MCP server: missing required dependency (App=%v Bolt=%v TraceAppender=%v DBSettingsRepo=%v)", omniApp, boltAdapter, traceAppender, dbSettingsRepo)
@@ -58,12 +58,14 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 	}
 
 	srv := mcpserver.NewServer(mcpserver.Deps{
-		App:              omniApp,
-		Bolt:             boltAdapter,
-		TraceAppender:    traceAppender,
-		PermissionsRepo:  boltdb.NewPermissionsRepository(boltAdapter),
-		DBSettingsRepo:   dbSettingsRepo,
-		DBAdapterFactory: oracleDBFactory,
+		App:                    omniApp,
+		Bolt:                   boltAdapter,
+		TraceAppender:          traceAppender,
+		PermissionsRepo:        boltdb.NewPermissionsRepository(boltAdapter),
+		DBSettingsRepo:         dbSettingsRepo,
+		DBAdapterFactory:       oracleDBFactory,
+		OnTracesCleared:        onTracesCleared,
+		OnBroadcastModeChanged: onBroadcastModeChanged,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -72,6 +74,11 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 		defer close(done)
 		if err := srv.ServeStreamableHTTP(ctx, ln, authToken); err != nil {
 			logger.Warn("MCP server stopped", "error", err)
+		}
+		// Intentional stop (cancel via returned stop func) runs after the TUI exits — skip Send.
+		// Unexpected Serve exit while the program is still running must clear the header indicator.
+		if ctx.Err() == nil && onStopped != nil {
+			onStopped()
 		}
 	}()
 	logger.Info("MCP server listening", "addr", mcpListenAddr, "token_fingerprint", tokenFingerprint(authToken))

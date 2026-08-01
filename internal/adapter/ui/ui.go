@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"OmniView/internal/core/domain"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -17,4 +19,22 @@ func NewUIAdapter(appVersion string) *UIAdapter {
 // NewProgram creates a configured tea.Program ready to Run().
 func NewProgram(model *Model) *tea.Program {
 	return tea.NewProgram(model)
+}
+
+// BindMCPNotify returns optional MCP Deps hooks that push view-sync msgs into the program.
+// ponytail: no notifier interface — just closures around Program.Send.
+func BindMCPNotify(p *tea.Program) (onClear func(), onMode func(domain.BroadcastMode), onStopped func()) {
+	return func() {
+			if p != nil {
+				p.Send(tracesClearedMsg{})
+			}
+		}, func(mode domain.BroadcastMode) {
+			if p != nil {
+				p.Send(broadcastModeChangedMsg{mode: mode})
+			}
+		}, func() {
+			if p != nil {
+				p.Send(mcpStoppedMsg{})
+			}
+		}
 }

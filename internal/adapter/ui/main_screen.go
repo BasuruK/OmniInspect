@@ -265,14 +265,19 @@ func (m *Model) updateMain(msg tea.Msg) (*Model, tea.Cmd) {
 	return m, cmd
 }
 
-// resetMainLogState clears all buffered log state and invalidates cached widths.
-// It also clears the shared trace RingBuffer so non-UI consumers (the MCP
-// server) don't keep serving messages the operator just cleared.
-func (m *Model) resetMainLogState() {
+// clearMainLogView clears the TUI shadow copy only (not the shared RingBuffer).
+func (m *Model) clearMainLogView() {
 	m.main.messages = nil
 	m.main.renderedLines = nil
 	m.main.totalRawBytes = 0
 	m.invalidateColumnWidthCache()
+}
+
+// resetMainLogState clears all buffered log state and invalidates cached widths.
+// It also clears the shared trace RingBuffer so non-UI consumers (the MCP
+// server) don't keep serving messages the operator just cleared.
+func (m *Model) resetMainLogState() {
+	m.clearMainLogView()
 	if m.traceAppender != nil {
 		if err := m.traceAppender.Clear(m.ctx); err != nil {
 			logger.Warn("failed to clear shared trace buffer", "error", err)

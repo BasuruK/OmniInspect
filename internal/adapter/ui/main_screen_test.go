@@ -110,6 +110,31 @@ func TestComputeMainLayout_WithMCPInactiveRendersInactiveStatus(t *testing.T) {
 	}
 }
 
+func TestUpdate_MCPStoppedClearsActive(t *testing.T) {
+	t.Parallel()
+
+	m := newTestMainModel(t, 140, 36)
+	m.mcpActive = true
+	m.mcpAddr = "127.0.0.1:54332"
+
+	next, cmd := m.Update(mcpStoppedMsg{})
+	if cmd != nil {
+		t.Fatalf("expected nil cmd, got %T", cmd)
+	}
+	got, ok := next.(*Model)
+	if !ok {
+		t.Fatalf("expected *Model, got %T", next)
+	}
+	if got.mcpActive {
+		t.Fatal("mcpActive should be false after mcpStoppedMsg")
+	}
+	layout := got.computeMainLayout()
+	plainHeader := stripANSIForTest(layout.header)
+	if !strings.Contains(plainHeader, "MCP [inactive]") {
+		t.Fatalf("header should show inactive after stop, got: %s", plainHeader)
+	}
+}
+
 func TestComputeMainLayout_WithoutFunnyNameOmitsProcedureCall(t *testing.T) {
 	t.Parallel()
 

@@ -680,7 +680,7 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	m.loading.retryCount = 0
 	m.loading.current = "Connecting..."
 	return m, tea.Batch(
-		teardownPriorConnectionCmd(oldTracer, oldAdapter, dbID),
+		teardownPriorConnectionCmd(m.ctx, oldTracer, oldAdapter, dbID),
 		connectDBCmd(m, true),
 	)
 }

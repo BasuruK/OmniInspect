@@ -39,16 +39,19 @@ type dbTeardownDoneMsg struct{}
 
 // teardownPriorConnectionCmd cancels the old listener and closes the old adapter
 // without blocking the Bubble Tea Update handler.
-func teardownPriorConnectionCmd(tracerSvc *tracer.TracerService, adapter ports.DatabaseRepository, databaseID string) tea.Cmd {
+func teardownPriorConnectionCmd(ctx context.Context, tracerSvc *tracer.TracerService, adapter ports.DatabaseRepository, databaseID string) tea.Cmd {
 	if tracerSvc == nil && adapter == nil {
 		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	return func() tea.Msg {
 		if tracerSvc != nil {
 			tracerSvc.CancelConnectionListener()
 		}
 		if adapter != nil {
-			if err := adapter.Close(context.Background()); err != nil {
+			if err := adapter.Close(ctx); err != nil {
 				logger.Warn("failed to close current database adapter", "databaseID", databaseID, "error", err)
 			}
 		}

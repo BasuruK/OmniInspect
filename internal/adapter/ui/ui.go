@@ -68,17 +68,15 @@ func BindMCPNotify(p *tea.Program) MCPNotifyHooks {
 			return
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		if !ready.Load() {
 			if len(pending) >= maxPending {
-				mu.Unlock()
 				logger.Warn("mcp notify: pre-ready buffer full, dropping", "type", fmt.Sprintf("%T", msg))
 				return
 			}
 			pending = append(pending, msg)
-			mu.Unlock()
 			return
 		}
-		mu.Unlock()
 		enqueue(msg)
 	}
 
@@ -89,14 +87,13 @@ func BindMCPNotify(p *tea.Program) MCPNotifyHooks {
 		OnStopped:              func() { send(mcpStoppedMsg{}) },
 		MarkReady: func() {
 			mu.Lock()
+			defer mu.Unlock()
 			if ready.Load() {
-				mu.Unlock()
 				return
 			}
 			ready.Store(true)
 			toReplay := pending
 			pending = nil
-			mu.Unlock()
 			for _, msg := range toReplay {
 				enqueue(msg)
 			}

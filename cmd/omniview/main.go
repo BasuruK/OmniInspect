@@ -139,7 +139,7 @@ func run(omniApp *app.App) error {
 	model.SetOnProgramReady(hooks.MarkReady)
 
 	// Auto-start the MCP server after the program exists so clear/mode/connect/stopped hooks can Program.Send into the TUI.
-	// Hooks stay gated until Init/MarkReady so MCP cannot block on an unstarted program.
+	// Hooks buffer until Init/MarkReady, then replay — MCP can accept requests before the TUI mailbox is live.
 	// HTTP (not stdio) — TUI owns stdin/stdout. Busy port → MCP disabled, TUI still runs.
 	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo, MCPCallbacks{
 		OnTracesCleared:        hooks.OnTracesCleared,

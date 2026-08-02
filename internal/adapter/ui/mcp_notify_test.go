@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"OmniView/internal/core/domain"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestBindMCPNotify_SafeWithNilProgram(t *testing.T) {
@@ -18,6 +20,93 @@ func TestBindMCPNotify_SafeWithNilProgram(t *testing.T) {
 	hooks.MarkReady()
 	hooks.OnTracesCleared()
 	hooks.OnStopped()
+}
+
+func TestBindMCPNotify_BuffersBeforeReady(t *testing.T) {
+	t.Parallel()
+
+	hooks := BindMCPNotify(NewProgram(&Model{}))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		hooks.OnDatabaseConnected("DBconfig:pre")
+		hooks.OnTracesCleared()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("pre-ready MCP notify blocked the caller")
+	}
+}
+
+type notifyReplayModel struct {
+	markReady func()
+	got       chan string
+}
+
+func (m *notifyReplayModel) Init() tea.Cmd {
+	if m.markReady != nil {
+		m.markReady()
+	}
+	return nil
+}
+
+func (m *notifyReplayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if c, ok := msg.(mcpConnectDatabaseMsg); ok {
+		select {
+		case m.got <- c.id:
+		default:
+		}
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *notifyReplayModel) View() tea.View {
+	return tea.NewView("")
+}
+
+func TestBindMCPNotify_ReplaysPendingOnMarkReady(t *testing.T) {
+	t.Parallel()
+
+	got := make(chan string, 1)
+	m := &notifyReplayModel{got: got}
+	p := tea.NewProgram(m,
+		tea.WithInput(nil),
+		tea.WithoutRenderer(),
+		tea.WithoutSignals(),
+	)
+	hooks := BindMCPNotify(p)
+	m.markReady = hooks.MarkReady
+
+	// Arrive before Run/Init — must be replayed once MarkReady fires from Init.
+	hooks.OnDatabaseConnected("DBconfig:pre")
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run()
+		done <- err
+	}()
+
+	select {
+	case id := <-got:
+		if id != "DBconfig:pre" {
+			t.Fatalf("got %q, want DBconfig:pre", id)
+		}
+	case err := <-done:
+		t.Fatalf("program exited before replay: %v", err)
+	case <-time.After(3 * time.Second):
+		p.Quit()
+		t.Fatal("pending mcpConnectDatabaseMsg not replayed after MarkReady")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		p.Quit()
+		t.Fatal("program did not exit after replay")
+	}
 }
 
 func TestBindMCPNotify_CallbacksReturnImmediately(t *testing.T) {
@@ -42,6 +131,29 @@ func TestBindMCPNotify_CallbacksReturnImmediately(t *testing.T) {
 	}
 }
 
+func TestBindMCPNotify_DropsWhenMailboxFull(t *testing.T) {
+	t.Parallel()
+
+	// Program is never Run, so the worker blocks on the first p.Send.
+	// Flooding must still return immediately via drop-on-full.
+	hooks := BindMCPNotify(NewProgram(&Model{}))
+	hooks.MarkReady()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 64 {
+			hooks.OnTracesCleared()
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("MCP notify flood blocked the caller")
+	}
+}
+
 func TestHandleMCPConnectDatabaseMsg_DropsWhenSwitchInProgress(t *testing.T) {
 	t.Parallel()
 
@@ -58,5 +170,62 @@ func TestHandleMCPConnectDatabaseMsg_DropsWhenSwitchInProgress(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Fatal("expected no cmd when switch in progress")
+	}
+}
+
+func TestHandleMCPConnectDatabaseMsg_DropsWhenEditInProgress(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		set  func(*Model)
+	}{
+		{
+			name: "showAddForm",
+			set: func(m *Model) {
+				m.dbSettings.showAddForm = true
+			},
+		},
+		{
+			name: "editingID",
+			set: func(m *Model) {
+				m.dbSettings.editingID = "DBconfig:edit"
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := &Model{screen: screenMain}
+			tc.set(m)
+			next, cmd := m.handleMCPConnectDatabaseMsg(mcpConnectDatabaseMsg{id: "DBconfig:other"})
+			if next != m {
+				t.Fatal("expected same model")
+			}
+			if cmd != nil {
+				t.Fatal("expected no cmd when database settings edit in progress")
+			}
+			if m.screen != screenMain {
+				t.Fatalf("expected screenMain, got %q", m.screen)
+			}
+		})
+	}
+}
+
+func TestHandleMCPConnectDatabaseMsg_DropsDuringOnboarding(t *testing.T) {
+	t.Parallel()
+
+	m := &Model{screen: screenOnboarding}
+	next, cmd := m.handleMCPConnectDatabaseMsg(mcpConnectDatabaseMsg{id: "DBconfig:other"})
+	if next != m {
+		t.Fatal("expected same model")
+	}
+	if cmd != nil {
+		t.Fatal("expected no cmd during onboarding")
+	}
+	if m.screen != screenOnboarding {
+		t.Fatalf("expected screenOnboarding, got %q", m.screen)
 	}
 }

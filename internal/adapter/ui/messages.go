@@ -193,6 +193,14 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 		logger.Warn("mcp connect: switch already in progress, dropping", "id", msg.id)
 		return m, nil
 	}
+	if m.dbSettings.showAddForm || m.dbSettings.editingID != "" {
+		logger.Warn("mcp connect: database settings edit in progress, dropping", "id", msg.id)
+		return m, nil
+	}
+	if m.screen == screenOnboarding {
+		logger.Warn("mcp connect: onboarding in progress, dropping", "id", msg.id)
+		return m, nil
+	}
 	if m.dbSettingsRepo == nil {
 		logger.Warn("mcp connect: DBSettingsRepo missing")
 		return m, nil
@@ -235,7 +243,9 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 	m.subscriberService = nil
 	m.resetMainLogState()
 	m.main.ready = false
-	m.closeDatabaseSettings()
+	if m.dbSettings.visible {
+		m.closeDatabaseSettings()
+	}
 	m.stopLoadingRetryTimer()
 	m.screen = screenLoading
 	m.loading.steps = nil

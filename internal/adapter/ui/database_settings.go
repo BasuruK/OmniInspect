@@ -652,20 +652,14 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 		return m.showDatabaseSwitchError(fmt.Errorf("failed to persist database %q as default: %w", selectedDb.DatabaseID(), err))
 	}
 
-	m.resetConnectionEventStream()
-	if m.tracerService != nil {
-		m.tracerService.CancelConnectionListener()
-	}
-	if m.dbAdapter != nil {
-		if err := m.dbAdapter.Close(m.ctx); err != nil {
-			dbID := ""
-			if m.appConfig != nil {
-				dbID = m.appConfig.DatabaseID()
-			}
-			logger.Warn("failed to close current database adapter", "databaseID", dbID, "error", err)
-		}
+	oldTracer := m.tracerService
+	oldAdapter := m.dbAdapter
+	dbID := ""
+	if m.appConfig != nil {
+		dbID = m.appConfig.DatabaseID()
 	}
 
+	m.resetConnectionEventStream()
 	m.appConfig = &updatedSelected
 	m.dbAdapter = newAdapter
 	m.syncDatabaseSettingsDefaults(*m.appConfig)
@@ -685,7 +679,10 @@ func (m *Model) handleSettingsSetAsMain(selectedDb domain.DatabaseSettings) (*Mo
 	m.loading.complete = false
 	m.loading.retryCount = 0
 	m.loading.current = "Connecting..."
-	return m, connectDBCmd(m, true)
+	return m, tea.Batch(
+		teardownPriorConnectionCmd(oldTracer, oldAdapter, dbID),
+		connectDBCmd(m, true),
+	)
 }
 
 // reloadDatabaseList: reloads the database list from BoltDB storage and updates the UI list.

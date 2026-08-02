@@ -186,9 +186,6 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 	if msg.id == "" {
 		return m, nil
 	}
-	if m.appConfig != nil && m.appConfig.StorageKey() == msg.id {
-		return m, nil
-	}
 	if m.screen == screenLoading && m.loading.started && !m.loading.complete {
 		logger.Warn("mcp connect: switch already in progress, dropping", "id", msg.id)
 		return m, nil
@@ -210,6 +207,11 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 		logger.Warn("mcp connect: lookup failed", "id", msg.id, "error", err)
 		return m, nil
 	}
+	// Same logical DB as appConfig — skip reload, keep list nav on resolved ID().
+	if m.appConfig != nil && m.appConfig.ID() == settings.ID() {
+		m.dbSettings.activeID = settings.ID()
+		return m, nil
+	}
 
 	newAdapter, err := m.dbFactory(settings)
 	if err != nil {
@@ -219,20 +221,14 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 		return m.showDatabaseSwitchError(fmt.Errorf("failed to initialize database %q: adapter is nil", settings.DatabaseID()))
 	}
 
-	m.resetConnectionEventStream()
-	if m.tracerService != nil {
-		m.tracerService.CancelConnectionListener()
-	}
-	if m.dbAdapter != nil {
-		if err := m.dbAdapter.Close(m.ctx); err != nil {
-			dbID := ""
-			if m.appConfig != nil {
-				dbID = m.appConfig.DatabaseID()
-			}
-			logger.Warn("failed to close current database adapter", "databaseID", dbID, "error", err)
-		}
+	oldTracer := m.tracerService
+	oldAdapter := m.dbAdapter
+	dbID := ""
+	if m.appConfig != nil {
+		dbID = m.appConfig.DatabaseID()
 	}
 
+	m.resetConnectionEventStream()
 	m.appConfig = settings
 	m.dbAdapter = newAdapter
 	m.dbSettings.activeID = settings.ID()
@@ -254,5 +250,8 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 	m.loading.complete = false
 	m.loading.retryCount = 0
 	m.loading.current = "Connecting..."
-	return m, connectDBCmd(m, true)
+	return m, tea.Batch(
+		teardownPriorConnectionCmd(oldTracer, oldAdapter, dbID),
+		connectDBCmd(m, true),
+	)
 }

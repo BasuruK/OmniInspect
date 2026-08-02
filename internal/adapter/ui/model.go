@@ -470,6 +470,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mcpStoppedMsg:
 		return m.handleMCPStoppedMsg(msg)
 
+	case dbTeardownDoneMsg:
+		return m, nil
+
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":

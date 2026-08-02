@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -227,5 +228,40 @@ func TestHandleMCPConnectDatabaseMsg_DropsDuringOnboarding(t *testing.T) {
 	}
 	if m.screen != screenOnboarding {
 		t.Fatalf("expected screenOnboarding, got %q", m.screen)
+	}
+}
+
+type mcpConnectSettingsRepo struct {
+	stubDatabaseSettingsRepository
+	byID *domain.DatabaseSettings
+}
+
+func (r mcpConnectSettingsRepo) GetByID(context.Context, string) (*domain.DatabaseSettings, error) {
+	return r.byID, nil
+}
+
+func TestHandleMCPConnectDatabaseMsg_AlreadyConnectedSyncsActiveID(t *testing.T) {
+	t.Parallel()
+
+	settings := newTestDatabaseSettings(t, "SAME-DB")
+	m := &Model{
+		screen:         screenMain,
+		appConfig:      settings,
+		dbSettingsRepo: mcpConnectSettingsRepo{byID: settings},
+	}
+	m.dbSettings.activeID = "stale-nav"
+
+	next, cmd := m.handleMCPConnectDatabaseMsg(mcpConnectDatabaseMsg{id: settings.StorageKey()})
+	if next != m {
+		t.Fatal("expected same model")
+	}
+	if cmd != nil {
+		t.Fatal("expected no cmd when already connected")
+	}
+	if m.screen != screenMain {
+		t.Fatalf("expected screenMain, got %q", m.screen)
+	}
+	if m.dbSettings.activeID != settings.ID() {
+		t.Fatalf("activeID=%q, want resolved ID %q", m.dbSettings.activeID, settings.ID())
 	}
 }

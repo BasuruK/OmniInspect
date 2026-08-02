@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"OmniView/internal/adapter/logger"
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
+	"OmniView/internal/service/tracer"
 	"OmniView/internal/updater"
 	"context"
 	"errors"
@@ -28,6 +31,28 @@ func connectDBCmd(m *Model, isSwitch bool) tea.Cmd {
 		}
 		err := m.dbAdapter.Connect(m.ctx)
 		return dbConnectedMsg{err: err, isSwitch: isSwitch}
+	}
+}
+
+// dbTeardownDoneMsg signals prior-connection cleanup finished off the Update path.
+type dbTeardownDoneMsg struct{}
+
+// teardownPriorConnectionCmd cancels the old listener and closes the old adapter
+// without blocking the Bubble Tea Update handler.
+func teardownPriorConnectionCmd(tracerSvc *tracer.TracerService, adapter ports.DatabaseRepository, databaseID string) tea.Cmd {
+	if tracerSvc == nil && adapter == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if tracerSvc != nil {
+			tracerSvc.CancelConnectionListener()
+		}
+		if adapter != nil {
+			if err := adapter.Close(context.Background()); err != nil {
+				logger.Warn("failed to close current database adapter", "databaseID", databaseID, "error", err)
+			}
+		}
+		return dbTeardownDoneMsg{}
 	}
 }
 

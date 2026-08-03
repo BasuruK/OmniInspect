@@ -34,17 +34,17 @@ func (ss *SubscriberService) SetSubscriber(ctx context.Context, subscriber *doma
 }
 
 // LoadSoleSubscriber returns the single persisted subscriber from repo.
-// ErrSubscriberNotFound when none; error when more than one exists.
+// ErrSubscriberNotFound when none; ErrMultipleSubscribers when more than one exists.
 func LoadSoleSubscriber(ctx context.Context, repo ports.SubscriberRepository) (*domain.Subscriber, error) {
 	subs, err := repo.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list subscribers: %w", err)
 	}
 	if len(subs) == 0 {
 		return nil, domain.ErrSubscriberNotFound
 	}
 	if len(subs) > 1 {
-		return nil, fmt.Errorf("expected 1 subscriber, found %d", len(subs))
+		return nil, fmt.Errorf("%w: expected 1, found %d", domain.ErrMultipleSubscribers, len(subs))
 	}
 	return &subs[0], nil
 }

@@ -295,7 +295,11 @@ func TestGetTraceMethod_HappyPath(t *testing.T) {
 	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", "BARNACLE")
 
 	session := connectClientServer(t, deps)
-	res := callTool(t, session, "get_trace_method", map[string]any{})
+	res := callTool(t, session, "get_trace_method", map[string]any{
+		"message_":      "hello world's",
+		"log_level_":    "WARNING",
+		"process_name_": "batch-job",
+	})
 	if res.IsError {
 		t.Fatalf("get_trace_method returned IsError=true: %+v", res.Content)
 	}
@@ -303,7 +307,7 @@ func TestGetTraceMethod_HappyPath(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := "Omni_Tracer_API.Trace_Message_Barnacle('msg', 'INFO')"
+	want := "Omni_Tracer_API.Trace_Message_Barnacle('hello world''s', 'WARNING', 'batch-job')"
 	if out.Call != want {
 		t.Fatalf("call = %q, want %q", out.Call, want)
 	}
@@ -327,7 +331,7 @@ func TestGetTraceMethod_NotFound(t *testing.T) {
 			}
 
 			session := connectClientServer(t, deps)
-			res := callTool(t, session, "get_trace_method", map[string]any{})
+			res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})
 			if !res.IsError {
 				t.Fatalf("expected IsError=true, got %+v", res)
 			}

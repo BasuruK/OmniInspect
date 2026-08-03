@@ -345,3 +345,23 @@ func TestGetTraceMethod_NotFound(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTraceMethod_MultipleSubscribers(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB_A", "BARNACLE")
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB_B", "CHESTER")
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true, got %+v", res)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+		t.Fatalf("decode error payload: %v", err)
+	}
+	if payload["code"] != domain.ErrCodeInternalError.Error() {
+		t.Fatalf("code = %v, want %q", payload["code"], domain.ErrCodeInternalError.Error())
+	}
+}

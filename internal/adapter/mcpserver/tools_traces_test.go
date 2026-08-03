@@ -303,14 +303,9 @@ func TestGetTraceMethod_HappyPath(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if out.Method != "Omni_Tracer_API.Trace_Message_Barnacle()" {
-		t.Fatalf("method = %q, want Omni_Tracer_API.Trace_Message_Barnacle()", out.Method)
-	}
-	if out.FunnyName != "BARNACLE" {
-		t.Fatalf("funny_name = %q, want BARNACLE", out.FunnyName)
-	}
-	if out.Example != "Omni_Tracer_API.Trace_Message_Barnacle('msg', 'INFO')" {
-		t.Fatalf("example = %q", out.Example)
+	want := "Omni_Tracer_API.Trace_Message_Barnacle('msg', 'INFO')"
+	if out.Call != want {
+		t.Fatalf("call = %q, want %q", out.Call, want)
 	}
 }
 

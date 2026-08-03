@@ -128,8 +128,9 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 
 	// ── get_trace_method ─────────────────────
 	mcp.AddTool(sdk, &mcp.Tool{
-		Name:        "get_trace_method",
-		Description: "Returns the subscriber-specific Omni_Tracer_API.Trace_Message_<FunnyName>() procedure call signature for adding trace messages, including required/optional parameters and allowed log levels.",
+		Name: "get_trace_method",
+		Description: "Returns a ready-to-use Omni_Tracer_API.Trace_Message_<FunnyName>(...) call for the assigned subscriber. " +
+			"Required: message_ (text). Optional: log_level_ (default INFO; allowed DEBUG|INFO|WARNING|ERROR|CRITICAL), process_name_.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, getTraceMethod(s))
 

@@ -278,6 +278,16 @@ func IsFunnyNameAvailable(name string) bool {
 	return !DefaultFunnyNameGenerator().IsUsed(name)
 }
 
+// PascalFunnyName converts an ALL-CAPS funny name to PascalCase for display
+// (e.g. BARNACLE → Barnacle). Empty input returns empty.
+func PascalFunnyName(name string) string {
+	if name == "" {
+		return ""
+	}
+	lower := strings.ToLower(name)
+	return strings.ToUpper(lower[:1]) + lower[1:]
+}
+
 // ==========================================
 // Curated Funny Name List
 // ==========================================

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"OmniView/internal/adapter/ui/styles"
+	"OmniView/internal/core/domain"
 	"fmt"
 	"strings"
 
@@ -64,9 +65,7 @@ func (m *Model) renderHelpOverlay() string {
 	if m.subscriber != nil {
 		funnyName := m.subscriber.FunnyName()
 		if funnyName != "" {
-			// Convert single-word funnyName from ALL-CAPS to PascalCase (e.g., "Chester")
-			pascalName := strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
-			subscriberProc = fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg', optional [log_level_])", pascalName)
+			subscriberProc = fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg', optional [log_level_])", domain.PascalFunnyName(funnyName))
 		}
 	}
 

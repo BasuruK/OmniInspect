@@ -827,7 +827,7 @@ func (m *Model) mainStatusText() string {
 	if m.subscriber != nil {
 		subscriberName = m.subscriber.Name()
 		if funnyName := m.subscriber.FunnyName(); funnyName != "" {
-			subscriberName = strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
+			subscriberName = domain.PascalFunnyName(funnyName)
 			subscriberNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFFF")).Bold(true)
 		}
 	}
@@ -866,10 +866,8 @@ func (m *Model) mainProcedureCall() string {
 		return ""
 	}
 
-	funnyName = strings.ToUpper(funnyName[:1]) + strings.ToLower(funnyName[1:])
-
 	return styles.ProcedureCallStyle.Render(
-		fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg')", funnyName),
+		fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg')", domain.PascalFunnyName(funnyName)),
 	)
 }
 

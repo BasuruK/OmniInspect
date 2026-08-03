@@ -406,3 +406,17 @@ func BenchmarkFunnyNameGenerator_GetRandomName(b *testing.B) {
 		}
 	}
 }
+
+func TestPascalFunnyName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"BARNACLE", "Barnacle"},
+		{"barnacle", "Barnacle"},
+		{"A", "A"},
+	}
+	for _, tc := range cases {
+		if got := PascalFunnyName(tc.in); got != tc.want {
+			t.Fatalf("PascalFunnyName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

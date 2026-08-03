@@ -267,3 +267,82 @@ func TestClearTraces_NotifiesUI(t *testing.T) {
 		t.Fatal("expected OnTracesCleared to be called")
 	}
 }
+
+// ==========================================
+// get_trace_method
+// ==========================================
+
+func seedSubscriber(t *testing.T, repo ports.SubscriberRepository, name, funnyName string) {
+	t.Helper()
+	var sub *domain.Subscriber
+	var err error
+	if funnyName == "" {
+		sub, err = domain.NewSubscriberWithDefaults(name)
+	} else {
+		sub, err = domain.NewSubscriberWithFunnyName(name, funnyName, domain.DefaultBatchSize, domain.DefaultWaitTime)
+	}
+	if err != nil {
+		t.Fatalf("create subscriber: %v", err)
+	}
+	if err := repo.Save(context.Background(), *sub); err != nil {
+		t.Fatalf("Save subscriber: %v", err)
+	}
+}
+
+func TestGetTraceMethod_HappyPath(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", "BARNACLE")
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{})
+	if res.IsError {
+		t.Fatalf("get_trace_method returned IsError=true: %+v", res.Content)
+	}
+	var out getTraceMethodOutput
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Method != "Omni_Tracer_API.Trace_Message_Barnacle()" {
+		t.Fatalf("method = %q, want Omni_Tracer_API.Trace_Message_Barnacle()", out.Method)
+	}
+	if out.FunnyName != "BARNACLE" {
+		t.Fatalf("funny_name = %q, want BARNACLE", out.FunnyName)
+	}
+	if out.Example != "Omni_Tracer_API.Trace_Message_Barnacle('msg', 'INFO')" {
+		t.Fatalf("example = %q", out.Example)
+	}
+}
+
+func TestGetTraceMethod_NotFound(t *testing.T) {
+	cases := []struct {
+		name  string
+		seed  bool
+		funny string
+	}{
+		{"no_subscriber", false, ""},
+		{"empty_funny_name", true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, cleanup := testDeps(t)
+			defer cleanup()
+			if tc.seed {
+				seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", tc.funny)
+			}
+
+			session := connectClientServer(t, deps)
+			res := callTool(t, session, "get_trace_method", map[string]any{})
+			if !res.IsError {
+				t.Fatalf("expected IsError=true, got %+v", res)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+				t.Fatalf("decode error payload: %v", err)
+			}
+			if payload["code"] != domain.ErrCodeNotFound.Error() {
+				t.Fatalf("code = %v, want %q", payload["code"], domain.ErrCodeNotFound.Error())
+			}
+		})
+	}
+}

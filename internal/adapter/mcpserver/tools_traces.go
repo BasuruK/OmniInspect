@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/service/subscribers"
 	"context"
 	"errors"
 	"fmt"
@@ -149,5 +150,70 @@ func clearTraces(s *Server) mcp.ToolHandlerFor[emptyInput, clearTracesOutput] {
 			s.deps.OnTracesCleared()
 		}
 		return nil, clearTracesOutput{OK: true}, nil
+	}
+}
+
+// ==========================================
+// get_trace_method
+// ==========================================
+
+// getTraceMethodOutput is the JSON output shape for get_trace_method.
+type getTraceMethodOutput struct {
+	Method     string `json:"method"`
+	FunnyName  string `json:"funny_name"`
+	Parameters struct {
+		Required []string              `json:"required"`
+		Optional []traceMethodOptParam `json:"optional"`
+	} `json:"parameters"`
+	Example string `json:"example"`
+}
+
+type traceMethodOptParam struct {
+	Name    string   `json:"name"`
+	Default any      `json:"default"`
+	Values  []string `json:"values,omitempty"`
+}
+
+// getTraceMethod returns the subscriber-specific funny-name procedure call signature.
+func getTraceMethod(s *Server) mcp.ToolHandlerFor[emptyInput, getTraceMethodOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, getTraceMethodOutput, error) {
+		sub, err := subscribers.LoadSoleSubscriber(ctx, s.deps.SubscriberRepo)
+		if err != nil {
+			if errors.Is(err, domain.ErrSubscriberNotFound) {
+				res, mErr := mcpToolError(domain.ErrCodeNotFound, "get_trace_method: no subscriber assigned", nil)
+				return res, getTraceMethodOutput{}, mErr
+			}
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_trace_method: %v", err), nil)
+			return res, getTraceMethodOutput{}, mErr
+		}
+
+		funnyName := strings.TrimSpace(sub.FunnyName())
+		if funnyName == "" {
+			res, mErr := mcpToolError(domain.ErrCodeNotFound, "get_trace_method: subscriber has no funny name assigned", nil)
+			return res, getTraceMethodOutput{}, mErr
+		}
+
+		pascal := domain.PascalFunnyName(funnyName)
+		out := getTraceMethodOutput{
+			Method:    fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s()", pascal),
+			FunnyName: funnyName,
+			Example:   fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s('msg', 'INFO')", pascal),
+		}
+		out.Parameters.Required = []string{"message_"}
+		out.Parameters.Optional = []traceMethodOptParam{
+			{
+				Name:    "log_level_",
+				Default: string(domain.LogLevelInfo),
+				Values: []string{
+					string(domain.LogLevelDebug),
+					string(domain.LogLevelInfo),
+					string(domain.LogLevelWarning),
+					string(domain.LogLevelError),
+					string(domain.LogLevelCritical),
+				},
+			},
+			{Name: "process_name_"},
+		}
+		return nil, out, nil
 	}
 }

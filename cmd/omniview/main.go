@@ -102,17 +102,6 @@ func run(omniApp *app.App) error {
 
 	dbSettingsRepo := boltdb.NewDatabaseSettingsRepository(boltAdapter)
 
-	// Auto-start the MCP server so agents can drive OmniView without a separate `omniview mcp` invocation. It serves over HTTP rather than stdio here, since the TUI already owns stdin/stdout in this process. Only one instance can bind mcpListenAddr, so a second launch silently loses MCP rather than double-serving.
-	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo)
-	mcpActive := false
-	if stopMCP != nil {
-		defer stopMCP()
-		mcpActive = true
-	}
-	if err != nil {
-		logger.Warn("MCP server disabled", "error", err)
-	}
-
 	model, err := ui.NewModel(ui.ModelOpts{
 		App:         omniApp,
 		BoltAdapter: boltAdapter,
@@ -127,7 +116,6 @@ func run(omniApp *app.App) error {
 		EventChannel:   eventCh,
 		UpdaterService: updaterService,
 		TraceAppender:  traceAppender,
-		MCPActive:      mcpActive,
 		MCPAddr:        mcpListenAddr,
 	})
 	if err != nil {
@@ -147,6 +135,25 @@ func run(omniApp *app.App) error {
 	}
 
 	p := ui.NewProgram(model)
+	hooks := ui.BindMCPNotify(p)
+	model.SetOnProgramReady(hooks.MarkReady)
+
+	// Auto-start the MCP server after the program exists so clear/mode/connect/stopped hooks can Program.Send into the TUI.
+	// Hooks buffer until Init/MarkReady, then replay — MCP can accept requests before the TUI mailbox is live.
+	// HTTP (not stdio) — TUI owns stdin/stdout. Busy port → MCP disabled, TUI still runs.
+	stopMCP, err := startMCPServer(omniApp, boltAdapter, traceAppender, dbSettingsRepo, MCPCallbacks{
+		OnTracesCleared:        hooks.OnTracesCleared,
+		OnBroadcastModeChanged: hooks.OnBroadcastModeChanged,
+		OnDatabaseConnected:    hooks.OnDatabaseConnected,
+		OnStopped:              hooks.OnStopped,
+	})
+	if stopMCP != nil {
+		defer stopMCP()
+		model.SetMCPActive(true)
+	}
+	if err != nil {
+		logger.Warn("MCP server disabled", "error", err)
+	}
 	if _, err := p.Run(); err != nil {
 		tracer.StopWebhookDispatcher()
 		return fmt.Errorf("TUI error: %w", err)

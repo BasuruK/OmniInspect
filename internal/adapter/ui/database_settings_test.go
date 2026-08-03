@@ -9,6 +9,7 @@ import (
 	"OmniView/internal/service/tracer"
 
 	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"context"
@@ -192,6 +193,27 @@ func newTestDatabaseSettings(t *testing.T, id string) *domain.DatabaseSettings {
 	return settings
 }
 
+// execTeardownCmd runs only prior-connection teardown from a switch Batch.
+// connectDBCmd is left unexecuted so validation Connect call counts stay stable.
+func execTeardownCmd(t *testing.T, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		// Single cmd: already executed. Teardown-only returns dbTeardownDoneMsg.
+		return
+	}
+	for _, c := range batch {
+		out := c()
+		if _, isTeardown := out.(dbTeardownDoneMsg); isTeardown {
+			return
+		}
+	}
+}
+
 // newTestModelForSettings creates a minimal Model for testing handleSettingsSetAsMain.
 func newTestModelForSettings(t *testing.T) *Model {
 	t.Helper()
@@ -292,6 +314,7 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 
 	// Execute
 	updated, cmd := m.handleSettingsSetAsMain(*selected)
+	execTeardownCmd(t, cmd)
 
 	// Assert services are nil after switch (observable effect of StopAll being called).
 	if updated.tracerService != nil {
@@ -304,9 +327,9 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_WithExistingServices(t *testing.
 		t.Error("expected subscriberService to be nil after switch")
 	}
 
-	// Assert the active subscriber was unregistered before the service was nilled.
+	// Assert the active subscriber was unregistered via async teardown Cmd.
 	if len(mockDB.UnregisterSubscriberCalls) == 0 {
-		t.Error("expected CancelConnectionListener to invoke UnregisterSubscriber on existing tracerService before nil assignment")
+		t.Error("expected CancelConnectionListener to invoke UnregisterSubscriber on existing tracerService")
 	}
 
 	// Assert factory was called
@@ -414,7 +437,8 @@ func TestHandleSettingsSetAsMain_ServiceCleanup_DbAdapterClosed(t *testing.T) {
 	}
 
 	// Execute
-	updated, _ := m.handleSettingsSetAsMain(*selected)
+	updated, cmd := m.handleSettingsSetAsMain(*selected)
+	execTeardownCmd(t, cmd)
 
 	if len(oldMockDB.CloseCalls) != 1 {
 		t.Errorf("expected old dbAdapter.Close to be called once, got %d calls", len(oldMockDB.CloseCalls))
@@ -515,6 +539,7 @@ func TestHandleSettingsSetAsMain_ResetsRetryState(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected connect command after switching databases")
 	}
+	execTeardownCmd(t, cmd)
 	if updated.loading.retryCount != 0 {
 		t.Fatalf("expected retryCount to reset to 0, got %d", updated.loading.retryCount)
 	}
@@ -934,7 +959,8 @@ func TestHandleSettingsSetAsMain_ClosesOldAdapterBeforeCreatingNew(t *testing.T)
 	}
 
 	// Execute
-	updated, _ := m.handleSettingsSetAsMain(*selected)
+	updated, cmd := m.handleSettingsSetAsMain(*selected)
+	execTeardownCmd(t, cmd)
 
 	// Assert old adapter was closed
 	if len(oldMockDB.CloseCalls) != 1 {

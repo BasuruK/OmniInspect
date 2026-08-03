@@ -24,6 +24,11 @@ type Deps struct {
 	PermissionsRepo  ports.PermissionsRepository
 	DBSettingsRepo   ports.DatabaseSettingsRepository
 	DBAdapterFactory DBAdapterFactory // optional — see field doc
+
+	// Optional hooks invoked after a successful MCP mutation. Nil is fine (tests, headless).
+	OnTracesCleared        func()
+	OnBroadcastModeChanged func(domain.BroadcastMode)
+	OnDatabaseConnected    func(id string) // storage key of the newly active database
 }
 
 // ==========================================

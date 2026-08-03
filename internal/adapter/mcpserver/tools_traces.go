@@ -145,6 +145,9 @@ func clearTraces(s *Server) mcp.ToolHandlerFor[emptyInput, clearTracesOutput] {
 			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("clear_traces: %v", err), nil)
 			return res, clearTracesOutput{}, mErr
 		}
+		if s.deps.OnTracesCleared != nil {
+			s.deps.OnTracesCleared()
+		}
 		return nil, clearTracesOutput{OK: true}, nil
 	}
 }

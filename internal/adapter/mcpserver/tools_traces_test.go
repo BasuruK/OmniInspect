@@ -251,3 +251,19 @@ func TestClearTraces_EmptiesBuffer(t *testing.T) {
 		t.Fatalf("expected len=0 after clear, got %d", got)
 	}
 }
+
+func TestClearTraces_NotifiesUI(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	called := false
+	deps.OnTracesCleared = func() { called = true }
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "clear_traces", map[string]any{})
+	if res.IsError {
+		t.Fatalf("expected success, got IsError")
+	}
+	if !called {
+		t.Fatal("expected OnTracesCleared to be called")
+	}
+}

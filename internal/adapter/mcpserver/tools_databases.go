@@ -242,6 +242,10 @@ func connectDatabase(s *Server) mcp.ToolHandlerFor[connectDatabaseInput, connect
 			return res, connectDatabaseOutput{}, mErr
 		}
 
+		if s.deps.OnDatabaseConnected != nil {
+			s.deps.OnDatabaseConnected(settings.StorageKey())
+		}
+
 		return nil, connectDatabaseOutput{
 			OK:             true,
 			ActiveDatabase: settings.StorageKey(),

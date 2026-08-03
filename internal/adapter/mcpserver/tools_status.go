@@ -104,6 +104,9 @@ func setBroadcastMode(s *Server) mcp.ToolHandlerFor[setBroadcastModeInput, setBr
 			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("set_broadcast_mode: persist: %v", err), nil)
 			return res, setBroadcastModeOutput{}, mErr
 		}
+		if s.deps.OnBroadcastModeChanged != nil {
+			s.deps.OnBroadcastModeChanged(mode)
+		}
 		out := setBroadcastModeOutput{OK: true, Mode: mode.String()}
 		return nil, out, nil
 	}

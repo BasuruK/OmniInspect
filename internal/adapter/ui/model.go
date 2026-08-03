@@ -183,6 +183,9 @@ type Model struct {
 	// MCP server status shown in the main header next to the procedure call.
 	mcpActive bool
 	mcpAddr   string
+
+	// onProgramReady opens the BindMCPNotify send gate once Bubble Tea has started.
+	onProgramReady func()
 }
 
 // ModelOpts holds the dependencies injected into the Model
@@ -274,6 +277,16 @@ func NewModel(opts ModelOpts) (*Model, error) {
 			autoScroll: true,
 		},
 	}, nil
+}
+
+// SetMCPActive updates the status-bar MCP indicator after the in-process server starts.
+func (m *Model) SetMCPActive(active bool) {
+	m.mcpActive = active
+}
+
+// SetOnProgramReady registers a one-shot callback invoked from Init (after Run starts).
+func (m *Model) SetOnProgramReady(fn func()) {
+	m.onProgramReady = fn
 }
 
 func (m *Model) resetConnectionEventStream() {
@@ -416,6 +429,10 @@ func (m *Model) initializeServices() error {
 
 // Init starts the welcome screen animation and database initialization
 func (m *Model) Init() tea.Cmd {
+	if m.onProgramReady != nil {
+		m.onProgramReady()
+		m.onProgramReady = nil
+	}
 	m.welcome.animModel = animations.NewWithDefaults()
 	return tea.Batch(
 		m.welcome.animModel.Init(),
@@ -431,6 +448,30 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global handler (active on every screen)
 	switch msg := msg.(type) {
+
+	case tracesClearedMsg:
+		m.clearMainLogView()
+		if m.screen == screenMain && m.main.ready {
+			m.main.viewport.SetContentLines(m.viewportLines())
+			m.main.viewport.GotoTop()
+		}
+		return m, nil
+
+	case broadcastModeChangedMsg:
+		m.broadcastMode = msg.mode
+		if m.screen == screenMain && m.main.ready {
+			m.rebuildRenderedContent(m.main.viewport.Width())
+		}
+		return m, nil
+
+	case mcpConnectDatabaseMsg:
+		return m.handleMCPConnectDatabaseMsg(msg)
+
+	case mcpStoppedMsg:
+		return m.handleMCPStoppedMsg(msg)
+
+	case dbTeardownDoneMsg:
+		return m, nil
 
 	case tea.KeyPressMsg:
 		switch msg.String() {

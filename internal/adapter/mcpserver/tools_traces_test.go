@@ -388,21 +388,21 @@ func TestGetTraceMethod_MultipleSubscribers(t *testing.T) {
 	}
 }
 
-// staleFunnyNameRepo returns a sole subscriber whose funny name is not in the curated list,
+// StaleFunnyNameRepo returns a sole subscriber whose funny name is not in the curated list,
 // simulating curated-list drift in persisted state (BoltDB cannot round-trip such names).
-type staleFunnyNameRepo struct {
+type StaleFunnyNameRepo struct {
 	sub domain.Subscriber
 }
 
-func (r *staleFunnyNameRepo) Save(context.Context, domain.Subscriber) error { return nil }
-func (r *staleFunnyNameRepo) GetByName(context.Context, string) (*domain.Subscriber, error) {
+func (r *StaleFunnyNameRepo) Save(context.Context, domain.Subscriber) error { return nil }
+func (r *StaleFunnyNameRepo) GetByName(context.Context, string) (*domain.Subscriber, error) {
 	return nil, domain.ErrSubscriberNotFound
 }
-func (r *staleFunnyNameRepo) List(context.Context) ([]domain.Subscriber, error) {
+func (r *StaleFunnyNameRepo) List(context.Context) ([]domain.Subscriber, error) {
 	return []domain.Subscriber{r.sub}, nil
 }
-func (r *staleFunnyNameRepo) Exists(context.Context, string) (bool, error) { return false, nil }
-func (r *staleFunnyNameRepo) Delete(context.Context, string) error         { return nil }
+func (r *StaleFunnyNameRepo) Exists(context.Context, string) (bool, error) { return false, nil }
+func (r *StaleFunnyNameRepo) Delete(context.Context, string) error         { return nil }
 
 func TestGetTraceMethod_StaleFunnyNameIsInternalError(t *testing.T) {
 	deps, cleanup := testDeps(t)
@@ -412,7 +412,7 @@ func TestGetTraceMethod_StaleFunnyNameIsInternalError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSubscriberWithRawFunnyNameForTest: %v", err)
 	}
-	deps.SubscriberRepo = &staleFunnyNameRepo{sub: *sub}
+	deps.SubscriberRepo = &StaleFunnyNameRepo{sub: *sub}
 
 	session := connectClientServer(t, deps)
 	res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})

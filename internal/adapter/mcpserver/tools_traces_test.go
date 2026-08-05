@@ -267,3 +267,163 @@ func TestClearTraces_NotifiesUI(t *testing.T) {
 		t.Fatal("expected OnTracesCleared to be called")
 	}
 }
+
+// ==========================================
+// get_trace_method
+// ==========================================
+
+func seedSubscriber(t *testing.T, repo ports.SubscriberRepository, name, funnyName string) {
+	t.Helper()
+	var sub *domain.Subscriber
+	var err error
+	if funnyName == "" {
+		sub, err = domain.NewSubscriberWithDefaults(name)
+	} else {
+		sub, err = domain.NewSubscriberWithFunnyName(name, funnyName, domain.DefaultBatchSize, domain.DefaultWaitTime)
+	}
+	if err != nil {
+		t.Fatalf("create subscriber: %v", err)
+	}
+	if err := repo.Save(context.Background(), *sub); err != nil {
+		t.Fatalf("Save subscriber: %v", err)
+	}
+}
+
+func TestGetTraceMethod_HappyPath(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", "BARNACLE")
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{
+		"message_":      "hello world's",
+		"log_level_":    "WARNING",
+		"process_name_": "batch-job",
+	})
+	if res.IsError {
+		t.Fatalf("get_trace_method returned IsError=true: %+v", res.Content)
+	}
+	var out GetTraceMethodOutput
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := "Omni_Tracer_API.Trace_Message_Barnacle('hello world''s', 'WARNING', 'batch-job')"
+	if out.Call != want {
+		t.Fatalf("call = %q, want %q", out.Call, want)
+	}
+}
+
+func TestGetTraceMethod_PreservesMessageWhitespace(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", "BARNACLE")
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{
+		"message_": "  padded msg  ",
+	})
+	if res.IsError {
+		t.Fatalf("get_trace_method returned IsError=true: %+v", res.Content)
+	}
+	var out GetTraceMethodOutput
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := "Omni_Tracer_API.Trace_Message_Barnacle('  padded msg  ', 'INFO')"
+	if out.Call != want {
+		t.Fatalf("call = %q, want %q", out.Call, want)
+	}
+}
+
+func TestGetTraceMethod_NotFound(t *testing.T) {
+	cases := []struct {
+		name  string
+		seed  bool
+		funny string
+	}{
+		{"no_subscriber", false, ""},
+		{"empty_funny_name", true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, cleanup := testDeps(t)
+			defer cleanup()
+			if tc.seed {
+				seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB", tc.funny)
+			}
+
+			session := connectClientServer(t, deps)
+			res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})
+			if !res.IsError {
+				t.Fatalf("expected IsError=true, got %+v", res)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+				t.Fatalf("decode error payload: %v", err)
+			}
+			if payload["code"] != domain.ErrCodeNotFound.Error() {
+				t.Fatalf("code = %v, want %q", payload["code"], domain.ErrCodeNotFound.Error())
+			}
+		})
+	}
+}
+
+func TestGetTraceMethod_MultipleSubscribers(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB_A", "BARNACLE")
+	seedSubscriber(t, deps.SubscriberRepo, "TEST_SUB_B", "CHESTER")
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true, got %+v", res)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+		t.Fatalf("decode error payload: %v", err)
+	}
+	if payload["code"] != domain.ErrCodeInternalError.Error() {
+		t.Fatalf("code = %v, want %q", payload["code"], domain.ErrCodeInternalError.Error())
+	}
+}
+
+// StaleFunnyNameRepo returns a sole subscriber whose funny name is not in the curated list,
+// simulating curated-list drift in persisted state (BoltDB cannot round-trip such names).
+type StaleFunnyNameRepo struct {
+	sub domain.Subscriber
+}
+
+func (r *StaleFunnyNameRepo) Save(context.Context, domain.Subscriber) error { return nil }
+func (r *StaleFunnyNameRepo) GetByName(context.Context, string) (*domain.Subscriber, error) {
+	return nil, domain.ErrSubscriberNotFound
+}
+func (r *StaleFunnyNameRepo) List(context.Context) ([]domain.Subscriber, error) {
+	return []domain.Subscriber{r.sub}, nil
+}
+func (r *StaleFunnyNameRepo) Exists(context.Context, string) (bool, error) { return false, nil }
+func (r *StaleFunnyNameRepo) Delete(context.Context, string) error         { return nil }
+
+func TestGetTraceMethod_StaleFunnyNameIsInternalError(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	sub, err := domain.NewSubscriberWithRawFunnyNameForTest("TEST_SUB", "NOT_IN_CURATED_LIST")
+	if err != nil {
+		t.Fatalf("NewSubscriberWithRawFunnyNameForTest: %v", err)
+	}
+	deps.SubscriberRepo = &StaleFunnyNameRepo{sub: *sub}
+
+	session := connectClientServer(t, deps)
+	res := callTool(t, session, "get_trace_method", map[string]any{"message_": "msg"})
+	if !res.IsError {
+		t.Fatalf("expected IsError=true, got %+v", res)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+		t.Fatalf("decode error payload: %v", err)
+	}
+	if payload["code"] != domain.ErrCodeInternalError.Error() {
+		t.Fatalf("code = %v, want %q", payload["code"], domain.ErrCodeInternalError.Error())
+	}
+}

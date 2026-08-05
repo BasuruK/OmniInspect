@@ -33,19 +33,25 @@ func (ss *SubscriberService) SetSubscriber(ctx context.Context, subscriber *doma
 	return ss.subRepo.Save(ctx, *subscriber)
 }
 
-// GetSubscriber retrieves the subscriber from the bolt database
-func (ss *SubscriberService) GetSubscriber(ctx context.Context) (*domain.Subscriber, error) {
-	subs, err := ss.subRepo.List(ctx)
+// LoadSoleSubscriber returns the single persisted subscriber from repo.
+// ErrSubscriberNotFound when none; ErrMultipleSubscribers when more than one exists.
+func LoadSoleSubscriber(ctx context.Context, repo ports.SubscriberRepository) (*domain.Subscriber, error) {
+	subs, err := repo.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list subscribers: %w", err)
 	}
 	if len(subs) == 0 {
 		return nil, domain.ErrSubscriberNotFound
 	}
 	if len(subs) > 1 {
-		return nil, fmt.Errorf("expected 1 subscriber, found %d", len(subs))
+		return nil, fmt.Errorf("%w: expected 1, found %d", domain.ErrMultipleSubscribers, len(subs))
 	}
 	return &subs[0], nil
+}
+
+// GetSubscriber retrieves the subscriber from the bolt database
+func (ss *SubscriberService) GetSubscriber(ctx context.Context) (*domain.Subscriber, error) {
+	return LoadSoleSubscriber(ctx, ss.subRepo)
 }
 
 // NewSubscriber Generates and stores a new unique subscriber name

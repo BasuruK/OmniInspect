@@ -41,6 +41,7 @@ func testDeps(t *testing.T) (Deps, func()) {
 			TraceAppender:   tracebuffer.New(maxListTracesLimit+1, 0),
 			PermissionsRepo: boltdb.NewPermissionsRepository(bolt),
 			DBSettingsRepo:  boltdb.NewDatabaseSettingsRepository(bolt),
+			SubscriberRepo:  boltdb.NewSubscriberRepository(bolt),
 			DBAdapterFactory: func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 				return nil, nil // unused in this test
 			},

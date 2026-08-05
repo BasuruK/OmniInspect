@@ -9,6 +9,7 @@ import "errors"
 var (
 	// Subscriber errors
 	ErrSubscriberNotFound         = errors.New("subscriber not found")
+	ErrMultipleSubscribers        = errors.New("multiple subscribers found")
 	ErrInvalidSubscriberName      = errors.New("invalid subscriber name")
 	ErrSubscriberNotActive        = errors.New("subscriber is not active")
 	ErrInvalidBatchSize           = errors.New("invalid batch size")

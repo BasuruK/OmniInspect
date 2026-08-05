@@ -42,6 +42,7 @@ func TestServer_RegistersExpectedTools(t *testing.T) {
 	want := map[string]bool{
 		"get_status":         false,
 		"set_broadcast_mode": false,
+		"get_trace_method":   false,
 	}
 	for _, tl := range result.Tools {
 		if _, ok := want[tl.Name]; ok {
@@ -78,6 +79,7 @@ func TestNewServer_RequiresAllDeps(t *testing.T) {
 		{"TraceAppender", func(d *Deps) { d.TraceAppender = nil }},
 		{"PermissionsRepo", func(d *Deps) { d.PermissionsRepo = nil }},
 		{"DBSettingsRepo", func(d *Deps) { d.DBSettingsRepo = nil }},
+		{"SubscriberRepo", func(d *Deps) { d.SubscriberRepo = nil }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

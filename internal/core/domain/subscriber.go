@@ -130,6 +130,19 @@ func NewSubscriberForTest(name, funnyName string, batchSize BatchSize, waitTime 
 	return s, nil
 }
 
+// NewSubscriberWithRawFunnyNameForTest creates a subscriber whose funny name skips
+// curated-list validation. Simulates persisted-state / list-drift scenarios in tests.
+// ponytail: skips curated-list validation for test seeding, replace with a governed
+// persistence/test seam if more than one caller needs drifted funny names.
+func NewSubscriberWithRawFunnyNameForTest(name, funnyName string) (*Subscriber, error) {
+	s, err := NewSubscriberWithDefaults(name)
+	if err != nil {
+		return nil, err
+	}
+	s.funnyName = funnyName
+	return s, nil
+}
+
 // ==========================================
 // Getters (Read-Only Accessors)
 // ==========================================

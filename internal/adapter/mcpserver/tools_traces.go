@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"OmniView/internal/core/domain"
+	"OmniView/internal/service/subscribers"
 	"context"
 	"errors"
 	"fmt"
@@ -149,5 +150,75 @@ func clearTraces(s *Server) mcp.ToolHandlerFor[emptyInput, clearTracesOutput] {
 			s.deps.OnTracesCleared()
 		}
 		return nil, clearTracesOutput{OK: true}, nil
+	}
+}
+
+// ==========================================
+// get_trace_method
+// ==========================================
+
+// GetTraceMethodInput is the JSON input shape for get_trace_method.
+type GetTraceMethodInput struct {
+	Message     string `json:"message_" jsonschema:"message text to embed in the generated call"`
+	LogLevel    string `json:"log_level_,omitempty" jsonschema:"optional log level (default INFO; DEBUG|INFO|WARNING|ERROR|CRITICAL)"`
+	ProcessName string `json:"process_name_,omitempty" jsonschema:"optional process name argument"`
+}
+
+// GetTraceMethodOutput is the JSON output shape for get_trace_method.
+type GetTraceMethodOutput struct {
+	Call string `json:"call"`
+}
+
+// sqlStringLiteral wraps s as an Oracle single-quoted literal, doubling embedded quotes.
+func sqlStringLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// getTraceMethod returns a ready-to-use subscriber-specific Omni_Tracer_API.Trace_Message_<FunnyName> call.
+func getTraceMethod(s *Server) mcp.ToolHandlerFor[GetTraceMethodInput, GetTraceMethodOutput] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in GetTraceMethodInput) (*mcp.CallToolResult, GetTraceMethodOutput, error) {
+		if strings.TrimSpace(in.Message) == "" {
+			res, mErr := mcpToolError(domain.ErrCodeInvalidInput, "get_trace_method: message_ is required", nil)
+			return res, GetTraceMethodOutput{}, mErr
+		}
+
+		level := domain.LogLevelInfo
+		if trimmed := strings.TrimSpace(in.LogLevel); trimmed != "" {
+			lvl, err := domain.NewLogLevel(trimmed)
+			if err != nil {
+				res, mErr := mcpToolError(domain.ErrCodeInvalidInput, fmt.Sprintf("get_trace_method: %v", err), nil)
+				return res, GetTraceMethodOutput{}, mErr
+			}
+			level = lvl
+		}
+
+		sub, err := subscribers.LoadSoleSubscriber(ctx, s.deps.SubscriberRepo)
+		if err != nil {
+			if errors.Is(err, domain.ErrSubscriberNotFound) {
+				res, mErr := mcpToolError(domain.ErrCodeNotFound, "get_trace_method: no subscriber assigned", nil)
+				return res, GetTraceMethodOutput{}, mErr
+			}
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_trace_method: %v", err), nil)
+			return res, GetTraceMethodOutput{}, mErr
+		}
+
+		funnyName := strings.TrimSpace(sub.FunnyName())
+		if funnyName == "" {
+			res, mErr := mcpToolError(domain.ErrCodeNotFound, "get_trace_method: subscriber has no funny name assigned", nil)
+			return res, GetTraceMethodOutput{}, mErr
+		}
+		if err := domain.ValidateFunnyNameForSQLInjection(funnyName); err != nil {
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("get_trace_method: stored funny name failed validation: %v", err), nil)
+			return res, GetTraceMethodOutput{}, mErr
+		}
+
+		call := fmt.Sprintf("Omni_Tracer_API.Trace_Message_%s(%s, %s",
+			domain.PascalFunnyName(funnyName), sqlStringLiteral(in.Message), sqlStringLiteral(level.String()))
+		if processName := strings.TrimSpace(in.ProcessName); processName != "" {
+			call += ", " + sqlStringLiteral(processName)
+		}
+		call += ")"
+
+		return nil, GetTraceMethodOutput{Call: call}, nil
 	}
 }

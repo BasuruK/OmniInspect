@@ -23,6 +23,7 @@ type Deps struct {
 	TraceAppender    ports.TraceAppender
 	PermissionsRepo  ports.PermissionsRepository
 	DBSettingsRepo   ports.DatabaseSettingsRepository
+	SubscriberRepo   ports.SubscriberRepository
 	DBAdapterFactory DBAdapterFactory // optional — see field doc
 
 	// Optional hooks invoked after a successful MCP mutation. Nil is fine (tests, headless).
@@ -56,6 +57,9 @@ func NewServer(deps Deps) *Server {
 	}
 	if deps.DBSettingsRepo == nil {
 		panic("mcpserver: DBSettingsRepo is required")
+	}
+	if deps.SubscriberRepo == nil {
+		panic("mcpserver: SubscriberRepo is required")
 	}
 	return &Server{deps: deps}
 }
@@ -121,6 +125,14 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 		// exists to stop plaintext-password leakage, not because deletion needs a second step) — DestructiveHint is the SDK-native signal clients use to decide whether to confirm before calling.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, clearTraces(s))
+
+	// ── get_trace_method ─────────────────────
+	mcp.AddTool(sdk, &mcp.Tool{
+		Name: "get_trace_method",
+		Description: "Returns a ready-to-use Omni_Tracer_API.Trace_Message_<FunnyName>(...) call for the assigned subscriber. " +
+			"Required: message_ (text). Optional: log_level_ (default INFO; allowed DEBUG|INFO|WARNING|ERROR|CRITICAL), process_name_.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)},
+	}, getTraceMethod(s))
 
 	return sdk
 }

@@ -71,6 +71,7 @@ func startMCPServer(omniApp *app.App, boltAdapter *boltdb.BoltAdapter, traceAppe
 		TraceAppender:          traceAppender,
 		PermissionsRepo:        boltdb.NewPermissionsRepository(boltAdapter),
 		DBSettingsRepo:         dbSettingsRepo,
+		SubscriberRepo:         boltdb.NewSubscriberRepository(boltAdapter),
 		DBAdapterFactory:       oracleDBFactory,
 		OnTracesCleared:        cbs.OnTracesCleared,
 		OnBroadcastModeChanged: cbs.OnBroadcastModeChanged,

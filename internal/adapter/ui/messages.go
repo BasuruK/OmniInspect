@@ -194,10 +194,6 @@ func (m *Model) handleMCPConnectDatabaseMsg(msg mcpConnectDatabaseMsg) (*Model, 
 		logger.Warn("mcp connect: database settings edit in progress, dropping", "id", msg.id)
 		return m, nil
 	}
-	if m.screen == screenOnboarding {
-		logger.Warn("mcp connect: onboarding in progress, dropping", "id", msg.id)
-		return m, nil
-	}
 	if m.dbSettingsRepo == nil {
 		logger.Warn("mcp connect: DBSettingsRepo missing")
 		return m, nil

@@ -145,10 +145,27 @@ func addDatabase(s *Server) mcp.ToolHandlerFor[addDatabaseInput, addDatabaseOutp
 			return res, addDatabaseOutput{}, err
 		}
 
+		_, defErr := s.deps.DBSettingsRepo.GetDefault(ctx)
+		if defErr != nil && !errors.Is(defErr, domain.ErrDefaultSettingsNotFound) {
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: lookup default: %v", defErr), nil)
+			return res, addDatabaseOutput{}, mErr
+		}
+
 		if err := s.deps.DBSettingsRepo.Save(ctx, *settings); err != nil {
 			res, err := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: persist: %v", err), nil)
 			return res, addDatabaseOutput{}, err
 		}
+
+		if errors.Is(defErr, domain.ErrDefaultSettingsNotFound) {
+			if _, err := s.deps.DBSettingsRepo.SetDefault(ctx, *settings); err != nil {
+				res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: set default: %v", err), nil)
+				return res, addDatabaseOutput{}, mErr
+			}
+			if s.deps.OnDatabaseConnected != nil {
+				s.deps.OnDatabaseConnected(settings.StorageKey())
+			}
+		}
+
 		return nil, addDatabaseOutput{OK: true, ID: settings.StorageKey()}, nil
 	}
 }

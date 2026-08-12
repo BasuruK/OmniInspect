@@ -398,6 +398,71 @@ func TestConnectDatabase_HappyPath(t *testing.T) {
 	}
 }
 
+func TestAddDatabase_NotifiesUIOnlyWhenNoDefault(t *testing.T) {
+	cases := []struct {
+		name        string
+		id          string
+		seedDefault bool
+		wantNotify  bool
+	}{
+		{name: "first", id: "first-db", seedDefault: false, wantNotify: true},
+		{name: "second", id: "second-db", seedDefault: true, wantNotify: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, cleanup := testDeps(t)
+			defer cleanup()
+
+			if tc.seedDefault {
+				first, err := domain.NewDatabaseSettings(
+					"already", "FREEPDB1", "db.example.com",
+					domain.Port(1521), "admin", "secret",
+				)
+				if err != nil {
+					t.Fatalf("NewDatabaseSettings: %v", err)
+				}
+				if err := deps.DBSettingsRepo.Save(context.Background(), *first); err != nil {
+					t.Fatalf("Save first: %v", err)
+				}
+				if _, err := deps.DBSettingsRepo.SetDefault(context.Background(), *first); err != nil {
+					t.Fatalf("SetDefault: %v", err)
+				}
+			}
+
+			var got string
+			deps.OnDatabaseConnected = func(id string) { got = id }
+
+			session := connectClientServer(t, deps)
+			res := callTool(t, session, "add_database", map[string]any{
+				"id":                            tc.id,
+				"host":                          "db.example.com",
+				"port":                          1521,
+				"service":                       "FREEPDB1",
+				"username":                      "admin",
+				"password":                      "secret",
+				"confirm_password_in_plaintext": true,
+			})
+			if res.IsError {
+				t.Fatalf("expected success, got IsError: %+v", res.Content)
+			}
+			notified := got != ""
+			if notified != tc.wantNotify {
+				t.Fatalf("notified=%v, want %v (got %q)", notified, tc.wantNotify, got)
+			}
+			if !tc.wantNotify {
+				return
+			}
+			def, err := deps.DBSettingsRepo.GetDefault(context.Background())
+			if err != nil {
+				t.Fatalf("GetDefault: %v", err)
+			}
+			if def.StorageKey() != got {
+				t.Fatalf("default %q != notified %q", def.StorageKey(), got)
+			}
+		})
+	}
+}
+
 func TestConnectDatabase_NotifiesUI(t *testing.T) {
 	deps, _, cleanup := depsWithFakeDB(t)
 	defer cleanup()

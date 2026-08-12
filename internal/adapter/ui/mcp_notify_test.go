@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"OmniView/internal/core/domain"
+	"OmniView/internal/core/ports"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -215,19 +216,31 @@ func TestHandleMCPConnectDatabaseMsg_DropsWhenEditInProgress(t *testing.T) {
 	}
 }
 
-func TestHandleMCPConnectDatabaseMsg_DropsDuringOnboarding(t *testing.T) {
+func TestHandleMCPConnectDatabaseMsg_AdoptsDuringOnboarding(t *testing.T) {
 	t.Parallel()
 
-	m := &Model{screen: screenOnboarding}
-	next, cmd := m.handleMCPConnectDatabaseMsg(mcpConnectDatabaseMsg{id: "DBconfig:other"})
+	settings := newTestDatabaseSettings(t, "OTHER")
+	mockDB := NewMockDatabaseRepository()
+	m := &Model{
+		screen:         screenOnboarding,
+		ctx:            context.Background(),
+		dbSettingsRepo: mcpConnectSettingsRepo{byID: settings},
+		dbFactory: func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {
+			return mockDB, nil
+		},
+	}
+	next, cmd := m.handleMCPConnectDatabaseMsg(mcpConnectDatabaseMsg{id: settings.StorageKey()})
 	if next != m {
 		t.Fatal("expected same model")
 	}
-	if cmd != nil {
-		t.Fatal("expected no cmd during onboarding")
+	if cmd == nil {
+		t.Fatal("expected connect cmd during onboarding adopt")
 	}
-	if m.screen != screenOnboarding {
-		t.Fatalf("expected screenOnboarding, got %q", m.screen)
+	if m.screen != screenLoading {
+		t.Fatalf("expected screenLoading, got %q", m.screen)
+	}
+	if m.appConfig == nil || m.appConfig.ID() != settings.ID() {
+		t.Fatalf("appConfig not adopted: %#v", m.appConfig)
 	}
 }
 

@@ -95,8 +95,11 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	// ── add_database ──────────────────────────
 	mcp.AddTool(sdk, &mcp.Tool{
 		Name: "add_database",
-		Description: "Persists a new database configuration. Sending plaintext passwords over MCP exposes them in the host client and its " +
-			"logs; the first call returns a confirmation request and the second call (with confirm_password_in_plaintext=true) writes the record.",
+		Description: "Persists a new Oracle database configuration on this locally hosted OmniView MCP server.\n\n" +
+			"Call with empty or partial args — the server uses MCP form elicitation so the host shows an interactive " +
+			"connection form (id, host, port, service, username, password). Do NOT collect credentials in chat.\n\n" +
+			"The password argument is required and must be passed through. This MCP server runs locally on the user's machine " +
+			"(stdio, not a remote/cloud endpoint), so sending the database password as a tool argument is acceptable.",
 		// Additive only — a repeat call with the same id fails with already_exists rather than overwriting, so it isn't destructive.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), IdempotentHint: false, OpenWorldHint: boolPtr(false)},
 	}, addDatabase(s))
@@ -121,8 +124,7 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	mcp.AddTool(sdk, &mcp.Tool{
 		Name:        "clear_traces",
 		Description: "Empties the trace buffer. There is no undo.",
-		// No confirmation handshake (unlike add_database's password gate, which
-		// exists to stop plaintext-password leakage, not because deletion needs a second step) — DestructiveHint is the SDK-native signal clients use to decide whether to confirm before calling.
+		// DestructiveHint is the SDK-native signal clients use to decide whether to confirm before calling.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, clearTraces(s))
 

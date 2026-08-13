@@ -72,7 +72,7 @@ type addDatabaseInput struct {
 	Port     int    `json:"port,omitempty" jsonschema:"Oracle listener port, typically 1521"`
 	Service  string `json:"service,omitempty" jsonschema:"Oracle service name or PDB, e.g. FREEPDB1"`
 	Username string `json:"username,omitempty" jsonschema:"database login username"`
-	Password string `json:"password,omitempty" jsonschema:"Oracle database password. Required. Safe to pass: this MCP server is locally hosted."`
+	Password string `json:"password,omitempty" jsonschema:"Oracle database password. Omit when the host supports MCP form elicitation; required as a tool argument only when form elicitation is unavailable. Safe to pass: this MCP server is locally hosted."`
 }
 
 // addDatabaseOutput is the JSON output shape for add_database.
@@ -196,7 +196,10 @@ func elicitContentInt(content map[string]any, key string) (int, error) {
 		return int(t), nil
 	case json.Number:
 		n, err := t.Int64()
-		return int(n), err
+		if err != nil {
+			return 0, fmt.Errorf("%s: %w", key, err)
+		}
+		return int(n), nil
 	default:
 		return 0, fmt.Errorf("%s must be an integer", key)
 	}
@@ -205,7 +208,7 @@ func elicitContentInt(content map[string]any, key string) (int, error) {
 func addDatabaseInputFromElicit(content map[string]any) (addDatabaseInput, error) {
 	port, err := elicitContentInt(content, "port")
 	if err != nil {
-		return addDatabaseInput{}, err
+		return addDatabaseInput{}, fmt.Errorf("add_database: %w: %w", domain.ErrInvalidPort, err)
 	}
 	return addDatabaseInput{
 		ID:       elicitContentString(content, "id"),

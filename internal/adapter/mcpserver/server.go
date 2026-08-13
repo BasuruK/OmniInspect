@@ -96,9 +96,9 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	mcp.AddTool(sdk, &mcp.Tool{
 		Name: "add_database",
 		Description: "Persists a new Oracle database configuration on this locally hosted OmniView MCP server.\n\n" +
-			"Call with empty or partial args — the server uses MCP form elicitation so the host shows an interactive " +
-			"connection form (id, host, port, service, username, password). Do NOT collect credentials in chat.\n\n" +
-			"The password argument is required and must be passed through. This MCP server runs locally on the user's machine " +
+			"If the host supports MCP form elicitation, omit missing credentials so the server can collect them through an interactive " +
+			"connection form (id, host, port, service, username, password).\n\n" +
+			"If the host does not support form elicitation, pass all fields including password as tool arguments. This MCP server runs locally on the user's machine " +
 			"(stdio, not a remote/cloud endpoint), so sending the database password as a tool argument is acceptable.",
 		// Additive only — a repeat call with the same id fails with already_exists rather than overwriting, so it isn't destructive.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), IdempotentHint: false, OpenWorldHint: boolPtr(false)},

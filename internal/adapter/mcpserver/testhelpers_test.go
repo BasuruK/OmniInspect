@@ -55,6 +55,13 @@ func testDeps(t *testing.T) (Deps, func()) {
 // (caller closes it).
 func connectClientServer(t *testing.T, deps Deps) *mcp.ClientSession {
 	t.Helper()
+	return connectClientServerOpts(t, deps, nil)
+}
+
+// connectClientServerOpts is connectClientServer with optional client options
+// (e.g. ElicitationHandler).
+func connectClientServerOpts(t *testing.T, deps Deps, clientOpts *mcp.ClientOptions) *mcp.ClientSession {
+	t.Helper()
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 
@@ -77,7 +84,7 @@ func connectClientServer(t *testing.T, deps Deps) *mcp.ClientSession {
 		_ = srv.ServeWithTransport(serverCtx, serverTransport)
 	}()
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, clientOpts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

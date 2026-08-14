@@ -34,6 +34,9 @@ type DatabaseSettingsRepository interface {
 	// Save stores database settings
 	Save(ctx context.Context, settings domain.DatabaseSettings) error
 
+	// SaveAndSelectIfNone persists settings. If no usable default exists, it also marks them as the default in the same transaction. becameDefault is true iff this call installed the default pointer.
+	SaveAndSelectIfNone(ctx context.Context, settings domain.DatabaseSettings) (becameDefault bool, err error)
+
 	// GetByID retrieves database settings by ID. When no record exists, the
 	// returned error satisfies errors.Is(err, domain.ErrDatabaseSettingsNotFound).
 	GetByID(ctx context.Context, id string) (*domain.DatabaseSettings, error)

@@ -25,6 +25,10 @@ func (s stubDatabaseSettingsRepository) Save(context.Context, domain.DatabaseSet
 	return nil
 }
 
+func (s stubDatabaseSettingsRepository) SaveAndSelectIfNone(context.Context, domain.DatabaseSettings) (bool, error) {
+	return false, nil
+}
+
 func (s stubDatabaseSettingsRepository) GetByID(context.Context, string) (*domain.DatabaseSettings, error) {
 	return nil, nil
 }

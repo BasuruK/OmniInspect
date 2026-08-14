@@ -69,6 +69,54 @@ func (dsr *DatabaseSettingsRepository) Save(ctx context.Context, settings domain
 	})
 }
 
+// SaveAndSelectIfNone persists settings. If no usable default exists, it also
+// marks them as the default in the same transaction. becameDefault is true iff
+// this call installed the default pointer.
+func (dsr *DatabaseSettingsRepository) SaveAndSelectIfNone(ctx context.Context, settings domain.DatabaseSettings) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if dsr == nil || dsr.adapter == nil || dsr.adapter.db == nil {
+		return false, domain.ErrBoltAdapterNotReady
+	}
+
+	becameDefault := false
+	err := dsr.adapter.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(DatabaseConfigBucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found: %w", DatabaseConfigBucket, domain.ErrBoltBucketNotFound)
+		}
+
+		rec := settings
+		claimed := false
+		previousKey := b.Get([]byte(DefaultDatabaseConfigKey))
+		if previousKey == nil || b.Get(previousKey) == nil {
+			rec.SetAsDefault()
+			claimed = true
+		}
+
+		jsonData, err := json.Marshal(&rec)
+		if err != nil {
+			return fmt.Errorf("failed to marshal database settings: %w", err)
+		}
+		key := rec.StorageKey()
+		if err := b.Put([]byte(key), jsonData); err != nil {
+			return fmt.Errorf("failed to save database settings: %w", err)
+		}
+		if claimed {
+			if err := b.Put([]byte(DefaultDatabaseConfigKey), []byte(key)); err != nil {
+				return fmt.Errorf("failed to save default database settings key: %w", err)
+			}
+		}
+		becameDefault = claimed
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("SaveAndSelectIfNone: %w", err)
+	}
+	return becameDefault, nil
+}
+
 // SwitchDefault stores the previous and new default settings in a single transaction.
 func (dsr *DatabaseSettingsRepository) SwitchDefault(ctx context.Context, previousDefault *domain.DatabaseSettings, newDefault domain.DatabaseSettings) error {
 	if err := ctx.Err(); err != nil {

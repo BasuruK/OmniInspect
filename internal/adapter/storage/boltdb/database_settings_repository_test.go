@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	bolt "go.etcd.io/bbolt"
@@ -466,6 +468,100 @@ func TestDatabaseSettingsRepository_Delete_DefaultKeyCleanup(t *testing.T) {
 	if err := repo.Delete(context.Background(), "default-db"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
+}
+
+func TestDatabaseSettingsRepository_SaveAndSelectIfNone(t *testing.T) {
+	t.Parallel()
+
+	newDB := func(t *testing.T, id string) domain.DatabaseSettings {
+		t.Helper()
+		port, err := domain.NewPort(1521)
+		if err != nil {
+			t.Fatalf("NewPort: %v", err)
+		}
+		settings, err := domain.NewDatabaseSettings(id, "FREEPDB1", "localhost", port, "system", "secret")
+		if err != nil {
+			t.Fatalf("NewDatabaseSettings: %v", err)
+		}
+		return *settings
+	}
+
+	t.Run("first claims default", func(t *testing.T) {
+		t.Parallel()
+		repo := NewDatabaseSettingsRepository(newTestBoltAdapter(t))
+		first := newDB(t, "first")
+		claimed, err := repo.SaveAndSelectIfNone(context.Background(), first)
+		if err != nil {
+			t.Fatalf("SaveAndSelectIfNone: %v", err)
+		}
+		if !claimed {
+			t.Fatal("expected first save to claim default")
+		}
+		def, err := repo.GetDefault(context.Background())
+		if err != nil {
+			t.Fatalf("GetDefault: %v", err)
+		}
+		if def.StorageKey() != first.StorageKey() {
+			t.Fatalf("default=%q, want %q", def.StorageKey(), first.StorageKey())
+		}
+	})
+
+	t.Run("second does not steal", func(t *testing.T) {
+		t.Parallel()
+		repo := NewDatabaseSettingsRepository(newTestBoltAdapter(t))
+		first := newDB(t, "first")
+		if _, err := repo.SaveAndSelectIfNone(context.Background(), first); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		second := newDB(t, "second")
+		claimed, err := repo.SaveAndSelectIfNone(context.Background(), second)
+		if err != nil {
+			t.Fatalf("second: %v", err)
+		}
+		if claimed {
+			t.Fatal("expected second save not to claim default")
+		}
+		def, err := repo.GetDefault(context.Background())
+		if err != nil {
+			t.Fatalf("GetDefault: %v", err)
+		}
+		if def.StorageKey() != first.StorageKey() {
+			t.Fatalf("default=%q, want first %q", def.StorageKey(), first.StorageKey())
+		}
+	})
+
+	t.Run("concurrent only one claims", func(t *testing.T) {
+		t.Parallel()
+		repo := NewDatabaseSettingsRepository(newTestBoltAdapter(t))
+		a := newDB(t, "race-a")
+		b := newDB(t, "race-b")
+		var claims atomic.Int32
+		errCh := make(chan error, 2)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		for _, rec := range []domain.DatabaseSettings{a, b} {
+			rec := rec
+			go func() {
+				defer wg.Done()
+				claimed, err := repo.SaveAndSelectIfNone(context.Background(), rec)
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if claimed {
+					claims.Add(1)
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatalf("SaveAndSelectIfNone: %v", err)
+		}
+		if got := claims.Load(); got != 1 {
+			t.Fatalf("claimed default %d times, want 1", got)
+		}
+	})
 }
 
 // TestDatabaseSettingsRepository_SetDefault_RepairsStaleDefaultPointer verifies

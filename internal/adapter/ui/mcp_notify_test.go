@@ -221,10 +221,11 @@ func TestHandleMCPConnectDatabaseMsg_AdoptsDuringOnboarding(t *testing.T) {
 
 	settings := newTestDatabaseSettings(t, "OTHER")
 	mockDB := NewMockDatabaseRepository()
+	repo := &mcpConnectSettingsRepo{byID: settings}
 	m := &Model{
 		screen:         screenOnboarding,
 		ctx:            context.Background(),
-		dbSettingsRepo: mcpConnectSettingsRepo{byID: settings},
+		dbSettingsRepo: repo,
 		dbFactory: func(*domain.DatabaseSettings) (ports.DatabaseRepository, error) {
 			return mockDB, nil
 		},
@@ -242,14 +243,19 @@ func TestHandleMCPConnectDatabaseMsg_AdoptsDuringOnboarding(t *testing.T) {
 	if m.appConfig == nil || m.appConfig.ID() != settings.ID() {
 		t.Fatalf("appConfig not adopted: %#v", m.appConfig)
 	}
+	if repo.gotID != settings.StorageKey() {
+		t.Fatalf("GetByID id=%q, want %q", repo.gotID, settings.StorageKey())
+	}
 }
 
 type mcpConnectSettingsRepo struct {
 	stubDatabaseSettingsRepository
-	byID *domain.DatabaseSettings
+	byID  *domain.DatabaseSettings
+	gotID string
 }
 
-func (r mcpConnectSettingsRepo) GetByID(context.Context, string) (*domain.DatabaseSettings, error) {
+func (r *mcpConnectSettingsRepo) GetByID(_ context.Context, id string) (*domain.DatabaseSettings, error) {
+	r.gotID = id
 	return r.byID, nil
 }
 
@@ -260,7 +266,7 @@ func TestHandleMCPConnectDatabaseMsg_AlreadyConnectedSyncsActiveID(t *testing.T)
 	m := &Model{
 		screen:         screenMain,
 		appConfig:      settings,
-		dbSettingsRepo: mcpConnectSettingsRepo{byID: settings},
+		dbSettingsRepo: &mcpConnectSettingsRepo{byID: settings},
 	}
 	m.dbSettings.activeID = "stale-nav"
 

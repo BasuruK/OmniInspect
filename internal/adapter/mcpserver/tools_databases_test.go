@@ -524,16 +524,21 @@ func TestAddDatabase_NotifiesUIOnlyWhenNoDefault(t *testing.T) {
 
 			session := connectClientServer(t, deps)
 			res := callTool(t, session, "add_database", map[string]any{
-				"id":                            tc.id,
-				"host":                          "db.example.com",
-				"port":                          1521,
-				"service":                       "FREEPDB1",
-				"username":                      "admin",
-				"password":                      "secret",
-				"confirm_password_in_plaintext": true,
+				"id":       tc.id,
+				"host":     "db.example.com",
+				"port":     1521,
+				"service":  "FREEPDB1",
+				"username": "admin",
+				"password": "secret",
 			})
 			if res.IsError {
-				t.Fatalf("expected success, got IsError: %+v", res.Content)
+				dump := ""
+				if len(res.Content) > 0 {
+					if text, ok := res.Content[0].(*mcp.TextContent); ok {
+						dump = text.Text
+					}
+				}
+				t.Fatalf("expected success, got IsError: %s", dump)
 			}
 			notified := got != ""
 			if notified != tc.wantNotify {

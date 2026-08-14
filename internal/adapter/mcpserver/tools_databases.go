@@ -189,7 +189,11 @@ func elicitContentInt(content map[string]any, key string) (int, error) {
 	}
 	switch t := v.(type) {
 	case float64:
-		return int(t), nil
+		n := int(t)
+		if float64(n) != t {
+			return 0, fmt.Errorf("%s must be an integer", key)
+		}
+		return n, nil
 	case int:
 		return t, nil
 	case int64:

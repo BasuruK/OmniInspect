@@ -417,6 +417,7 @@ func TestAddDatabaseInputFromElicit_PortErrorsWrapInvalidPort(t *testing.T) {
 		{name: "nil", content: map[string]any{"port": nil}},
 		{name: "unsupported type", content: map[string]any{"port": true}},
 		{name: "json.Number conversion", content: map[string]any{"port": json.Number("not-an-int")}, wantIs: strconv.ErrSyntax},
+		{name: "fractional float64", content: map[string]any{"port": 1521.5}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

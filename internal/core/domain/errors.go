@@ -79,6 +79,5 @@ var (
 	ErrCodeDBUnreachable         = errors.New("db_unreachable")
 	ErrCodePermissionCheckFailed = errors.New("permission_check_failed")
 	ErrCodeTracerDeployFailed    = errors.New("tracer_deploy_failed")
-	ErrCodePasswordInPlaintext   = errors.New("password_in_plaintext")
 	ErrCodeCursorExpired         = errors.New("cursor_expired")
 )

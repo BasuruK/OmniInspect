@@ -8,6 +8,8 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -381,6 +383,87 @@ func TestAddDatabase_RejectsDuplicateID(t *testing.T) {
 	}
 	if len(all) != 1 {
 		t.Fatalf("expected 1 record persisted, got %d", len(all))
+	}
+}
+
+func TestAddDatabase_ConcurrentSameID(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	const n = 8
+	args := map[string]any{
+		"id":       "race-dup",
+		"host":     "db.example.com",
+		"port":     1521,
+		"service":  "FREEPDB1",
+		"username": "admin",
+		"password": "secret",
+	}
+	sessions := make([]*mcp.ClientSession, n)
+	for i := 0; i < n; i++ {
+		sessions[i] = connectClientServer(t, deps)
+	}
+
+	var successes atomic.Int32
+	var alreadyExists atomic.Int32
+	errCh := make(chan string, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			res, err := sessions[i].CallTool(context.Background(), &mcp.CallToolParams{
+				Name:      "add_database",
+				Arguments: args,
+			})
+			if err != nil {
+				errCh <- err.Error()
+				return
+			}
+			if !res.IsError {
+				successes.Add(1)
+				return
+			}
+			if len(res.Content) == 0 {
+				errCh <- "IsError with empty content"
+				return
+			}
+			tc, ok := res.Content[0].(*mcp.TextContent)
+			if !ok {
+				errCh <- "IsError content is not TextContent"
+				return
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+				errCh <- "decode: " + err.Error()
+				return
+			}
+			code, _ := payload["code"].(string)
+			if code != "already_exists" {
+				errCh <- "unexpected error: " + tc.Text
+				return
+			}
+			alreadyExists.Add(1)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for msg := range errCh {
+		t.Fatalf("concurrent add_database: %s", msg)
+	}
+	if got := successes.Load(); got != 1 {
+		t.Fatalf("successes=%d, want 1", got)
+	}
+	if got := alreadyExists.Load(); got != n-1 {
+		t.Fatalf("already_exists=%d, want %d", got, n-1)
+	}
+	all, err := deps.DBSettingsRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("persisted %d records, want 1", len(all))
 	}
 }
 

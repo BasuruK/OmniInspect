@@ -3,6 +3,7 @@ package boltdb
 import (
 	"OmniView/internal/core/domain"
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -560,6 +561,88 @@ func TestDatabaseSettingsRepository_SaveAndSelectIfNone(t *testing.T) {
 		}
 		if got := claims.Load(); got != 1 {
 			t.Fatalf("claimed default %d times, want 1", got)
+		}
+	})
+}
+
+func TestDatabaseSettingsRepository_CreateAndSelectIfNone(t *testing.T) {
+	t.Parallel()
+
+	newDB := func(t *testing.T, id, host string) domain.DatabaseSettings {
+		t.Helper()
+		port, err := domain.NewPort(1521)
+		if err != nil {
+			t.Fatalf("NewPort: %v", err)
+		}
+		settings, err := domain.NewDatabaseSettings(id, "FREEPDB1", host, port, "system", "secret")
+		if err != nil {
+			t.Fatalf("NewDatabaseSettings: %v", err)
+		}
+		return *settings
+	}
+
+	t.Run("duplicate same id", func(t *testing.T) {
+		t.Parallel()
+		repo := NewDatabaseSettingsRepository(newTestBoltAdapter(t))
+		first := newDB(t, "same", "host-a")
+		if _, err := repo.CreateAndSelectIfNone(context.Background(), first); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		second := newDB(t, "same", "host-b")
+		_, err := repo.CreateAndSelectIfNone(context.Background(), second)
+		if !errors.Is(err, domain.ErrKeyCollision) {
+			t.Fatalf("second err=%v, want ErrKeyCollision", err)
+		}
+		got, err := repo.GetByID(context.Background(), first.StorageKey())
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if got.Host() != "host-a" {
+			t.Fatalf("host=%q, want host-a (duplicate must not overwrite)", got.Host())
+		}
+	})
+
+	t.Run("concurrent same id", func(t *testing.T) {
+		t.Parallel()
+		repo := NewDatabaseSettingsRepository(newTestBoltAdapter(t))
+		const n = 8
+		var successes atomic.Int32
+		var collisions atomic.Int32
+		errCh := make(chan error, n)
+		var wg sync.WaitGroup
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			rec := newDB(t, "race-same", fmt.Sprintf("host-%d", i))
+			go func() {
+				defer wg.Done()
+				_, err := repo.CreateAndSelectIfNone(context.Background(), rec)
+				switch {
+				case err == nil:
+					successes.Add(1)
+				case errors.Is(err, domain.ErrKeyCollision):
+					collisions.Add(1)
+				default:
+					errCh <- err
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatalf("CreateAndSelectIfNone: %v", err)
+		}
+		if got := successes.Load(); got != 1 {
+			t.Fatalf("successes=%d, want 1", got)
+		}
+		if got := collisions.Load(); got != n-1 {
+			t.Fatalf("collisions=%d, want %d", got, n-1)
+		}
+		all, err := repo.GetAll(context.Background())
+		if err != nil {
+			t.Fatalf("GetAll: %v", err)
+		}
+		if len(all) != 1 {
+			t.Fatalf("persisted %d records, want 1", len(all))
 		}
 	})
 }

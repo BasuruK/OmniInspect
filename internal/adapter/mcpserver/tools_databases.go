@@ -232,8 +232,8 @@ func tryElicitAddDatabase(ctx context.Context, req *mcp.CallToolRequest, in addD
 	}
 
 	elicitRes, err := req.Session.Elicit(ctx, &mcp.ElicitParams{
-		Mode:    "form",
-		Message: "Enter Oracle database connection details. Password is required. This MCP server is locally hosted, so passing the password is acceptable.",
+		Mode:            "form",
+		Message:         "Enter Oracle database connection details. Password is required. This MCP server is locally hosted, so passing the password is acceptable.",
 		RequestedSchema: addDatabaseElicitSchema(in),
 	})
 	if err != nil {
@@ -287,18 +287,6 @@ func addDatabase(s *Server) mcp.ToolHandlerFor[addDatabaseInput, addDatabaseOutp
 			return res, addDatabaseOutput{}, err
 		}
 
-		// Reject silent overwrite of an existing ID; propagate anything other than "not found" as an internal error instead of silently falling through to create, which would mask genuine backend failures.
-		existing, err := s.deps.DBSettingsRepo.GetByID(ctx, in.ID)
-		switch {
-		case err == nil && existing != nil:
-			res, mErr := mcpToolError(domain.ErrCodeAlreadyExists,
-				fmt.Sprintf("add_database: a database with id %q already exists; use a different id", in.ID), nil)
-			return res, addDatabaseOutput{}, mErr
-		case err != nil && !errors.Is(err, domain.ErrDatabaseSettingsNotFound):
-			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: lookup existing: %v", err), nil)
-			return res, addDatabaseOutput{}, mErr
-		}
-
 		settings, err := domain.NewDatabaseSettings(
 			in.ID, in.Service, in.Host,
 			domain.Port(in.Port), in.Username, in.Password,
@@ -308,10 +296,15 @@ func addDatabase(s *Server) mcp.ToolHandlerFor[addDatabaseInput, addDatabaseOutp
 			return res, addDatabaseOutput{}, err
 		}
 
-		becameDefault, err := s.deps.DBSettingsRepo.SaveAndSelectIfNone(ctx, *settings)
-		if err != nil {
-			res, err := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: persist: %v", err), nil)
-			return res, addDatabaseOutput{}, err
+		becameDefault, err := s.deps.DBSettingsRepo.CreateAndSelectIfNone(ctx, *settings)
+		switch {
+		case errors.Is(err, domain.ErrKeyCollision):
+			res, mErr := mcpToolError(domain.ErrCodeAlreadyExists,
+				fmt.Sprintf("add_database: a database with id %q already exists; use a different id", in.ID), nil)
+			return res, addDatabaseOutput{}, mErr
+		case err != nil:
+			res, mErr := mcpToolError(domain.ErrCodeInternalError, fmt.Sprintf("add_database: persist: %v", err), nil)
+			return res, addDatabaseOutput{}, mErr
 		}
 		if becameDefault && s.deps.OnDatabaseConnected != nil {
 			s.deps.OnDatabaseConnected(settings.StorageKey())

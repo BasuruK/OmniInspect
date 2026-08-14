@@ -8,6 +8,8 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -384,6 +386,87 @@ func TestAddDatabase_RejectsDuplicateID(t *testing.T) {
 	}
 }
 
+func TestAddDatabase_ConcurrentSameID(t *testing.T) {
+	deps, cleanup := testDeps(t)
+	defer cleanup()
+
+	const n = 8
+	args := map[string]any{
+		"id":       "race-dup",
+		"host":     "db.example.com",
+		"port":     1521,
+		"service":  "FREEPDB1",
+		"username": "admin",
+		"password": "secret",
+	}
+	sessions := make([]*mcp.ClientSession, n)
+	for i := 0; i < n; i++ {
+		sessions[i] = connectClientServer(t, deps)
+	}
+
+	var successes atomic.Int32
+	var alreadyExists atomic.Int32
+	errCh := make(chan string, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			res, err := sessions[i].CallTool(context.Background(), &mcp.CallToolParams{
+				Name:      "add_database",
+				Arguments: args,
+			})
+			if err != nil {
+				errCh <- err.Error()
+				return
+			}
+			if !res.IsError {
+				successes.Add(1)
+				return
+			}
+			if len(res.Content) == 0 {
+				errCh <- "IsError with empty content"
+				return
+			}
+			tc, ok := res.Content[0].(*mcp.TextContent)
+			if !ok {
+				errCh <- "IsError content is not TextContent"
+				return
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
+				errCh <- "decode: " + err.Error()
+				return
+			}
+			code, _ := payload["code"].(string)
+			if code != "already_exists" {
+				errCh <- "unexpected error: " + tc.Text
+				return
+			}
+			alreadyExists.Add(1)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for msg := range errCh {
+		t.Fatalf("concurrent add_database: %s", msg)
+	}
+	if got := successes.Load(); got != 1 {
+		t.Fatalf("successes=%d, want 1", got)
+	}
+	if got := alreadyExists.Load(); got != n-1 {
+		t.Fatalf("already_exists=%d, want %d", got, n-1)
+	}
+	all, err := deps.DBSettingsRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("persisted %d records, want 1", len(all))
+	}
+}
+
 func TestAddDatabaseInputFromElicit_PortSuccess(t *testing.T) {
 	cases := []struct {
 		name string
@@ -485,6 +568,76 @@ func TestConnectDatabase_HappyPath(t *testing.T) {
 	def, err := deps.DBSettingsRepo.GetDefault(context.Background())
 	if err != nil || def == nil || def.StorageKey() != settings.StorageKey() {
 		t.Fatalf("expected default database=%q, got err=%v def=%v", settings.StorageKey(), err, def)
+	}
+}
+
+func TestAddDatabase_NotifiesUIOnlyWhenNoDefault(t *testing.T) {
+	cases := []struct {
+		name        string
+		id          string
+		seedDefault bool
+		wantNotify  bool
+	}{
+		{name: "first", id: "first-db", seedDefault: false, wantNotify: true},
+		{name: "second", id: "second-db", seedDefault: true, wantNotify: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps, cleanup := testDeps(t)
+			defer cleanup()
+
+			if tc.seedDefault {
+				first, err := domain.NewDatabaseSettings(
+					"already", "FREEPDB1", "db.example.com",
+					domain.Port(1521), "admin", "secret",
+				)
+				if err != nil {
+					t.Fatalf("NewDatabaseSettings: %v", err)
+				}
+				if err := deps.DBSettingsRepo.Save(context.Background(), *first); err != nil {
+					t.Fatalf("Save first: %v", err)
+				}
+				if _, err := deps.DBSettingsRepo.SetDefault(context.Background(), *first); err != nil {
+					t.Fatalf("SetDefault: %v", err)
+				}
+			}
+
+			var got string
+			deps.OnDatabaseConnected = func(id string) { got = id }
+
+			session := connectClientServer(t, deps)
+			res := callTool(t, session, "add_database", map[string]any{
+				"id":       tc.id,
+				"host":     "db.example.com",
+				"port":     1521,
+				"service":  "FREEPDB1",
+				"username": "admin",
+				"password": "secret",
+			})
+			if res.IsError {
+				dump := ""
+				if len(res.Content) > 0 {
+					if text, ok := res.Content[0].(*mcp.TextContent); ok {
+						dump = text.Text
+					}
+				}
+				t.Fatalf("expected success, got IsError: %s", dump)
+			}
+			notified := got != ""
+			if notified != tc.wantNotify {
+				t.Fatalf("notified=%v, want %v (got %q)", notified, tc.wantNotify, got)
+			}
+			if !tc.wantNotify {
+				return
+			}
+			def, err := deps.DBSettingsRepo.GetDefault(context.Background())
+			if err != nil {
+				t.Fatalf("GetDefault: %v", err)
+			}
+			if def.StorageKey() != got {
+				t.Fatalf("default %q != notified %q", def.StorageKey(), got)
+			}
+		})
 	}
 }
 

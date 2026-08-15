@@ -93,7 +93,7 @@ Download the latest release from the [Releases](https://github.com/BasuruK/OmniI
    - macOS Apple Silicon: `omniview-darwin-arm64-*.tar.gz`
    - Windows x64: `omniview-windows-amd64-*.zip`
 3. Extract the archive.
-4. Run `omniview` (macOS/Linux) or `omniview.exe` (Windows).
+4. From the extract directory, run `./omniview` (macOS) or `.\omniview.exe` (Windows PowerShell). The binaries are not installed on PATH.
 
 To build from source instead, see [Building from Source](#building-from-source).
 
@@ -489,17 +489,21 @@ When a user points you at this repository and asks to install or configure the M
 1. Confirm OmniView is installed. Prefer a [release binary](#install). Do not `go run` this repo to stand up MCP.
 2. Start OmniView and wait until the TUI is up. The MCP listener starts with the app, not before.
 3. Connect over streamable HTTP at `http://127.0.0.1:54332/mcp`. Do not use stdio. Do not spawn a second MCP process.
-4. Read the bearer token from `omniview-mcp.token` in the working directory where OmniView was launched. Put it in the client config as `Authorization: Bearer <token>`. Do not invent a token. Do not commit the token file.
+4. Read the bearer token from `omniview-mcp.token` in the working directory where OmniView was launched. Put it in the client config as `Authorization: Bearer <token>`. Do not invent a token. Do not commit the token file or any config that embeds it. Prefer user-level configuration or the client's secret storage.
 5. Write the client config below. Enable the `omniview` server in the IDE or coding platform.
-6. Verify with `get_status`. If that fails, OmniView is not running or the token is wrong.
+6. Verify with `get_status`. Failure does not necessarily mean OmniView is stopped or the token is invalid. Confirm MCP startup succeeded, port 54332 is available, and the client loaded this configuration.
 
 Available tools: `get_status`, `list_databases`, `add_database`, `connect_database`, `set_broadcast_mode`, `list_traces`, `clear_traces`, `get_trace_method`.
 
 ### Client config
 
-**Cursor:** project `.cursor/mcp.json`, or user `~/.cursor/mcp.json`  
-**Claude Code:** project `.mcp.json`  
+Prefer user-level configuration or the client's secret storage.
+
+**Cursor:** user `~/.cursor/mcp.json` (preferred), or project `.cursor/mcp.json`  
+**Claude Code:** the client's user-level or secret storage (preferred), or project `.mcp.json`  
 **Other MCP hosts:** same `mcpServers` shape.
+
+If you use a project-scoped file such as `.cursor/mcp.json` or `.mcp.json`, keep it untracked. Never commit or share a configuration that contains the bearer token.
 
 ```json
 {

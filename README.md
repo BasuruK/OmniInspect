@@ -518,6 +518,9 @@ If you use a project-scoped file such as `.cursor/mcp.json` or `.mcp.json`, keep
 }
 ```
 
+> **Claude Code** also requires `"type": "http"`. A `url` without `type` is treated as stdio and fails to load:
+
+
 Replace `<token>` with the contents of `omniview-mcp.token`. The token is persisted in BoltDB, so the same value survives OmniView restarts. You do not need to rewrite the config every launch.
 
 ### Reload after every OmniView restart

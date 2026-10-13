@@ -96,12 +96,13 @@ func (s *Server) buildAndRegister(startedAt time.Time) *mcp.Server {
 	mcp.AddTool(sdk, &mcp.Tool{
 		Name: "add_database",
 		Description: "Persists a new Oracle database configuration on this locally hosted OmniView MCP server.\n\n" +
-			"If the host supports MCP form elicitation, omit missing credentials so the server can collect them through an interactive " +
-			"connection form (id, host, port, service, username, password).\n\n" +
-			"If the host does not support form elicitation, pass all fields including password as tool arguments. This MCP server runs locally on the user's machine " +
-			"(stdio, not a remote/cloud endpoint), so sending the database password as a tool argument is acceptable.",
+			"Gather id, host, port (typically 1521), service, username, and password in IDE conversation before calling; ask only for missing details. " +
+			"Pass all fields as explicit arguments; no interactive MCP form is used. Never echo the password.\n\n" +
+			"Set connect=true to save, verify Oracle login, deploy/check permissions and tracer package, and select the database in one call. " +
+			"If verification fails, the saved configuration remains and the previous selection is preserved; retry connect_database with the returned id. " +
+			"Omit connect or set false to save only. Do not blindly repeat add_database after a lost response: duplicate ids are rejected.",
 		// Additive only — a repeat call with the same id fails with already_exists rather than overwriting, so it isn't destructive.
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), IdempotentHint: false, OpenWorldHint: boolPtr(false)},
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), IdempotentHint: false, OpenWorldHint: boolPtr(true)},
 	}, addDatabase(s))
 
 	// ── connect_database ──────────────────────

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -98,38 +99,43 @@ func TestServeStreamableHTTP_RejectsForeignOrigin(t *testing.T) {
 	}
 }
 
-// bodyEchoHandler stands in for the SDK handler: it drains the body and reports how much it got.
-func bodyEchoHandler(t *testing.T) http.Handler {
-	t.Helper()
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestLimitRequest_BoundsBodySize(t *testing.T) {
+	const maxBody = 64
+	// Stands in for the SDK handler: drain the body, 413 if the cap tripped.
+	drain := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
 			w.WriteHeader(http.StatusRequestEntityTooLarge)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-}
-
-func TestLimitRequest_BoundsBodySize(t *testing.T) {
-	const maxBody = 64
-	srv := httptest.NewServer(limitRequest(bodyEchoHandler(t), maxBody, time.Minute))
+	srv := httptest.NewServer(limitRequest(drain, maxBody, time.Minute))
 	defer srv.Close()
 
-	post := func(body string) int {
-		t.Helper()
-		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(body))
-		if err != nil {
-			t.Fatalf("http.Post: %v", err)
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode
-	}
+	// GET carries a body too, so the size cap must not be POST-only.
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		t.Run(method, func(t *testing.T) {
+			send := func(body string) int {
+				t.Helper()
+				req, err := http.NewRequest(method, srv.URL, strings.NewReader(body))
+				if err != nil {
+					t.Fatalf("http.NewRequest: %v", err)
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatalf("http.Do: %v", err)
+				}
+				defer resp.Body.Close()
+				return resp.StatusCode
+			}
 
-	if code := post(strings.Repeat("a", maxBody)); code != http.StatusOK {
-		t.Fatalf("expected a body at the limit to be accepted, got %d", code)
-	}
-	if code := post(strings.Repeat("a", maxBody+1)); code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected a body over the limit to be rejected, got %d", code)
+			if code := send(strings.Repeat("a", maxBody)); code != http.StatusOK {
+				t.Fatalf("expected a body at the limit to be accepted, got %d", code)
+			}
+			if code := send(strings.Repeat("a", maxBody+1)); code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("expected a body over the limit to be rejected, got %d", code)
+			}
+		})
 	}
 }
 
@@ -138,39 +144,120 @@ func TestLimitRequest_BoundsBodyReadTime(t *testing.T) {
 		readTimeout = 100 * time.Millisecond
 		bodyLen     = 64
 	)
-	readErr := make(chan error, 1)
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.Copy(io.Discard, r.Body)
-		readErr <- err
-	})
-	srv := httptest.NewServer(limitRequest(next, 1<<20, readTimeout))
-	defer srv.Close()
 
-	addr := strings.TrimPrefix(srv.URL, "http://")
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		t.Run(method, func(t *testing.T) {
+			readErr := make(chan error, 1)
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, err := io.Copy(io.Discard, r.Body)
+				readErr <- err
+			})
+			srv := httptest.NewServer(limitRequest(next, 1<<20, readTimeout))
+			defer srv.Close()
+
+			conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+			if err != nil {
+				t.Fatalf("net.Dial: %v", err)
+			}
+			defer conn.Close()
+
+			fmt.Fprintf(conn, "%s / HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n", method, conn.RemoteAddr().String(), bodyLen)
+			// Send a few bytes, then stall. With no read deadline the body read cannot finish until the
+			// remaining bytes arrive, so a returning read here proves the deadline cut it short.
+			if _, err := conn.Write([]byte("1234")); err != nil {
+				t.Fatalf("write partial body: %v", err)
+			}
+
+			select {
+			case err := <-readErr:
+				if err == nil {
+					t.Fatal("expected a read deadline error, got a complete body read")
+				}
+			case <-time.After(20 * readTimeout):
+				t.Fatal("body read never returned while the client stalled")
+			}
+		})
+	}
+}
+
+// startGuardedServer serves handler behind the real guard stack and timeouts, with ReadTimeout
+// shrunk so the tests stay fast.
+func startGuardedServer(t *testing.T, handler http.Handler, readTimeout time.Duration) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	srv := newHTTPServer(handler)
+	srv.ReadTimeout = readTimeout
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return ln.Addr().String()
+}
+
+// TestReadTimeout_BoundsBodyTheHandlerNeverReads covers the gap limitRequest cannot: the origin guard
+// rejects before it runs, so nothing sets a per-request deadline. net/http then drains the unread body
+// after the response, bounded in bytes only, so without http.Server.ReadTimeout a dripping client pins
+// the connection indefinitely — IdleTimeout does not cover it, since the handler is not idle.
+func TestReadTimeout_BoundsBodyTheHandlerNeverReads(t *testing.T) {
+	const readTimeout = 500 * time.Millisecond
+
+	addr := startGuardedServer(t, http.NotFoundHandler(), readTimeout)
+
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatalf("net.Dial: %v", err)
 	}
 	defer conn.Close()
 
-	fmt.Fprintf(conn, "POST / HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n", addr, bodyLen)
-	// Send a few bytes, then stall. With no read deadline the body read cannot finish until the
-	// remaining bytes arrive, so a returning read here proves the deadline cut it short.
-	if _, err := conn.Write([]byte("1234")); err != nil {
+	// Foreign Origin: rejected by requireLoopbackOrigin, which never reaches limitRequest.
+	fmt.Fprintf(conn, "POST / HTTP/1.1\r\nHost: %s\r\nOrigin: https://evil.example\r\nContent-Length: 4096\r\n\r\n", addr)
+	if _, err := conn.Write([]byte("x")); err != nil {
 		t.Fatalf("write partial body: %v", err)
 	}
 
-	select {
-	case err := <-readErr:
-		if err == nil {
-			t.Fatal("expected a read deadline error, got a complete body read")
-		}
-	case <-time.After(20 * readTimeout):
-		t.Fatal("body read never returned while the client stalled")
+	// The server owes us a complete exchange and a closed connection well inside a bound it sets itself.
+	if err := conn.SetReadDeadline(time.Now().Add(20 * readTimeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
 	}
+	var got bytes.Buffer
+	if _, err := io.Copy(&got, conn); err != nil {
+		t.Fatalf("read exchange: %v (server never closed the connection after an early rejection)", err)
+	}
+	if !strings.Contains(got.String(), "403") {
+		t.Fatalf("expected a 403 in the exchange, got %q", got.String())
+	}
+}
 
-	// Finish the body afterwards: it must not unblock a read that already hit the deadline.
-	if _, err := conn.Write([]byte(strings.Repeat("a", bodyLen-4))); err != nil {
-		t.Fatalf("write rest of body: %v", err)
+// TestReadTimeout_LeavesLongLivedResponsesAlone is the safety rail on http.Server.ReadTimeout: it is
+// read-side only, so an SSE-style response that outlives it must still arrive complete.
+func TestReadTimeout_LeavesLongLivedResponsesAlone(t *testing.T) {
+	const (
+		readTimeout = 200 * time.Millisecond
+		chunks      = 10
+		chunkDelay  = 50 * time.Millisecond
+	)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := range chunks {
+			fmt.Fprintf(w, "data: %d\n\n", i)
+			w.(http.Flusher).Flush()
+			time.Sleep(chunkDelay)
+		}
+	})
+	addr := startGuardedServer(t, handler, readTimeout)
+
+	resp, err := http.Get("http://" + addr)
+	if err != nil {
+		t.Fatalf("http.Get: %v", err)
+	}
+	defer resp.Body.Close()
+
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if n := strings.Count(string(got), "data: "); n != chunks {
+		t.Fatalf("expected all %d stream chunks to arrive, got %d", chunks, n)
 	}
 }

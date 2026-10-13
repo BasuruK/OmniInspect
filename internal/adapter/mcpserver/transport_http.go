@@ -22,9 +22,9 @@ func (s *Server) ServeStreamableHTTP(ctx context.Context, ln net.Listener) error
 		Stateless:    true,
 		JSONResponse: true,
 	})
-	// ReadHeaderTimeout and IdleTimeout guard against a slow client (any local process, since this listener is loopback-only) pinning a goroutine indefinitely. No ReadTimeout/WriteTimeout: the streamable HTTP transport can hold a response open for server-initiated messages, and those would cut a legitimate long-lived stream short.
+	// ReadHeaderTimeout and IdleTimeout guard against a slow client (any local process, since this listener is loopback-only) pinning a goroutine indefinitely. No ReadTimeout/WriteTimeout: the streamable HTTP transport can hold a response open for server-initiated messages, and those would cut a legitimate long-lived stream short. Body size and body read time are bounded per request instead, by limitRequest.
 	httpSrv := &http.Server{
-		Handler:           requireLoopbackOrigin(mcpHandler),
+		Handler:           requireLoopbackOrigin(limitRequest(mcpHandler, maxRequestBodyBytes, bodyReadTimeout)),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -59,6 +59,37 @@ var loopbackOrigins = map[string]struct{}{
 	"http://127.0.0.1":       {},
 	"http://localhost.local": {},
 	"http://127.0.0.1.local": {},
+}
+
+const (
+	// maxRequestBodyBytes caps one client request. Requests are small JSON-RPC envelopes, so this is far above any legitimate call; it exists so a client streaming
+	// an endless body cannot grow the process. Responses are unaffected — MaxBytesReader wraps the request body only.
+	maxRequestBodyBytes = 4 << 20 // 4 MiB
+	// bodyReadTimeout bounds how long a client may take to deliver its POST body. ReadHeaderTimeout covers headers only, so without this a client that dribbles
+	// body bytes holds a connection and its goroutine open indefinitely.
+	bodyReadTimeout = 30 * time.Second
+)
+
+// limitRequest bounds POST request bodies before the SDK handler sees them: by size, and by how long the body read may take.
+//
+// The read bound is a per-connection read deadline rather than http.Server.ReadTimeout, so a slow body is cut off without a global timeout that would also cut off
+// responses the streamable HTTP transport legitimately holds open for server-initiated messages. The deadline is cleared on the way out so keep-alive reuse works.
+func limitRequest(next http.Handler, maxBodyBytes int64, readTimeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
+		// Best effort: transports without deadline support (h2 in net/http) simply keep the size bound and the server's own header/idle timeouts.
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(readTimeout))
+		defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireLoopbackOrigin rejects browser requests from foreign or opaque origins.

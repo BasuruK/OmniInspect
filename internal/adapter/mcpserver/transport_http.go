@@ -94,9 +94,11 @@ func limitRequest(next http.Handler, maxBodyBytes int64, readTimeout time.Durati
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 		// Best effort: transports without deadline support (h2 in net/http) simply keep the size bound and the server's own read timeouts.
+		// Deliberately not cleared on the way out. A handler that rejects without reading its body (the SDK rejects an unsupported Content-Type with 415 before
+		// touching it) leaves net/http to drain up to 256 KiB after this returns, bounded in bytes but not in time. A deadline still armed is what stops that
+		// drain; keep-alive is unaffected because net/http resets the read deadline itself once the handler is done.
 		rc := http.NewResponseController(w)
 		_ = rc.SetReadDeadline(time.Now().Add(readTimeout))
-		defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
 
 		next.ServeHTTP(w, r)
 	})

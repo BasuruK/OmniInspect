@@ -109,7 +109,11 @@ func TestLimitRequest_BoundsBodySize(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	srv := httptest.NewServer(limitRequest(drain, maxBody, time.Minute))
+	var sawChunked bool
+	srv := httptest.NewServer(limitRequest(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawChunked = r.ContentLength == -1
+		drain.ServeHTTP(w, r)
+	}), maxBody, time.Minute))
 	defer srv.Close()
 
 	// GET carries a body too, so the size cap must not be POST-only.
@@ -137,6 +141,35 @@ func TestLimitRequest_BoundsBodySize(t *testing.T) {
 			}
 		})
 	}
+
+	// Chunked means no Content-Length, so the cap cannot lean on a declared size.
+	t.Run("chunked", func(t *testing.T) {
+		send := func(body string) int {
+			t.Helper()
+			req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("http.NewRequest: %v", err)
+			}
+			req.ContentLength = -1
+			req.TransferEncoding = []string{"chunked"}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("http.Do: %v", err)
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode
+		}
+
+		if code := send(strings.Repeat("a", maxBody)); code != http.StatusOK {
+			t.Fatalf("expected a chunked body at the limit to be accepted, got %d", code)
+		}
+		if code := send(strings.Repeat("a", maxBody+1)); code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("expected a chunked body over the limit to be rejected, got %d", code)
+		}
+		if !sawChunked {
+			t.Fatal("server never saw a chunked request, so the cases above proved nothing")
+		}
+	})
 }
 
 func TestLimitRequest_BoundsBodyReadTime(t *testing.T) {
@@ -231,6 +264,48 @@ func TestReadTimeout_BoundsBodyTheHandlerNeverReads(t *testing.T) {
 
 // TestReadTimeout_LeavesLongLivedResponsesAlone is the safety rail on http.Server.ReadTimeout: it is
 // read-side only, so an SSE-style response that outlives it must still arrive complete.
+// TestReadTimeout_BoundsBodyAfterSDKRejection covers the case the origin-guard test cannot reach:
+// the SDK handler itself rejects (415 on an unsupported Content-Type) without touching the body, so
+// the drain of that body happens after limitRequest returns. limitRequest must leave a deadline armed
+// across that window or a dripping client pins the connection forever.
+func TestReadTimeout_BoundsBodyAfterSDKRejection(t *testing.T) {
+	const readTimeout = 200 * time.Millisecond
+
+	deps, cleanup := testDeps(t)
+	t.Cleanup(cleanup)
+	// The real SDK handler, so the rejection path is the production one.
+	sdk := NewServer(deps).buildAndRegister(time.Now())
+	sdkHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return sdk }, &mcp.StreamableHTTPOptions{
+		Stateless:    true,
+		JSONResponse: true,
+	})
+	srv := httptest.NewServer(limitRequest(sdkHandler, maxRequestBodyBytes, readTimeout))
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("net.Dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Unsupported Content-Type, so the SDK answers 415 without reading the 4096-byte body it declared.
+	fmt.Fprintf(conn, "POST / HTTP/1.1\r\nHost: %s\r\nContent-Type: application/xml\r\nContent-Length: 4096\r\n\r\n", conn.RemoteAddr().String())
+	if _, err := conn.Write([]byte("x")); err != nil {
+		t.Fatalf("write partial body: %v", err)
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(20 * readTimeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	var got bytes.Buffer
+	if _, err := io.Copy(&got, conn); err != nil {
+		t.Fatalf("read exchange: %v (the drain after the SDK rejection was not time-bounded)", err)
+	}
+	if !strings.Contains(got.String(), "415") {
+		t.Fatalf("expected the SDK to reject with 415, got %q", got.String())
+	}
+}
+
 func TestReadTimeout_LeavesLongLivedResponsesAlone(t *testing.T) {
 	const (
 		readTimeout = 200 * time.Millisecond

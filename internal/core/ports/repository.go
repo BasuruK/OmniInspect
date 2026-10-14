@@ -108,7 +108,7 @@ type DatabaseRepository interface {
 	// FetchWithParams executes a SELECT query with parameters
 	FetchWithParams(ctx context.Context, query string, params map[string]interface{}) ([]string, error)
 
-	// PackageExists checks if a package exists
+	// PackageExists checks that the package specification and body exist and are valid.
 	PackageExists(ctx context.Context, packageName string) (bool, error)
 
 	// ProcedureExists checks if a procedure exists inside the given package.

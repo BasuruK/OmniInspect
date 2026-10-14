@@ -130,6 +130,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
         queue_exists_ NUMBER;
+        queue_created_ BOOLEAN := FALSE;
+        shard_num_ NUMBER;
     BEGIN
         -- Check if queue exists
         SELECT COUNT(*)
@@ -138,37 +140,47 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         WHERE name = TRACER_QUEUE_NAME;
 
         IF queue_exists_ = 0 THEN
-            -- 1. Create the Sharded Queue
-            DBMS_AQADM.CREATE_SHARDED_QUEUE (
-                queue_name => TRACER_QUEUE_NAME,
-                multiple_consumers => TRUE, -- setting this value true here, cause it allows named subscribers
-                queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
-            );
-            -- 2. Set Shard count to 4. This can be adjusted based on expected load.
+            BEGIN
+                DBMS_AQADM.CREATE_SHARDED_QUEUE (
+                    queue_name => TRACER_QUEUE_NAME,
+                    multiple_consumers => TRUE,
+                    queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
+                );
+                queue_created_ := TRUE;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    IF SQLCODE != -24001 THEN
+                        RAISE;
+                    END IF;
+                    -- A concurrent creator must still pass the readiness steps below.
+            END;
+        END IF;
+
+        DBMS_AQADM.GET_QUEUE_PARAMETER(
+            queue_name => TRACER_QUEUE_NAME,
+            param_name => 'SHARD_NUM',
+            param_value => shard_num_
+        );
+        -- Preserve existing tuning; use the default only for creation or missing configuration.
+        IF queue_created_ OR shard_num_ IS NULL OR shard_num_ < 1 THEN
             DBMS_AQADM.SET_QUEUE_PARAMETER(
                 queue_name => TRACER_QUEUE_NAME,
                 param_name => 'SHARD_NUM',
                 param_value => 4
             );
-
-            -- 3. Start the Queue with explicit enqueue/dequeue enabled
-            DBMS_AQADM.START_QUEUE (
-                queue_name => TRACER_QUEUE_NAME,
-                enqueue    => TRUE,
-                dequeue    => TRUE
-            );
         END IF;
+
+        DBMS_AQADM.START_QUEUE (
+            queue_name => TRACER_QUEUE_NAME,
+            enqueue    => TRUE,
+            dequeue    => TRUE
+        );
         
         COMMIT;
     EXCEPTION
-    WHEN OTHERS THEN
-        IF SQLCODE = -24001 THEN                
-            -- Queue already exists (race condition), ignore
-            COMMIT; -- Must commit autonomous transaction even on expected exception
-        ELSE
+        WHEN OTHERS THEN
             ROLLBACK;
             RAISE;
-        END IF;
     END Initialize;
 
 

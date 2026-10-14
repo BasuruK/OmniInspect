@@ -47,7 +47,17 @@ func TestServeStreamableHTTP_ClientContinuesAfterRestartWithoutToken(t *testing.
 	client := mcp.NewClient(&mcp.Implementation{Name: "restart-client", Version: "test"}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint}, nil)
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Fatalf("http.DefaultTransport is %T, want *http.Transport", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
+	t.Cleanup(transport.CloseIdleConnections)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint:             endpoint,
+		HTTPClient:           &http.Client{Transport: transport},
+		DisableStandaloneSSE: true, // The stateless server does not provide an SSE stream.
+	}, nil)
 	if err != nil {
 		t.Fatalf("connect without bearer: %v", err)
 	}
@@ -55,9 +65,15 @@ func TestServeStreamableHTTP_ClientContinuesAfterRestartWithoutToken(t *testing.
 	if res := callTool(t, session, "get_status", map[string]any{}); res.IsError {
 		t.Fatal("get_status before restart failed")
 	}
+	// Preserve the MCP session, but disconnect sockets owned by the stopped server.
+	transport.CloseIdleConnections()
 	stop()
 	startHTTPServer(t, deps, strings.TrimSuffix(strings.TrimPrefix(endpoint, "http://"), "/mcp"))
-	if res := callTool(t, session, "get_status", map[string]any{}); res.IsError {
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_status", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("post-restart call: %v", err)
+	}
+	if res.IsError {
 		t.Fatal("same IDE session failed after restart")
 	}
 }

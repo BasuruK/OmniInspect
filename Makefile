@@ -214,8 +214,11 @@ else
 	./$(BINARY_NAME).exe
 endif
 
-# Run tests
+# Go test binaries run outside the repository and need runtime DLL search paths.
 .PHONY: test
+ifeq ($(DETECTED_OS),Windows)
+test: export PATH := $(subst /,\,$(CURDIR)/$(ODPI_BASE)/lib);$(subst /,\,$(INSTANT_CLIENT_DIR));$(PATH)
+endif
 test:
 	@echo "[TEST] Running tests..."
 	go test -v ./...

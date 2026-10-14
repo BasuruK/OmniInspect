@@ -10,12 +10,11 @@ import (
 	"testing"
 )
 
-// This opt-in test leaves its objects in an empty disposable OMNI_RECOVERY_TEST_*
-// schema for inspection. It never uses saved application credentials.
-func TestDeploymentRecoveryOracle(t *testing.T) {
+func recoveryOracleConnection(t *testing.T) *OracleAdapter {
+	t.Helper()
 	username := os.Getenv("OMNI_RECOVERY_ORACLE_USER")
 	if username == "" {
-		t.Skip("set OMNI_RECOVERY_ORACLE_* to use an empty disposable Oracle schema")
+		t.Skip("set OMNI_RECOVERY_ORACLE_* to use a disposable Oracle schema")
 	}
 	if !strings.HasPrefix(strings.ToUpper(username), "OMNI_RECOVERY_TEST_") {
 		t.Fatal("test requires a disposable OMNI_RECOVERY_TEST_* schema")
@@ -43,6 +42,14 @@ func TestDeploymentRecoveryOracle(t *testing.T) {
 		t.Fatal("test Oracle connection failed")
 	}
 	t.Cleanup(func() { _ = db.Close(ctx) })
+	return db
+}
+
+// This opt-in test leaves its objects in an empty disposable OMNI_RECOVERY_TEST_*
+// schema for inspection. It never uses saved application credentials.
+func TestDeploymentRecoveryOracle(t *testing.T) {
+	db := recoveryOracleConnection(t)
+	ctx := context.Background()
 
 	rows, err := db.Fetch(ctx, `SELECT COUNT(*) FROM user_objects WHERE object_name LIKE 'OMNI_%'`)
 	if err != nil {
@@ -98,7 +105,7 @@ func TestDeploymentRecoveryOracle(t *testing.T) {
 	execute(`DECLARE shards_ NUMBER; ready_ NUMBER; BEGIN
 		DBMS_AQADM.GET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'SHARD_NUM', shards_);
 		SELECT COUNT(*) INTO ready_ FROM user_queues WHERE name = 'OMNI_TRACER_QUEUE'
-			AND enqueue_enabled = 'YES' AND dequeue_enabled = 'YES';
+			AND TRIM(enqueue_enabled) = 'YES' AND TRIM(dequeue_enabled) = 'YES';
 		IF shards_ IS NULL OR shards_ < 1 OR ready_ != 1 THEN
 			RAISE_APPLICATION_ERROR(-20001, 'Queue readiness was not recovered');
 		END IF;

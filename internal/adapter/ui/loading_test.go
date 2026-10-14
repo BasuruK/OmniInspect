@@ -29,6 +29,10 @@ func (s stubDatabaseSettingsRepository) SaveAndSelectIfNone(context.Context, dom
 	return false, nil
 }
 
+func (s stubDatabaseSettingsRepository) Create(context.Context, domain.DatabaseSettings) error {
+	return nil
+}
+
 func (s stubDatabaseSettingsRepository) CreateAndSelectIfNone(context.Context, domain.DatabaseSettings) (bool, error) {
 	return false, nil
 }
@@ -94,8 +98,6 @@ func (stubConfigRepository) GetBroadcastMode() (domain.BroadcastMode, error) {
 func (stubConfigRepository) SetBroadcastMode(domain.BroadcastMode) error { return nil }
 func (stubConfigRepository) GetActiveDatabaseID() (string, error)        { return "", nil }
 func (stubConfigRepository) SetActiveDatabaseID(string) error            { return nil }
-func (stubConfigRepository) GetMCPAuthToken() (string, error)            { return "", nil }
-func (stubConfigRepository) SetMCPAuthToken(string) error                { return nil }
 
 func newLoadingTestModel(t *testing.T, validated bool) *Model {
 	t.Helper()

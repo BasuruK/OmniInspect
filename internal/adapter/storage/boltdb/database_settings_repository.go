@@ -122,6 +122,16 @@ func (dsr *DatabaseSettingsRepository) SaveAndSelectIfNone(ctx context.Context, 
 // transaction. becameDefault is true iff this call installed the default pointer.
 // A duplicate key returns a wrapped domain.ErrKeyCollision.
 func (dsr *DatabaseSettingsRepository) CreateAndSelectIfNone(ctx context.Context, settings domain.DatabaseSettings) (bool, error) {
+	return dsr.create(ctx, settings, true)
+}
+
+// Create inserts a new configuration without changing the selected database.
+func (dsr *DatabaseSettingsRepository) Create(ctx context.Context, settings domain.DatabaseSettings) error {
+	_, err := dsr.create(ctx, settings, false)
+	return err
+}
+
+func (dsr *DatabaseSettingsRepository) create(ctx context.Context, settings domain.DatabaseSettings, selectIfNone bool) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
@@ -144,7 +154,7 @@ func (dsr *DatabaseSettingsRepository) CreateAndSelectIfNone(ctx context.Context
 
 		claimed := false
 		previousKey := b.Get([]byte(DefaultDatabaseConfigKey))
-		if previousKey == nil || b.Get(previousKey) == nil {
+		if selectIfNone && (previousKey == nil || b.Get(previousKey) == nil) {
 			rec.SetAsDefault()
 			claimed = true
 		}
@@ -165,7 +175,7 @@ func (dsr *DatabaseSettingsRepository) CreateAndSelectIfNone(ctx context.Context
 		return nil
 	})
 	if err != nil {
-		return false, fmt.Errorf("CreateAndSelectIfNone: %w", err)
+		return false, fmt.Errorf("create database settings: %w", err)
 	}
 	return becameDefault, nil
 }

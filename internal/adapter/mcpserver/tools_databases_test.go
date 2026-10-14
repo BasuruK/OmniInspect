@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -243,81 +242,6 @@ func TestAddDatabase_Persists(t *testing.T) {
 	}
 }
 
-func TestAddDatabase_ElicitationPersists(t *testing.T) {
-	deps, cleanup := testDeps(t)
-	defer cleanup()
-
-	session := connectClientServerOpts(t, deps, &mcp.ClientOptions{
-		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
-			if req.Params == nil || req.Params.RequestedSchema == nil {
-				t.Fatalf("expected requested schema")
-			}
-			return &mcp.ElicitResult{
-				Action: "accept",
-				Content: map[string]any{
-					"id":       "elicit-1",
-					"host":     "db.example.com",
-					"port":     1521,
-					"service":  "FREEPDB1",
-					"username": "admin",
-					"password": "secret",
-				},
-			}, nil
-		},
-	})
-
-	res := callTool(t, session, "add_database", map[string]any{})
-	if res.IsError {
-		var dump string
-		if len(res.Content) > 0 {
-			if tc, ok := res.Content[0].(*mcp.TextContent); ok {
-				dump = tc.Text
-			}
-		}
-		t.Fatalf("expected success via elicitation, got IsError: %s", dump)
-	}
-
-	all, err := deps.DBSettingsRepo.GetAll(context.Background())
-	if err != nil {
-		t.Fatalf("GetAll: %v", err)
-	}
-	if len(all) != 1 || all[0].DatabaseID() != "elicit-1" {
-		t.Fatalf("expected elicit-1 persisted, got %+v", all)
-	}
-}
-
-func TestAddDatabase_ElicitationDeclined(t *testing.T) {
-	deps, cleanup := testDeps(t)
-	defer cleanup()
-
-	session := connectClientServerOpts(t, deps, &mcp.ClientOptions{
-		ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
-			return &mcp.ElicitResult{Action: "decline"}, nil
-		},
-	})
-
-	res := callTool(t, session, "add_database", map[string]any{})
-	if !res.IsError {
-		t.Fatalf("expected IsError after decline, got %+v", res)
-	}
-	tc := res.Content[0].(*mcp.TextContent)
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(tc.Text), &payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload["code"] != "invalid_input" {
-		t.Fatalf("expected invalid_input, got %v", payload["code"])
-	}
-
-	all, err := deps.DBSettingsRepo.GetAll(context.Background())
-	if err != nil {
-		t.Fatalf("GetAll: %v", err)
-	}
-	if len(all) != 0 {
-		t.Fatalf("expected nothing persisted, got %d", len(all))
-	}
-}
-
 func TestAddDatabase_RejectsInvalidInput(t *testing.T) {
 	deps, cleanup := testDeps(t)
 	defer cleanup()
@@ -464,60 +388,6 @@ func TestAddDatabase_ConcurrentSameID(t *testing.T) {
 	}
 	if len(all) != 1 {
 		t.Fatalf("persisted %d records, want 1", len(all))
-	}
-}
-
-func TestAddDatabaseInputFromElicit_PortSuccess(t *testing.T) {
-	cases := []struct {
-		name string
-		port any
-	}{
-		{name: "float64", port: float64(1521)},
-		{name: "int", port: 1521},
-		{name: "int64", port: int64(1521)},
-		{name: "json.Number", port: json.Number("1521")},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := addDatabaseInputFromElicit(map[string]any{"port": tc.port, "id": "db1"})
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got.Port != 1521 {
-				t.Fatalf("Port=%d, want 1521", got.Port)
-			}
-		})
-	}
-}
-
-func TestAddDatabaseInputFromElicit_PortErrorsWrapInvalidPort(t *testing.T) {
-	cases := []struct {
-		name    string
-		content map[string]any
-		wantIs  error
-	}{
-		{name: "missing", content: map[string]any{}},
-		{name: "nil", content: map[string]any{"port": nil}},
-		{name: "unsupported type", content: map[string]any{"port": true}},
-		{name: "json.Number conversion", content: map[string]any{"port": json.Number("not-an-int")}, wantIs: strconv.ErrSyntax},
-		{name: "fractional float64", content: map[string]any{"port": 1521.5}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := addDatabaseInputFromElicit(tc.content)
-			if err == nil {
-				t.Fatal("expected error")
-			}
-			if !errors.Is(err, domain.ErrInvalidPort) {
-				t.Fatalf("errors.Is(ErrInvalidPort)=false: %v", err)
-			}
-			if !contains(err.Error(), "add_database") {
-				t.Fatalf("missing add_database context: %v", err)
-			}
-			if tc.wantIs != nil && !errors.Is(err, tc.wantIs) {
-				t.Fatalf("errors.Is(%v)=false: %v", tc.wantIs, err)
-			}
-		})
 	}
 }
 

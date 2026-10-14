@@ -489,30 +489,26 @@ When a user points you at this repository and asks to install or configure the M
 1. Confirm OmniView is installed. Prefer a [release binary](#install). Do not `go run` this repo to stand up MCP.
 2. Start OmniView and wait until the TUI is up. The MCP listener starts with the app, not before.
 3. Connect over streamable HTTP at `http://127.0.0.1:54332/mcp`. Do not use stdio. Do not spawn a second MCP process.
-4. Read the bearer token from `omniview-mcp.token` in the working directory where OmniView was launched. Put it in the client config as `Authorization: Bearer <token>`. Do not invent a token. Do not commit the token file or any config that embeds it. Prefer user-level configuration or the client's secret storage.
-5. Write the client config below. Enable the `omniview` server in the IDE or coding platform.
-6. Verify with `get_status`. Failure does not necessarily mean OmniView is stopped or the token is invalid. Confirm MCP startup succeeded, port 54332 is available, and the client loaded this configuration.
+4. Write the client config below. No bearer token or Authorization header is required. Enable the `omniview` server in the IDE or coding platform.
+5. Verify with `get_status`. Confirm MCP startup succeeded, port 54332 is available, and the client loaded this configuration.
 
 Available tools: `get_status`, `list_databases`, `add_database`, `connect_database`, `set_broadcast_mode`, `list_traces`, `clear_traces`, `get_trace_method`.
 
 ### Client config
 
-Prefer user-level configuration or the client's secret storage.
+Prefer user-level configuration.
 
 **Cursor:** user `~/.cursor/mcp.json` (preferred), or project `.cursor/mcp.json`  
 **Claude Code:** the client's user-level or secret storage (preferred), or project `.mcp.json`  
 **Other MCP hosts:** same `mcpServers` shape.
 
-If you use a project-scoped file such as `.cursor/mcp.json` or `.mcp.json`, keep it untracked. Never commit or share a configuration that contains the bearer token.
+The MCP listener is local-only (`127.0.0.1`), has no bearer authentication, and retains Origin and Host validation. Other local processes can access its tools. Existing token files and BoltDB token entries are no longer read or written; old Authorization headers are ignored.
 
 ```json
 {
   "mcpServers": {
     "omniview": {
-      "url": "http://127.0.0.1:54332/mcp",
-      "headers": {
-        "Authorization": "Bearer <token>"
-      }
+      "url": "http://127.0.0.1:54332/mcp"
     }
   }
 }
@@ -520,11 +516,23 @@ If you use a project-scoped file such as `.cursor/mcp.json` or `.mcp.json`, keep
 
 > **Claude Code** also requires `"type": "http"`. A `url` without `type` is treated as stdio and fails to load:
 
-Replace `<token>` with the contents of `omniview-mcp.token`. The token is persisted in BoltDB, so the same value survives OmniView restarts. You do not need to rewrite the config every launch.
+### Restart behavior
 
-### Reload after every OmniView restart
+HTTP requests are stateless. Restarting OmniView does not invalidate an MCP session ID, and no credentials need refreshing. A connected client can make tool calls again when the listener returns. If an IDE disables a server after downtime, use its reconnect control; retry policy belongs to that IDE.
 
-Closing OmniView shuts the MCP server down with it. The token file stays valid, but the HTTP listener is gone. After you start OmniView again, reload/reconnect the `omniview` MCP server in your IDE or coding platform. Until you reload, tools will fail even though the config looks correct.
+The TUI's MCP indicator reports whether the listener is running, not whether an IDE is connected.
+
+### Add and connect in one call
+
+The agent gathers `id`, `host`, `port` (typically `1521`), `service`, `username`, and `password` in IDE conversation, then passes all fields to `add_database` with `connect: true`. No MCP form elicitation is used. Passwords are never included in tool results or application logs; the IDE may retain chat/tool arguments in its own history.
+
+- `connect: true`: save settings, verify Oracle login, deploy/check permissions and the tracer package, then select the database and notify the TUI. Success returns `ok`, `id`, `saved: true`, `connected: true`, and `active_database`.
+- `connect` omitted or `false`: preserve save-only behavior, including selecting the first configuration if none is selected. Returns `saved: true`, `connected: false`; no Oracle verification occurs.
+- Missing fields: `invalid_input` with `missing_fields`, `saved: false`, and `connected: false`. The agent asks for those values and submits complete arguments. Invalid ports return `field_errors`.
+- Connection/check failure after saving: an error result includes the failure code, database `id`, `saved: true`, and `connected: false`. Previous database selection is preserved. Retry `connect_database` using the returned `id`; do not repeat `add_database`.
+- Duplicate IDs remain rejected; no existing settings are overwritten. After a lost response, check `list_databases` before retrying a mutation.
+
+One tool call is not an atomic transaction across saving settings and Oracle verification. The verification connection closes after checks; database selection uses the existing TUI notification flow.
 
 ## Roadmap
   

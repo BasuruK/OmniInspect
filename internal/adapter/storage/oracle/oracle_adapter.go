@@ -380,13 +380,16 @@ func (oa *OracleAdapter) BindParamsToQuery(stmt *C.dpiStmt, params map[string]in
 	return nil
 }
 
-// PackageExists checks if a specific package exists and is valid in the connected Oracle database.
+// PackageExists checks that both the specification and body exist and are valid.
 func (oa *OracleAdapter) PackageExists(ctx context.Context, packageName string) (bool, error) {
-	query := `SELECT COUNT(1) 
-			FROM user_objects 
-			WHERE object_type = 'PACKAGE' 
-			AND object_name = UPPER(:packageName) 
-			AND status = 'VALID'`
+	query := `SELECT COUNT(1)
+			FROM user_objects spec
+			JOIN user_objects body ON body.object_name = spec.object_name
+				AND body.object_type = 'PACKAGE BODY'
+				AND body.status = 'VALID'
+			WHERE spec.object_type = 'PACKAGE'
+			AND spec.object_name = UPPER(:packageName)
+			AND spec.status = 'VALID'`
 
 	results, err := oa.FetchWithParams(ctx, query, map[string]interface{}{
 		"packageName": packageName,

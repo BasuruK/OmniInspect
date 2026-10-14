@@ -386,63 +386,59 @@ func (ts *TracerService) handleTracerMessage(ctx context.Context, msg *domain.Qu
 
 // DeployAndCheck ensures the necessary tracer package is deployed and initialized
 func (ts *TracerService) DeployAndCheck(ctx context.Context) error {
-	// Check if the tracer package is already deployed
-	// if not, deploy it
-	var exists bool
-	if err := deployTracerPackage(ctx, ts, &exists); err != nil {
+	newHash, err := deployTracerPackage(ctx, ts)
+	if err != nil {
 		return fmt.Errorf("failed to deploy tracer package: %w", err)
 	}
-	if !exists {
-		// Initialize the tracer package
-		if err := initializeTracerPackage(ctx, ts); err != nil {
-			return fmt.Errorf("failed to initialize tracer package: %w", err)
+	// Package existence does not prove queue readiness after an interrupted startup.
+	if err := initializeTracerPackage(ctx, ts); err != nil {
+		return fmt.Errorf("failed to initialize tracer package: %w", err)
+	}
+	if newHash != "" {
+		if err := ts.bolt.SetTracerPackageVersion(newHash); err != nil {
+			logger.Warn("failed to store updated package hash", "currentHash", newHash, "error", err)
 		}
 	}
 
 	return nil
 }
 
-// DeployTracerPackage deploys the Omni tracer package to the database.
+// deployTracerPackage deploys the Omni tracer package and returns a new hash to
+// persist after initialization, or an empty string when deployment is unchanged.
 //
-// If the embedded package content hash matches the previously stored hash,
+// If the package specification/body are valid and the content hash matches,
 // DeployFile is skipped to avoid redundant database deployments (startup overhead
 // savings). If the hash differs or no prior hash exists, DeployFile is called
 // unconditionally to ensure embedded package updates reach existing databases
 // (guaranteed-update trade-off: every content change takes effect on next restart,
 // even if it means an extra database round-trip on startup).
-func deployTracerPackage(ctx context.Context, ts *TracerService, exists *bool) error {
-	var err error
-	*exists, err = ts.db.PackageExists(ctx, "OMNI_TRACER_API")
+func deployTracerPackage(ctx context.Context, ts *TracerService) (string, error) {
+	exists, err := ts.db.PackageExists(ctx, "OMNI_TRACER_API")
 	if err != nil {
-		return fmt.Errorf("failed to check package existence: %w", err)
+		return "", fmt.Errorf("failed to check package existence: %w", err)
 	}
 
 	omniTracerSQLPackage, err := assets.GetSQLFile("Omni_Tracer.sql")
 	if err != nil {
-		return fmt.Errorf("failed to read Omni tracer package file: %w", err)
+		return "", fmt.Errorf("failed to read Omni tracer package file: %w", err)
 	}
 
 	currentHash := fmt.Sprintf("%x", sha256.Sum256(omniTracerSQLPackage))
 
 	storedHash, err := ts.bolt.GetTracerPackageVersion()
 	if err != nil {
-		return fmt.Errorf("failed to read stored package version: %w", err)
+		return "", fmt.Errorf("failed to read stored package version: %w", err)
 	}
 
-	if *exists && storedHash == currentHash {
-		logger.Info("Omni_Tracer.sql content unchanged", "hash", currentHash[:16])
-		return nil
+	if exists && storedHash == currentHash {
+		logger.Debug("Omni_Tracer.sql content unchanged", "hash", currentHash[:16])
+		return "", nil
 	}
 
 	if err := ts.db.DeployFile(ctx, string(omniTracerSQLPackage)); err != nil {
-		return fmt.Errorf("failed to deploy Omni tracer package: %w", err)
+		return "", fmt.Errorf("failed to deploy Omni tracer package: %w", err)
 	}
-
-	if err := ts.bolt.SetTracerPackageVersion(currentHash); err != nil {
-		logger.Warn("failed to store updated package hash", "currentHash", currentHash, "error", err)
-	}
-
-	return nil
+	return currentHash, nil
 }
 
 // InitializeTracerPackage initializes the Omni tracer package in the database

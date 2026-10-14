@@ -132,6 +132,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
         queue_exists_ NUMBER;
         queue_created_ BOOLEAN := FALSE;
         shard_num_ NUMBER;
+        enqueue_enabled_ user_queues.enqueue_enabled%TYPE;
+        dequeue_enabled_ user_queues.dequeue_enabled%TYPE;
     BEGIN
         -- Check if queue exists
         SELECT COUNT(*)
@@ -170,11 +172,37 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             );
         END IF;
 
-        DBMS_AQADM.START_QUEUE (
-            queue_name => TRACER_QUEUE_NAME,
-            enqueue    => TRUE,
-            dequeue    => TRUE
-        );
+        FOR attempt_ IN 1..3 LOOP
+            SELECT TRIM(enqueue_enabled), TRIM(dequeue_enabled)
+            INTO enqueue_enabled_, dequeue_enabled_
+            FROM user_queues
+            WHERE name = TRACER_QUEUE_NAME;
+
+            -- Sharded queues reject starting a direction that is already enabled.
+            EXIT WHEN enqueue_enabled_ = 'YES' AND dequeue_enabled_ = 'YES';
+            BEGIN
+                DBMS_AQADM.START_QUEUE (
+                    queue_name => TRACER_QUEUE_NAME,
+                    enqueue    => enqueue_enabled_ = 'NO',
+                    dequeue    => dequeue_enabled_ = 'NO'
+                );
+                EXIT;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    IF SQLCODE != -24210 THEN
+                        RAISE;
+                    END IF;
+                    -- Another initializer may have started only one direction.
+                    SELECT TRIM(enqueue_enabled), TRIM(dequeue_enabled)
+                    INTO enqueue_enabled_, dequeue_enabled_
+                    FROM user_queues
+                    WHERE name = TRACER_QUEUE_NAME;
+                    EXIT WHEN enqueue_enabled_ = 'YES' AND dequeue_enabled_ = 'YES';
+                    IF attempt_ = 3 THEN
+                        RAISE;
+                    END IF;
+            END;
+        END LOOP;
         
         COMMIT;
     EXCEPTION

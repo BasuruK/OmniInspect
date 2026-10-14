@@ -47,7 +47,11 @@ func TestServeStreamableHTTP_ClientContinuesAfterRestartWithoutToken(t *testing.
 	client := mcp.NewClient(&mcp.Implementation{Name: "restart-client", Version: "test"}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Fatalf("http.DefaultTransport is %T, want *http.Transport", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
 	t.Cleanup(transport.CloseIdleConnections)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:             endpoint,

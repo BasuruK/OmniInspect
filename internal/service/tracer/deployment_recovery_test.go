@@ -25,16 +25,17 @@ func (r *recoveryConfig) SetTracerPackageVersion(hash string) error {
 
 type recoveryDatabase struct {
 	stubDatabaseRepository
-	packageExists     bool
-	queueExists       bool
-	initializations   int
-	initializationErr error
-	deployments       int
-	deploymentErr     error
+	packageExists      bool
+	packageBodyInvalid bool
+	queueExists        bool
+	initializations    int
+	initializationErr  error
+	deployments        int
+	deploymentErr      error
 }
 
 func (r *recoveryDatabase) PackageExists(context.Context, string) (bool, error) {
-	return r.packageExists, nil
+	return r.packageExists && !r.packageBodyInvalid, nil
 }
 
 func (r *recoveryDatabase) DeployFile(context.Context, string) error {
@@ -43,6 +44,7 @@ func (r *recoveryDatabase) DeployFile(context.Context, string) error {
 		return r.deploymentErr
 	}
 	r.packageExists = true
+	r.packageBodyInvalid = false
 	return nil
 }
 
@@ -157,5 +159,25 @@ func TestDeployAndCheck_RecoversInterruptedPackageDeployment(t *testing.T) {
 	}
 	if db.deployments != 2 || db.initializations != 1 || config.writes != 1 {
 		t.Fatal("invalid or missing package must redeploy despite the matching hash")
+	}
+}
+
+func TestDeployAndCheck_RepairsInvalidBodyWithCachedHash(t *testing.T) {
+	db := &recoveryDatabase{packageExists: true, packageBodyInvalid: true}
+	config := &recoveryConfig{hash: tracerPackageHash(t)}
+	service := &TracerService{db: db, bolt: config}
+	ctx := context.Background()
+
+	if err := service.DeployAndCheck(ctx); err != nil {
+		t.Fatalf("recover partial deployment with matching cached hash: %v", err)
+	}
+	if db.deployments != 1 || db.initializations != 1 || config.writes != 1 {
+		t.Fatal("valid specification and invalid body must redeploy and initialize despite the cached hash")
+	}
+	if db.packageBodyInvalid {
+		t.Fatal("repair left the package body invalid")
+	}
+	if err := db.RegisterNewSubscriber(ctx, *newTestSubscriber(t)); err != nil {
+		t.Fatalf("subscriber registration after partial deployment recovery: %v", err)
 	}
 }

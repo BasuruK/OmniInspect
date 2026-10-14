@@ -130,6 +130,8 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
     PROCEDURE Initialize IS
         PRAGMA AUTONOMOUS_TRANSACTION;
         queue_exists_ NUMBER;
+        queue_created_ BOOLEAN := FALSE;
+        shard_num_ NUMBER;
     BEGIN
         -- Check if queue exists
         SELECT COUNT(*)
@@ -144,6 +146,7 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
                     multiple_consumers => TRUE,
                     queue_payload_type => 'OMNI_TRACER_PAYLOAD_TYPE'
                 );
+                queue_created_ := TRUE;
             EXCEPTION
                 WHEN OTHERS THEN
                     IF SQLCODE != -24001 THEN
@@ -153,12 +156,19 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             END;
         END IF;
 
-        -- Reconcile existing queues too: a previous attempt may have stopped here.
-        DBMS_AQADM.SET_QUEUE_PARAMETER(
+        DBMS_AQADM.GET_QUEUE_PARAMETER(
             queue_name => TRACER_QUEUE_NAME,
             param_name => 'SHARD_NUM',
-            param_value => 4
+            param_value => shard_num_
         );
+        -- Preserve existing tuning; use the default only for creation or missing configuration.
+        IF queue_created_ OR shard_num_ IS NULL OR shard_num_ < 1 THEN
+            DBMS_AQADM.SET_QUEUE_PARAMETER(
+                queue_name => TRACER_QUEUE_NAME,
+                param_name => 'SHARD_NUM',
+                param_value => 4
+            );
+        END IF;
 
         DBMS_AQADM.START_QUEUE (
             queue_name => TRACER_QUEUE_NAME,

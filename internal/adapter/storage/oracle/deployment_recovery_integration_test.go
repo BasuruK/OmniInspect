@@ -99,12 +99,13 @@ func TestDeploymentRecoveryOracle(t *testing.T) {
 		DBMS_AQADM.GET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'SHARD_NUM', shards_);
 		SELECT COUNT(*) INTO ready_ FROM user_queues WHERE name = 'OMNI_TRACER_QUEUE'
 			AND enqueue_enabled = 'YES' AND dequeue_enabled = 'YES';
-		IF shards_ != 4 OR ready_ != 1 THEN
+		IF shards_ IS NULL OR shards_ < 1 OR ready_ != 1 THEN
 			RAISE_APPLICATION_ERROR(-20001, 'Queue readiness was not recovered');
 		END IF;
 	END;`)
 
 	execute(`BEGIN
+		DBMS_AQADM.SET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'SHARD_NUM', 8);
 		OMNI_TRACER_API.Register_Subscriber('RECOVERY_TEST');
 		OMNI_TRACER_API.Trace_Message('preserve through repair');
 		DBMS_AQADM.STOP_QUEUE(queue_name => 'OMNI_TRACER_QUEUE');
@@ -113,8 +114,12 @@ func TestDeploymentRecoveryOracle(t *testing.T) {
 	execute(string(initialize))
 	execute(`DECLARE
 		messages_ OMNI_TRACER_PAYLOAD_ARRAY; ids_ OMNI_TRACER_RAW_ARRAY;
-		count_ INTEGER; subscribers_ NUMBER;
+		count_ INTEGER; subscribers_ NUMBER; shards_ NUMBER;
 	BEGIN
+		DBMS_AQADM.GET_QUEUE_PARAMETER('OMNI_TRACER_QUEUE', 'SHARD_NUM', shards_);
+		IF shards_ IS NULL OR shards_ != 8 THEN
+			RAISE_APPLICATION_ERROR(-20004, 'Repair overwrote existing shard tuning');
+		END IF;
 		SELECT COUNT(*) INTO subscribers_ FROM user_queue_subscribers
 			WHERE queue_name = 'OMNI_TRACER_QUEUE' AND consumer_name = 'RECOVERY_TEST';
 		IF subscribers_ != 1 THEN

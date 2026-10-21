@@ -158,11 +158,14 @@ CREATE OR REPLACE PACKAGE BODY OMNI_TRACER_API AS
             END;
         END IF;
 
-        DBMS_AQADM.GET_QUEUE_PARAMETER(
-            queue_name => TRACER_QUEUE_NAME,
-            param_name => 'SHARD_NUM',
-            param_value => shard_num_
-        );
+        -- Oracle can raise ORA-00600 when reading parameters immediately after creation.
+        IF NOT queue_created_ THEN
+            DBMS_AQADM.GET_QUEUE_PARAMETER(
+                queue_name => TRACER_QUEUE_NAME,
+                param_name => 'SHARD_NUM',
+                param_value => shard_num_
+            );
+        END IF;
         -- Preserve existing tuning; use the default only for creation or missing configuration.
         IF queue_created_ OR shard_num_ IS NULL OR shard_num_ < 1 THEN
             DBMS_AQADM.SET_QUEUE_PARAMETER(

@@ -8,12 +8,15 @@ import (
 )
 
 func TestExistingQueueInitializationOracle(t *testing.T) {
-	testExistingQueueInitialization(t, recoveryOracleConnection(t))
+	testQueueInitialization(t, recoveryOracleConnection(t), true)
 }
 
-// Uses only its own objects and explicitly configures the queue before Initialize.
-// It remains independent of interrupted fresh-queue provisioning.
-func testExistingQueueInitialization(t *testing.T, db *OracleAdapter) {
+func TestFreshQueueInitializationOracle(t *testing.T) {
+	testQueueInitialization(t, recoveryOracleConnection(t), false)
+}
+
+// Uses only its own objects; existing queues start with nondefault shard tuning.
+func testQueueInitialization(t *testing.T, db *OracleAdapter, existingQueue bool) {
 	t.Helper()
 	ctx := context.Background()
 	const packageName = "OMNI_QUEUE_STATE_TEST_API"
@@ -54,11 +57,15 @@ func testExistingQueueInitialization(t *testing.T, db *OracleAdapter) {
 		}
 	})
 	execute(`CREATE NONEDITIONABLE TYPE ` + payloadName + ` AS OBJECT (JSON_DATA BLOB)`)
-	execute(`BEGIN
-		DBMS_AQADM.CREATE_SHARDED_QUEUE(queue_name => '` + queueName + `',
-			multiple_consumers => TRUE, queue_payload_type => '` + payloadName + `');
-		DBMS_AQADM.SET_QUEUE_PARAMETER('` + queueName + `', 'SHARD_NUM', 8);
-	END;`)
+	wantShards := "4"
+	if existingQueue {
+		wantShards = "8"
+		execute(`BEGIN
+			DBMS_AQADM.CREATE_SHARDED_QUEUE(queue_name => '` + queueName + `',
+				multiple_consumers => TRUE, queue_payload_type => '` + payloadName + `');
+			DBMS_AQADM.SET_QUEUE_PARAMETER('` + queueName + `', 'SHARD_NUM', 8);
+		END;`)
+	}
 	sql, err := assets.GetSQLFile("Omni_Tracer.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +93,7 @@ func testExistingQueueInitialization(t *testing.T, db *OracleAdapter) {
 			SELECT COUNT(*) INTO ready_ FROM user_queues WHERE name = '` + queueName + `'
 				AND TRIM(enqueue_enabled) = 'YES' AND TRIM(dequeue_enabled) = 'YES';
 			DBMS_AQADM.GET_QUEUE_PARAMETER('` + queueName + `', 'SHARD_NUM', shards_);
-			IF ready_ != 1 OR shards_ != 8 THEN
+			IF ready_ != 1 OR shards_ IS NULL OR shards_ != ` + wantShards + ` THEN
 				RAISE_APPLICATION_ERROR(-20005, 'Queue readiness or shard tuning lost');
 			END IF;
 		END;`)

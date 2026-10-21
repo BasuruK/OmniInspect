@@ -130,7 +130,6 @@ func TestFieldValuesReturnsCorrectValues(t *testing.T) {
 	// Set values by simulating input
 	form.fields[formFieldDatabaseID].Value = "TEST-DB"
 	form.fields[formFieldHost].Value = "localhost"
-	form.fields[formFieldPort].Value = "1521"
 	form.fields[formFieldService].Value = "FREEPDB1"
 	form.fields[formFieldUser].Value = "SYSTEM"
 	form.fields[formFieldPass].Value = "secret"

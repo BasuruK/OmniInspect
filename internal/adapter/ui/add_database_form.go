@@ -56,13 +56,13 @@ type AddDatabaseForm struct {
 	editingDB *domain.DatabaseSettings
 }
 
-// NewAddDatabaseForm: creates a new AddDatabaseForm with the specified terminal dimensions and empty fields.
+// NewAddDatabaseForm: creates a new AddDatabaseForm with the specified terminal dimensions and default Oracle port.
 func NewAddDatabaseForm(width, height int) AddDatabaseForm {
 	return AddDatabaseForm{
 		fields: []FormField{
 			{Label: "Database ID", Placeholder: "e.g., PROD-EU"},
 			{Label: "Database Host", Placeholder: "e.g., localhost"},
-			{Label: "Database Port", Placeholder: "e.g., 1521"},
+			{Label: "Database Port", Placeholder: "e.g., 1521", Value: strconv.Itoa(domain.DefaultOraclePort.Int())},
 			{Label: "Service Name / SID", Placeholder: "e.g., FREEPDB1"},
 			{Label: "Username", Placeholder: "e.g., SYSTEM"},
 			{Label: "Password", Placeholder: "password", IsPassword: true},

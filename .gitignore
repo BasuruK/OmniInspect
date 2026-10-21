@@ -18,6 +18,8 @@ _bmad
 .agents/skills
 .claude/skills
 .lean-ctx
+.scratch
+.serena
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

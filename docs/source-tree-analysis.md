@@ -103,7 +103,7 @@ OmniInspect/
 ### `docs`
 
 **Purpose:** Existing architectural and implementation knowledge base.
-**Contains:** multi-subscriber planning, blocking dequeue design, self-updater notes, subscriber isolation analysis.
+**Contains:** architecture and source-tree notes, component inventory, deployment notes, self-updater notes, subscriber isolation analysis, and the first-deployment queue investigation.
 
 ### `scripts`
 

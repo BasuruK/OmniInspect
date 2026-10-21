@@ -13,21 +13,13 @@
 
 ### docs/
 
-- **[docs/index.md](./docs/index.md)** - Documentation index
-- **[docs/project-overview.md](./docs/project-overview.md)** - Executive summary and classification
 - **[docs/architecture.md](./docs/architecture.md)** - Technical architecture and runtime flows
 - **[docs/source-tree-analysis.md](./docs/source-tree-analysis.md)** - Annotated repository structure
 - **[docs/component-inventory.md](./docs/component-inventory.md)** - TUI screens and reusable UI building blocks
-- **[docs/development-guide.md](./docs/development-guide.md)** - Local setup, build, run, and test workflow
 - **[docs/deployment-guide.md](./docs/deployment-guide.md)** - Build packaging and runtime deployment considerations
-- **[docs/contribution-guide.md](./docs/contribution-guide.md)** - Coding boundaries and contributor expectations
-
-### Design Notes (docs/)
-
-- **[docs/ARCHITECTURE_AND_MULTI_SUBSCRIBER_PLAN.md](./docs/ARCHITECTURE_AND_MULTI_SUBSCRIBER_PLAN.md)** - Multi-subscriber evolution planning
-- **[docs/BLOCKING_DEQUEUE_IMPLEMENTATION.md](./docs/BLOCKING_DEQUEUE_IMPLEMENTATION.md)** - Oracle blocking dequeue notes
 - **[docs/SELF_UPDATER_IMPLEMENTATION.md](./docs/SELF_UPDATER_IMPLEMENTATION.md)** - Updater architecture notes
 - **[docs/SUBSCRIBER_ISOLATION_SOLUTION.md](./docs/SUBSCRIBER_ISOLATION_SOLUTION.md)** - Subscriber isolation design
+- **[docs/first-deployment-queue-investigation.md](./docs/first-deployment-queue-investigation.md)** - First-deployment queue initialization failure
 
 ## Source Code
 

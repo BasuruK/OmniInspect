@@ -516,24 +516,6 @@ The MCP listener is local-only (`127.0.0.1`), has no bearer authentication, and 
 
 > **Claude Code** also requires `"type": "http"`. A `url` without `type` is treated as stdio and fails to load:
 
-### Restart behavior
-
-HTTP requests are stateless. Restarting OmniView does not invalidate an MCP session ID, and no credentials need refreshing. A connected client can make tool calls again when the listener returns. If an IDE disables a server after downtime, use its reconnect control; retry policy belongs to that IDE.
-
-The TUI's MCP indicator reports whether the listener is running, not whether an IDE is connected.
-
-### Add and connect in one call
-
-The agent gathers `id`, `host`, `port` (typically `1521`), `service`, `username`, and `password` in IDE conversation, then passes all fields to `add_database` with `connect: true`. No MCP form elicitation is used. Passwords are never included in tool results or application logs; the IDE may retain chat/tool arguments in its own history.
-
-- `connect: true`: save settings, verify Oracle login, deploy/check permissions and the tracer package, then select the database and notify the TUI. Success returns `ok`, `id`, `saved: true`, `connected: true`, and `active_database`.
-- `connect` omitted or `false`: preserve save-only behavior, including selecting the first configuration if none is selected. Returns `saved: true`, `connected: false`; no Oracle verification occurs.
-- Missing fields: `invalid_input` with `missing_fields`, `saved: false`, and `connected: false`. The agent asks for those values and submits complete arguments. Invalid ports return `field_errors`.
-- Connection/check failure after saving: an error result includes the failure code, database `id`, `saved: true`, and `connected: false`. Previous database selection is preserved. Retry `connect_database` using the returned `id`; do not repeat `add_database`.
-- Duplicate IDs remain rejected; no existing settings are overwritten. After a lost response, check `list_databases` before retrying a mutation.
-
-One tool call is not an atomic transaction across saving settings and Oracle verification. The verification connection closes after checks; database selection uses the existing TUI notification flow.
-
 ## Roadmap
   
 ### Completed

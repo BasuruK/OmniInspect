@@ -68,7 +68,7 @@ jobs:
       run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
     - name: Check for Go vulnerabilities
-      run: govulncheck -show verbose ./...
+      run: govulncheck -show traces,verbose ./...
       env:
         CGO_ENABLED: 1
         CGO_CFLAGS: -I${{ github.workspace }}/third_party/odpi/include

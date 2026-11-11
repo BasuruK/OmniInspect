@@ -259,8 +259,12 @@ lint:
 
 # Check for known vulnerabilities in dependencies and the Go standard library.
 # govulncheck is run via `go run` so no local install or PATH setup is needed.
-# The CGO flags exported above let it analyze the cgo Oracle adapter.
+# The ODPI include path is set here explicitly: oracle_adapter.go declares
+# #cgo directives only for darwin and windows, so on Linux the cgo package
+# cannot compile without it. govulncheck resolves call graphs from source and
+# never links, so the Oracle client libraries are not required.
 .PHONY: vuln
+vuln: export CGO_CFLAGS = -I$(CURDIR)/$(ODPI_BASE)/include
 vuln:
 	@echo "[VULN] Scanning for known vulnerabilities..."
 	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

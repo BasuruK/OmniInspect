@@ -257,6 +257,15 @@ lint:
 	go vet ./...
 	@echo "[OK] Lint complete"
 
+# Check for known vulnerabilities in dependencies and the Go standard library.
+# govulncheck is run via `go run` so no local install or PATH setup is needed.
+# The CGO flags exported above let it analyze the cgo Oracle adapter.
+.PHONY: vuln
+vuln:
+	@echo "[VULN] Scanning for known vulnerabilities..."
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+	@echo "[OK] No known vulnerabilities found"
+
 # ============================================================================
 # Release Packaging
 # ============================================================================
@@ -361,7 +370,8 @@ help:
 	@echo "  make install                      - Install Go dependencies"
 	@echo "  make fmt                          - Format Go code"
 	@echo "  make lint                         - Lint Go code"
+	@echo "  make vuln                         - Check for known vulnerabilities (govulncheck)"
 	@echo "  make help                         - Show this help message"
 
 # Phony targets
-.PHONY: all clean odpi deps build run run-only test check-cgo install fmt lint release publish help
+.PHONY: all clean odpi deps build run run-only test check-cgo install fmt lint vuln release publish help
